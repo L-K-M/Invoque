@@ -60,12 +60,12 @@ final class Preferences: ObservableObject {
     /// Reads the real login-item state. Returns `nil` when the system can't
     /// answer (notably under XCTest, where there is no real app bundle).
     private static func systemLaunchAtLoginEnabled() -> Bool? {
-        guard !AppDelegate.isRunningTests else { return nil }
+        guard !TestEnvironment.isRunningTests else { return nil }
         return SMAppService.mainApp.status == .enabled
     }
 
     private func applyLaunchAtLogin(_ enabled: Bool) {
-        guard !AppDelegate.isRunningTests else { return }
+        guard !TestEnvironment.isRunningTests else { return }
         do {
             if enabled {
                 try SMAppService.mainApp.register()

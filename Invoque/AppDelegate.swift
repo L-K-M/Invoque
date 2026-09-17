@@ -71,7 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Helpers
 
     static var isRunningTests: Bool {
-        NSClassFromString("XCTestCase") != nil ||
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        TestEnvironment.isRunningTests
     }
 }

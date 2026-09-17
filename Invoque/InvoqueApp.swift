@@ -13,6 +13,11 @@ enum InvoqueMain {
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
-        app.run()
+        // `NSApplication.delegate` is weak: keep the delegate alive for the
+        // whole run loop. In -O builds ARC may otherwise release it after the
+        // assignment, taking the status item and menu targets with it.
+        withExtendedLifetime(delegate) {
+            app.run()
+        }
     }
 }

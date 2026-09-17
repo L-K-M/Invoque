@@ -34,7 +34,8 @@ this project follows.
 - **Min target:** macOS 13 or newer (revisit to match Zap when starting).
 - **App type:** menu-bar agent (`LSUIElement = true`, no Dock icon).
 - **Distribution:** Developer ID + notarization; no App Store, no sandbox.
-  Hardened Runtime + `com.apple.security.cs.allow-jit` for the JSC fast path.
+  Hardened Runtime. `com.apple.security.cs.allow-jit` gets added together with
+  the JavaScriptCore runtime (it has no consumer before that).
 
 ## Build & Run
 
