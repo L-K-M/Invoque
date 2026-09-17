@@ -140,9 +140,10 @@ jobs:
         run: |
           mkdir "$RUNNER_TEMP/published"
           gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published" \
-            --pattern "$(basename "$ZIP")" --pattern "$(basename "$DMG")"
+            --pattern "$(basename "$ZIP")" --pattern "$(basename "$DMG")" \
+            --pattern "$(basename "$SHA256SUMS")"
           failed=0
-          for f in "$ZIP" "$DMG"; do
+          for f in "$ZIP" "$DMG" "$SHA256SUMS"; do
             if ! cmp -- "$f" "$RUNNER_TEMP/published/$(basename "$f")"; then
               # The published copy provably differs from what was built: take it
               # down before failing, so the in-app updater can't keep serving
