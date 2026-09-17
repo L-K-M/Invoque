@@ -16,11 +16,16 @@ final class AppSource: ItemSource {
     /// path reads this and nothing else.
     private var cachedItems: [Item] = []
 
+    /// Fires on the main queue after every reload — the UI re-runs the open
+    /// query so results appear as soon as the initial scan lands instead of
+    /// waiting for the next keystroke.
+    var onReload: (() -> Void)?
+
     // MARK: Init
 
     /// Kicks off the first scan asynchronously — hundreds of `Bundle` reads
     /// must not stall the launcher's own launch. The source serves an empty
-    /// list until the scan lands.
+    /// list until the scan lands, then `onReload` fires.
     init() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.reload()
@@ -54,6 +59,8 @@ final class AppSource: ItemSource {
         lock.lock()
         cachedItems = sorted
         lock.unlock()
+        let hook = onReload
+        DispatchQueue.main.async { hook?() }
     }
 
     // MARK: Scanning

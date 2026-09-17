@@ -111,4 +111,17 @@ final class SearchModelTests: XCTestCase {
         let results = makeModel(sources: [source]).results(for: "test")
         XCTAssertEqual(results.count, SearchModel.maxResults)
     }
+
+    func testWebFallbackKeepsSlotWhenRankedFillsCap() {
+        // A noisy ranked list must not push the pinned web row past the cap —
+        // exactly when local matching is weak the fallback is most needed.
+        let apps = StubSource()
+        apps.stubbedItems = (0..<60).map { index in
+            Self.appItem(id: "app:safari-\(index)", title: "Safari \(index)")
+        }
+        let model = makeModel(sources: [apps, WebSource()])
+        let results = model.results(for: "safari")
+        XCTAssertEqual(results.count, SearchModel.maxResults)
+        XCTAssertEqual(results.last?.id, "web:safari")
+    }
 }

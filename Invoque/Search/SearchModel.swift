@@ -81,9 +81,12 @@ final class SearchModel {
             .map { $0.item }
 
         // The pinned rows get their slots first: a noisy query that fills the
-        // ranked list must not push the web fallback past the cap.
+        // ranked list must not push the web fallback past the cap. The outer
+        // clamp keeps the `maxResults` contract even if the pinned sources
+        // alone would overflow it (trailing web rows go first).
         let rankedSlots = max(0, Self.maxResults - calculatorHits.count - webHits.count)
-        return calculatorHits + Array(ranked.prefix(rankedSlots)) + webHits
+        return Array((calculatorHits + Array(ranked.prefix(rankedSlots)) + webHits)
+            .prefix(Self.maxResults))
     }
 
     // MARK: Selection
