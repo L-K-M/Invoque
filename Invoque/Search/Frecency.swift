@@ -67,13 +67,13 @@ final class Frecency {
     /// Return) so a write per pick is cheaper than a timer.
     func record(_ itemID: String) {
         lock.lock()
+        defer { lock.unlock() }
         var entry = entries[itemID] ?? Entry(visits: 0, lastUsed: 0)
         entry.visits += 1
         entry.lastUsed = Date().timeIntervalSince1970
         entries[itemID] = entry
         evictIfNeeded()
         save()
-        lock.unlock()
     }
 
     // MARK: Scoring

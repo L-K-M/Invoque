@@ -16,25 +16,19 @@ final class AppSource: ItemSource {
     /// path reads this and nothing else.
     private var cachedItems: [Item] = []
 
-    /// Backing store for `onReload` — guarded by `lock` like `cachedItems`,
-    /// because reloads read it on a background queue while the owner assigns
-    /// it on the main thread.
+    /// Backing store for `onReload` — assigned once in `init`, read by
+    /// `reload` on a background queue, so reads stay lock-guarded.
     private var _onReload: (() -> Void)?
 
     /// Fires on the main queue after every reload — the UI re-runs the open
     /// query so results appear as soon as the initial scan lands instead of
-    /// waiting for the next keystroke.
+    /// waiting for the next keystroke. Read-only: assigning after init
+    /// re-opens the missed-first-scan race the init parameter exists to
+    /// close.
     var onReload: (() -> Void)? {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return _onReload
-        }
-        set {
-            lock.lock()
-            _onReload = newValue
-            lock.unlock()
-        }
+        lock.lock()
+        defer { lock.unlock() }
+        return _onReload
     }
 
     // MARK: Init
@@ -102,21 +96,23 @@ final class AppSource: ItemSource {
         ]
     }
 
-    /// One folder, depth 1 only: direct children ending in `.app` via
-    /// `contentsOfDirectory`, which never descends, so a nested
-    /// `Foo.app/Contents/.../Bar.app` cannot pollute results. Hidden entries
-    /// are skipped; an unreadable folder yields nothing rather than breaking
-    /// the whole scan. First directory wins on duplicate ids.
+    /// One folder, deep: real installs nest apps (`/Applications/Setapp/…`,
+    /// `Adobe Photoshop 2025/Adobe Photoshop 2025.app`, user-organized
+    /// folders). `.skipsPackageDescendants` keeps the walk out of bundle
+    /// interiors — `Foo.app/Contents/.../Bar.app` cannot pollute results.
+    /// Hidden entries are skipped; an unreadable folder yields nothing
+    /// rather than breaking the whole scan. First directory wins on
+    /// duplicate ids.
     private func scan(_ directory: URL, seenIDs: inout Set<String>) -> [Item] {
-        guard let children = try? FileManager.default.contentsOfDirectory(
+        guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: nil,
-            options: .skipsHiddenFiles
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
             return []
         }
         var items: [Item] = []
-        for url in children where url.pathExtension.lowercased() == "app" {
+        for case let url as URL in enumerator where url.pathExtension.lowercased() == "app" {
             let item = Self.item(for: url)
             guard seenIDs.insert(item.id).inserted else { continue }
             items.append(item)
