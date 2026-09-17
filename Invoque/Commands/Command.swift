@@ -32,7 +32,12 @@ struct Command: Equatable, Identifiable {
         // `validate(in:)` already enforces this; the precondition is the
         // backstop for a future call site that skips validation — an entry
         // is fed to the JS bridge and executed, so it must never escape.
-        precondition(resolvedEntry.path.hasPrefix(self.directory.path + "/"),
+        // Symlinks are resolved on both sides (as validate does) so an
+        // entry symlinked out of the directory can't slip the prefix check;
+        // a "/" container compares against "/", not "//".
+        let container = self.directory.resolvingSymlinksInPath().standardizedFileURL.path
+        precondition(resolvedEntry.resolvingSymlinksInPath().standardizedFileURL.path
+                        .hasPrefix(container == "/" ? "/" : container + "/"),
                      "command entry escapes its directory: \(resolvedEntry.path)")
         entryURL = resolvedEntry
     }

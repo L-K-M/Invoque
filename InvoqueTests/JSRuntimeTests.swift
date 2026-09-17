@@ -363,6 +363,16 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertEqual(JSRuntime.preprocess(template), template)
     }
 
+    func testPreprocessSkipsCallableFormInsideRegex() {
+        // A quote inside a regex literal must not open a bogus string
+        // region that swallows the real export or exposes string contents.
+        let source = #"const re = /'/; const s = "export default function() {}";"#
+        XCTAssertEqual(JSRuntime.preprocess(source), source)
+        // `/` after an operator is a regex; after an operand it's division.
+        let division = #"const x = a / b; const s = "export default function() {}";"#
+        XCTAssertEqual(JSRuntime.preprocess(division), division)
+    }
+
     func testPreprocessSkipsCallableFormInsideComment() {
         // A comment ahead of the real export must not consume the rewrite —
         // the real declaration is still the one rewritten.

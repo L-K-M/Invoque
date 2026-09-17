@@ -123,9 +123,12 @@ final class CommandStore {
                 watchTargets.append(entry)
                 // Files inside (command.json, main.js, a nested lib/) are
                 // watched too: a vnode watch on the directory only catches
-                // adds and removes, not in-place content edits.
-                watchTargets.append(contentsOf: Self.watchTargets(under: entry,
-                                                                  fileManager: fileManager))
+                // adds and removes, not in-place content edits. Depth and
+                // count are capped — every target is one open fd, and a
+                // vendored node_modules would otherwise exhaust them.
+                var budget = Self.maxWatchTargetsPerCommand
+                watchTargets.append(contentsOf: Self.watchTargets(
+                    under: entry, fileManager: fileManager, depth: 0, budget: &budget))
 
                 do {
                     commands.append(try Command(directory: entry))
@@ -174,21 +177,31 @@ final class CommandStore {
         return nil
     }
 
-    /// Every file and directory under `url`, recursively — a nested entry
-    /// like `lib/main.js` or an edit inside `lib/` must hot-reload too.
-    /// Symlinked directories are listed but not descended into, so a symlink
-    /// cycle cannot loop the walk forever.
-    private static func watchTargets(under url: URL, fileManager: FileManager) -> [URL] {
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: url,
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles]) else { return [] }
+    /// Files and directories under `url`, recursively — a nested entry like
+    /// `lib/main.js` or an edit inside `lib/` must hot-reload too. Symlinked
+    /// directories are listed but not descended into, so a symlink cycle
+    /// cannot loop the walk forever. `budget` caps targets per command:
+    /// each watched URL holds a file descriptor, and a bundled dependency
+    /// tree (node_modules-scale) must not exhaust the process's fd limit.
+    private static let maxWatchDepth = 4
+    private static let maxWatchTargetsPerCommand = 500
+
+    private static func watchTargets(under url: URL, fileManager: FileManager,
+                                     depth: Int, budget: inout Int) -> [URL] {
+        guard depth < maxWatchDepth, budget > 0,
+              let contents = try? fileManager.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles]) else { return [] }
         var targets: [URL] = []
         for item in contents {
+            guard budget > 0 else { break }
             targets.append(item)
+            budget -= 1
             let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             if values?.isDirectory == true && values?.isSymbolicLink != true {
-                targets.append(contentsOf: watchTargets(under: item, fileManager: fileManager))
+                targets.append(contentsOf: watchTargets(under: item, fileManager: fileManager,
+                                                        depth: depth + 1, budget: &budget))
             }
         }
         return targets
@@ -223,6 +236,7 @@ final class CommandStore {
     /// would pin the store for the debounce window, and a rescan that
     /// outlives its store has nothing to commit to anyway.
     private func scheduleRescan() {
+        dispatchPrecondition(condition: .onQueue(stateQueue))
         pendingRescan?.cancel()
         rescanGeneration += 1
         let generation = rescanGeneration

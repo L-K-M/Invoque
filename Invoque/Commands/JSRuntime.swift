@@ -92,9 +92,8 @@ final class JSRuntime {
 
             let queue = DispatchQueue(label: "com.invoque.js.\(command.name)")
             queue.async {
-                self.execute(command: command, args: args,
-                             logs: logs, box: box, queue: queue, fetches: fetches)
-                parked.set()
+                self.execute(command: command, args: args, logs: logs, box: box,
+                             queue: queue, fetches: fetches, parked: parked)
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + effectiveTimeout, execute: timeoutWork)
         }
@@ -109,7 +108,12 @@ final class JSRuntime {
     /// the continuation boundary anyway.
     private func execute(command: Command, args: [String],
                          logs: CommandLog, box: CompletionBox, queue: DispatchQueue,
-                         fetches: FetchTaskRegistry) {
+                         fetches: FetchTaskRegistry, parked: InvocationParkedFlag) {
+        // Any return — success, failure, or promise park — means the
+        // synchronous script is done and the queue thread is free. The
+        // defer flips the flag at return, not after, so a timeout landing
+        // in the gap can't false-ban a healthy command.
+        defer { parked.set() }
         guard let data = try? Data(contentsOf: command.entryURL),
               let source = String(data: data, encoding: .utf8) else {
             box.complete(JSResult(output: .void, logs: logs.snapshot,
@@ -297,10 +301,13 @@ final class JSRuntime {
     /// rare enough in commands that treating them approximately is fine; the
     /// failure mode stays a syntax error, not corruption.
     private static func opaqueRanges(in source: String) -> [Range<String.Index>] {
-        enum Region { case normal, single, double, template, lineComment, blockComment }
+        enum Region { case normal, single, double, template, lineComment, blockComment, regex }
         var ranges: [Range<String.Index>] = []
         var region = Region.normal
         var regionStart = source.startIndex
+        /// Inside a regex `[...]` character class — `/` there can't close
+        /// the literal (`/[/]/` is legal).
+        var inCharClass = false
         var i = source.startIndex
 
         func closeOpaque(at end: String.Index) {
@@ -320,6 +327,11 @@ final class JSRuntime {
                 case "`": region = .template; regionStart = i
                 case "/" where next == "/": region = .lineComment; regionStart = i
                 case "/" where next == "*": region = .blockComment; regionStart = i
+                // A `/` in expression position starts a regex literal, not
+                // a comment — without this a quote inside `/'/` poisons the
+                // scan and exposes a later string's contents as code.
+                case "/" where isRegexPosition(source, before: i):
+                    region = .regex; regionStart = i; inCharClass = false
                 default: break
                 }
             case .single:
@@ -333,6 +345,16 @@ final class JSRuntime {
                 if c == "`" { closeOpaque(at: source.index(after: i)) }
             case .lineComment:
                 if c == "\n" { closeOpaque(at: i) }
+            case .regex:
+                // Skip to the closing unescaped `/`; inside a `[...]`
+                // class a slash is literal (`/[/]/` is legal).
+                if c == "\\" {
+                    i = source.index(i, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
+                    continue
+                }
+                if c == "[" { inCharClass = true }
+                if c == "]" { inCharClass = false }
+                if c == "/" && !inCharClass { closeOpaque(at: source.index(after: i)) }
             case .blockComment:
                 if c == "*" && next == "/" {
                     let end = source.index(i, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
@@ -346,6 +368,25 @@ final class JSRuntime {
         // An unterminated literal/comment stays opaque to end-of-source.
         if region != .normal { ranges.append(regionStart..<source.endIndex) }
         return ranges
+    }
+
+    /// Whether a `/` at `index` opens a regex literal rather than division
+    /// or a comment: the standard heuristic — after an operand (identifier,
+    /// number, `)`/`]`/string) it's division; after an operator, opener,
+    /// keyword or at start it's a regex. Deliberately a punctuation scan —
+    /// keyword-aware would need the same tokenizer this scanner is trying
+    /// not to be.
+    private static func isRegexPosition(_ source: String, before index: String.Index) -> Bool {
+        var i = index
+        while i > source.startIndex {
+            i = source.index(before: i)
+            let c = source[i]
+            if c == " " || c == "\t" || c == "\n" { continue }
+            // After an operand character a slash is division; after
+            // operators/openers/statement punctuation it's a regex.
+            return "(,=:[!&|?{};+-*%^~<>".contains(c)
+        }
+        return true
     }
 
     // MARK: Result decoding
