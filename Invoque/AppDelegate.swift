@@ -6,7 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
     private lazy var settingsWindow = SettingsWindowController(preferences: preferences)
-    private lazy var panelController = PanelController(preferences: preferences)
+    private lazy var panelController = Self.makePanelController(preferences: preferences)
 
     private var statusItem: NSStatusItem?
 
@@ -83,6 +83,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openPanel() {
         panelController.show()
+    }
+
+    /// Assembles the search stack and its owner. `model` is built first so
+    /// `AppSource.onReload` can re-run the open query — the hook must be
+    /// passed at init (a post-init assignment can miss the first scan).
+    private static func makePanelController(preferences: Preferences) -> PanelController {
+        let model = PanelModel()
+        let sources: [ItemSource] = [
+            AppSource(onReload: { [weak model] in model?.refreshResults() }),
+            CalculatorSource(),
+            SystemSource(),
+            WebSource(),
+        ]
+        let searchModel = SearchModel(sources: sources, frecency: Frecency())
+        return PanelController(preferences: preferences, model: model, searchModel: searchModel)
     }
 
     @objc private func quit() {

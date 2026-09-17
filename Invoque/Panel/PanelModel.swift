@@ -1,40 +1,52 @@
 import Foundation
 
-/// One selectable row in the launcher's results list.
+/// One selectable row in the launcher's results list: the display fields of
+/// an `Item` plus the action picking it performs. The view never sees `Item`
+/// itself — rows are the panel's presentation shape.
 struct ResultRow: Identifiable, Equatable {
 
     let id: String
     let title: String
     let subtitle: String
+    let icon: Item.Icon
+    let action: Item.Action
 
-    /// SF Symbol name for the row's icon.
-    let iconName: String
+    init(item: Item) {
+        id = item.id
+        title = item.title
+        subtitle = item.subtitle
+        icon = item.icon
+        action = item.action
+    }
 }
 
 /// View model for the launcher panel: query, results, and the selection
 /// within them. Foundation-only so the selection logic stays unit-testable.
+///
+/// The search is synchronous: sources serve cached data (`AppSource` holds
+/// an in-memory scan; calculator/system/web compute in microseconds), so a
+/// `results(for:)` per keystroke stays on the main thread by design.
 final class PanelModel: ObservableObject {
 
     /// Receives the selected row when the user presses ⏎ — `nil` when there
-    /// are no results. The panel's owner (PanelController) decides what
-    /// happens next.
+    /// are no results. The panel's owner (PanelController) performs the
+    /// row's action.
     var onSubmit: ((ResultRow?) -> Void)?
 
-    @Published var query = ""
+    /// The search backend. Assigning re-runs the open query so late wiring
+    /// (sources assembled after the model exists) still fills the list.
+    var searchModel: SearchModel? {
+        didSet { refreshResults() }
+    }
 
-    // TODO: wired to SearchModel in the search-glue PR. Seeded with
-    // placeholders so the panel's UI is visible and navigable until search
-    // lands.
-    @Published var results: [ResultRow] = [
-        ResultRow(id: "placeholder.apps",
-                  title: "Applications",
-                  subtitle: "Search and launch apps on this Mac",
-                  iconName: "square.grid.2x2"),
-        ResultRow(id: "placeholder.web",
-                  title: "Web Search",
-                  subtitle: "Fall back to searching the web for the whole query",
-                  iconName: "globe"),
-    ] {
+    @Published var query = "" {
+        didSet {
+            guard query != oldValue else { return }
+            refreshResults()
+        }
+    }
+
+    @Published private(set) var results: [ResultRow] = [] {
         didSet {
             // A replaced list is a new result set: restart at the top row —
             // Spotlight-style — rather than keeping an index that now names
@@ -48,6 +60,20 @@ final class PanelModel: ObservableObject {
     /// The currently selected row, or `nil` when there are no results.
     var selectedRow: ResultRow? {
         results.indices.contains(selection) ? results[selection] : nil
+    }
+
+    // MARK: Searching
+
+    /// Re-runs the current query. Called on query changes and by
+    /// `AppSource.onReload` — an app scan landing after the panel opened
+    /// must fill the visible list without waiting for the next keystroke.
+    func refreshResults() {
+        let newResults = (searchModel?.results(for: query) ?? []).map(ResultRow.init)
+        // A background rescan landing identical rows must not yank the
+        // selection back to the top (results' didSet resets it) or fire a
+        // redundant objectWillChange.
+        guard newResults != results else { return }
+        results = newResults
     }
 
     // MARK: State changes
