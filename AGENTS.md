@@ -12,11 +12,13 @@ milestones. **Read PLAN.md before writing code.**
 
 ## Status
 
-Pre-implementation: no Xcode project yet. When bootstrapping, mirror
-**[Zap](https://github.com/L-K-M/Zap)** — same maintainer, same conventions.
-Read `Zap/AGENTS.md` and `Zap/PLAN.md` for the template this project follows.
+Early implementation: the Xcode project shell exists (agent app, status item,
+Settings window, tests, CI). Panel, search, command runtime, and the Maker land
+per `PLAN.md` milestones. Mirror **[Zap](https://github.com/L-K-M/Zap)** — same
+maintainer, same conventions. `Zap/AGENTS.md` and `Zap/PLAN.md` are the template
+this project follows.
 
-## Tech Stack (planned)
+## Tech Stack
 
 - **Language:** Swift (latest stable).
 - **UI:** SwiftUI for panel content and Settings; AppKit for windowing —
