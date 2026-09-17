@@ -14,19 +14,30 @@ final class PanelController: NSObject {
     }
 
     private let preferences: Preferences
+    private let searchModel: SearchModel
     private let model: PanelModel
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
 
-    init(preferences: Preferences) {
+    /// `model` is injected because the app's `AppSource.onReload` hook must
+    /// reference it before `SearchModel` (which owns the source) exists.
+    init(preferences: Preferences, model: PanelModel, searchModel: SearchModel) {
         self.preferences = preferences
-        let model = PanelModel()
+        self.searchModel = searchModel
         self.model = model
         super.init()
 
-        // Milestone 1: any submit just dismisses. Real action dispatch (open
-        // app, run command, …) arrives with the search glue.
-        model.onSubmit = { [weak self] _ in self?.hide() }
+        // Dismiss first, then perform: a slow action (app launch, AppleEvent
+        // consent) must not hold the panel open.
+        model.onSubmit = { [weak self] row in
+            guard let self else { return }
+            self.hide()
+            if let row {
+                self.searchModel.recordSelection(itemID: row.id)
+                ActionPerformer.perform(row.action)
+            }
+        }
+        model.searchModel = searchModel
     }
 
     deinit {

@@ -103,8 +103,14 @@ final class SearchModel {
     /// — recording them would persist queries for nothing and gradually
     /// evict real history from the capped table.
     func recordSelection(_ item: Item) {
-        guard !item.id.hasPrefix(Item.webIDPrefix),
-              !item.id.hasPrefix(Item.calculatorIDPrefix) else { return }
-        frecency.record(item.id)
+        recordSelection(itemID: item.id)
+    }
+
+    /// `recordSelection` by id alone — the panel's rows carry the id, not
+    /// the whole `Item`.
+    func recordSelection(itemID: String) {
+        guard !itemID.hasPrefix(Item.webIDPrefix),
+              !itemID.hasPrefix(Item.calculatorIDPrefix) else { return }
+        frecency.record(itemID)
     }
 }

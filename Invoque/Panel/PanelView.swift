@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The launcher panel's content: a rounded card with a search field on top, a
@@ -63,7 +64,11 @@ struct PanelView: View {
             ScrollView {
                 VStack(spacing: 6) {
                     if model.results.isEmpty {
-                        Text("No results")
+                        // An empty query hasn't searched yet — hint instead
+                        // of claiming there are no results.
+                        Text(model.query.isEmpty
+                             ? "Search apps, commands, or the web"
+                             : "No results")
                             .font(.callout)
                             .foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity)
@@ -127,9 +132,7 @@ private struct ResultRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: row.iconName)
-                .font(.title3)
-                .foregroundStyle(.secondary)
+            icon
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title)
@@ -151,6 +154,28 @@ private struct ResultRowView: View {
                                        style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+    }
+
+    /// SF Symbols render as vectors; file/app icons come from the
+    /// workspace's icon cache as bitmaps, so they need explicit sizing.
+    @ViewBuilder
+    private var icon: some View {
+        switch row.icon {
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        case .fileURL(let url):
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+        case .appIcon(let path):
+            Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+        }
     }
 }
 
