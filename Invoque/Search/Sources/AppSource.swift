@@ -1,11 +1,16 @@
 import Foundation
 
-/// Scans the three app folders for `.app` bundles and serves them from
-/// memory. `items(matching:)` never touches the disk; call `reload()` on
-/// launch (and, later, from a file watcher) to refresh.
+/// Scans the app folders for `.app` bundles and serves them from memory.
+/// `items(matching:)` never touches the disk; `reload()` runs on a background
+/// queue at launch (and, later, from a file watcher) to refresh.
 final class AppSource: ItemSource {
 
     // MARK: State
+
+    /// Guards `cachedItems`: the initial scan and later watcher-driven
+    /// reloads write from a background queue while keystroke reads happen on
+    /// the main thread.
+    private let lock = NSLock()
 
     /// Last scan, sorted by title for deterministic iteration. The search hot
     /// path reads this and nothing else.
@@ -13,9 +18,13 @@ final class AppSource: ItemSource {
 
     // MARK: Init
 
-    /// Scans immediately so the source is useful without a manual `reload()`.
+    /// Kicks off the first scan asynchronously — hundreds of `Bundle` reads
+    /// must not stall the launcher's own launch. The source serves an empty
+    /// list until the scan lands.
     init() {
-        reload()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.reload()
+        }
     }
 
     // MARK: ItemSource
@@ -23,7 +32,9 @@ final class AppSource: ItemSource {
     /// The whole cache. Filtering and ranking are `SearchModel`'s job, so
     /// every app stays eligible for frecency-boosted matches.
     func items(matching query: String) -> [Item] {
-        cachedItems
+        lock.lock()
+        defer { lock.unlock() }
+        return cachedItems
     }
 
     /// Rescans the app folders. Cheap enough for launch and for a watcher
@@ -34,21 +45,28 @@ final class AppSource: ItemSource {
         for directory in Self.searchDirectories {
             found.append(contentsOf: scan(directory, seenIDs: &seenIDs))
         }
-        cachedItems = found.sorted {
+        let sorted = found.sorted {
             if $0.title != $1.title {
                 return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
             return $0.id < $1.id
         }
+        lock.lock()
+        cachedItems = sorted
+        lock.unlock()
     }
 
     // MARK: Scanning
 
-    /// The only folders consulted: system-wide, system, and per-user apps.
+    /// The only folders consulted: system-wide, system, and per-user apps,
+    /// plus the Utilities subfolders — Terminal, Disk Utility, and Activity
+    /// Monitor live there, not in the top-level folders.
     private static var searchDirectories: [URL] {
         [
             URL(fileURLWithPath: "/Applications", isDirectory: true),
+            URL(fileURLWithPath: "/Applications/Utilities", isDirectory: true),
             URL(fileURLWithPath: "/System/Applications", isDirectory: true),
+            URL(fileURLWithPath: "/System/Applications/Utilities", isDirectory: true),
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
         ]
     }

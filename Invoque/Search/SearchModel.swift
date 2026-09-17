@@ -80,7 +80,10 @@ final class SearchModel {
             }
             .map { $0.item }
 
-        return Array((calculatorHits + ranked + webHits).prefix(Self.maxResults))
+        // The pinned rows get their slots first: a noisy query that fills the
+        // ranked list must not push the web fallback past the cap.
+        let rankedSlots = max(0, Self.maxResults - calculatorHits.count - webHits.count)
+        return calculatorHits + Array(ranked.prefix(rankedSlots)) + webHits
     }
 
     // MARK: Selection
