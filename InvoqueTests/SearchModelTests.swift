@@ -131,12 +131,15 @@ final class SearchModelTests: XCTestCase {
         let source = StubSource()
         source.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
         let model = makeModel(sources: [source, WebSource(), CalculatorSource()])
-        for item in model.results(for: "safari") where item.id.hasPrefix("web:") {
-            model.recordSelection(item)
-        }
-        for item in model.results(for: "2+2") where item.id.hasPrefix("calc:") {
-            model.recordSelection(item)
-        }
+        let webItems = model.results(for: "safari")
+            .filter { $0.id.hasPrefix(Item.webIDPrefix) }
+        let calcItems = model.results(for: "2+2")
+            .filter { $0.id.hasPrefix(Item.calculatorIDPrefix) }
+        // Guard against a vacuous pass: the filters must actually find rows.
+        XCTAssertFalse(webItems.isEmpty)
+        XCTAssertFalse(calcItems.isEmpty)
+        webItems.forEach(model.recordSelection)
+        calcItems.forEach(model.recordSelection)
         XCTAssertNil(defaults.data(forKey: "SearchFrecency.v1"))
         model.recordSelection(Self.appItem(id: "app:safari", title: "Safari"))
         XCTAssertNotNil(defaults.data(forKey: "SearchFrecency.v1"))

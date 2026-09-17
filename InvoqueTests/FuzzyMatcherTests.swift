@@ -8,6 +8,10 @@ final class FuzzyMatcherTests: XCTestCase {
     func testNonSubsequenceReturnsNil() {
         XCTAssertNil(FuzzyMatcher.score("xyz", candidate: "Safari"))
         XCTAssertNil(FuzzyMatcher.score("safariz", candidate: "Safari"))
+        // Partial-match-then-exhaustion: 's'→0 and 'i'→5 match, but no 'r'
+        // exists after index 5 — the subsequence walk must fail, not just
+        // the length check.
+        XCTAssertNil(FuzzyMatcher.score("sir", candidate: "Safari"))
     }
 
     func testEmptyQueryReturnsNil() {
@@ -25,10 +29,11 @@ final class FuzzyMatcherTests: XCTestCase {
     // MARK: Ordering
 
     /// Prefix hits outrank word-start hits, which outrank scattered letters.
+    /// Same query and same-length candidates, so only match position varies.
     func testOrderingPrefixBeatsWordStartBeatsScattered() throws {
-        let prefix = try XCTUnwrap(FuzzyMatcher.score("saf", candidate: "Safari"))
-        let wordStart = try XCTUnwrap(FuzzyMatcher.score("pre", candidate: "System Preferences"))
-        let scattered = try XCTUnwrap(FuzzyMatcher.score("sps", candidate: "System Preferences"))
+        let prefix = try XCTUnwrap(FuzzyMatcher.score("sa", candidate: "Sandboxed"))
+        let wordStart = try XCTUnwrap(FuzzyMatcher.score("sa", candidate: "Hot Sauce"))
+        let scattered = try XCTUnwrap(FuzzyMatcher.score("sa", candidate: "classical"))
         XCTAssertGreaterThan(prefix, wordStart)
         XCTAssertGreaterThan(wordStart, scattered)
     }
