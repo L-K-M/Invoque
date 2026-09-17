@@ -51,19 +51,19 @@ final class PanelModelTests: XCTestCase {
 
     func testNewResultSetResetsSelectionToTop() {
         let model = makeModel(items: [
-            Self.appItem(id: "app:one", title: "OneNote"),
-            Self.appItem(id: "app:two", title: "OneDrive"),
+            Self.appItem(id: "app:one", title: "Alpha"),
+            Self.appItem(id: "app:two", title: "Amber"),
         ])
-        model.query = "one"
-        // Equal scores break by title: OneDrive before OneNote.
+        model.query = "a"
+        // Same length, same match — the tie breaks by title: Alpha first.
         model.moveSelection(by: 1)
-        XCTAssertEqual(model.selectedRow?.id, "app:one")
+        XCTAssertEqual(model.selectedRow?.id, "app:two")
 
         // A new query replaces the list — the index must not carry over
-        // onto an unrelated row. "oned" still matches one app (OneDrive),
-        // so the reset is exercised against a non-empty result set.
-        model.query = "oned"
-        XCTAssertEqual(model.results.map(\.id), ["app:two"])
+        // onto an unrelated row. "alph" still matches one app (Alpha), so
+        // the reset is exercised against a non-empty result set.
+        model.query = "alph"
+        XCTAssertEqual(model.results.map(\.id), ["app:one"])
         XCTAssertEqual(model.selection, 0)
     }
 
