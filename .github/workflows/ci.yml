@@ -49,7 +49,7 @@ jobs:
             -destination 'platform=macOS' \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
-            clean test | xcbeautify
+            test | xcbeautify
 
       - name: Upload test results on failure
         # `failure()` alone misses the timeout case: a wedged test run ends as
