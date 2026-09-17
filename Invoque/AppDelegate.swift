@@ -39,7 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             accessibilityDescription: "Invoque")?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
             ?? NSImage(systemSymbolName: "text.bubble",
-                       accessibilityDescription: "Invoque")
+                       accessibilityDescription: "Invoque")?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
             ?? NSImage()
         image.isTemplate = true
         return image
