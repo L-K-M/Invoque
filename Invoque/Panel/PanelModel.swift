@@ -68,7 +68,12 @@ final class PanelModel: ObservableObject {
     /// `AppSource.onReload` — an app scan landing after the panel opened
     /// must fill the visible list without waiting for the next keystroke.
     func refreshResults() {
-        results = (searchModel?.results(for: query) ?? []).map(ResultRow.init)
+        let newResults = (searchModel?.results(for: query) ?? []).map(ResultRow.init)
+        // A background rescan landing identical rows must not yank the
+        // selection back to the top (results' didSet resets it) or fire a
+        // redundant objectWillChange.
+        guard newResults != results else { return }
+        results = newResults
     }
 
     // MARK: State changes
