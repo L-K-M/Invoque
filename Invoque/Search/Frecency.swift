@@ -101,7 +101,8 @@ final class Frecency {
             return try JSONDecoder().decode([String: Entry].self, from: data)
         } catch {
             // `try?` here would silently erase all learned ranking history on
-            // the next save; at least make the corruption observable in debug.
+            // the next save; log for release (the assert is a no-op there).
+            NSLog("SearchFrecency.v1 store corrupted; resetting: \(error)")
             assertionFailure("SearchFrecency.v1 store corrupted; resetting. \(error)")
             return [:]
         }
