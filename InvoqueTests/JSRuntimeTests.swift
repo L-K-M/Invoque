@@ -371,6 +371,16 @@ final class JSRuntimeTests: XCTestCase {
         // `/` after an operator is a regex; after an operand it's division.
         let division = #"const x = a / b; const s = "export default function() {}";"#
         XCTAssertEqual(JSRuntime.preprocess(division), division)
+        // A `/` inside a `[...]` class can't close the literal.
+        let charClass = #"const re = /[/]/; const s = "export default function() {}";"#
+        XCTAssertEqual(JSRuntime.preprocess(charClass), charClass)
+        // A regex at a line start in a CRLF source still scans as a regex —
+        // the backscan must skip past both \n and \r to the `;`.
+        let crlf = "const a = 1;\r\n/'/.test(a);\r\nconst s = \"export default function() {}\";"
+        XCTAssertEqual(JSRuntime.preprocess(crlf), crlf)
+        // Division after postfix ++/-- is division, not a regex literal.
+        let postfix = #"const pct = i++ / total; const s = "export default function() {}";"#
+        XCTAssertEqual(JSRuntime.preprocess(postfix), postfix)
     }
 
     func testPreprocessSkipsCallableFormInsideComment() {

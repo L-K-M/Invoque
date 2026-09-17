@@ -92,6 +92,9 @@ final class CommandStore {
         var commands: [Command] = []
         var errors: [ScanError] = []
         var watchTargets: [URL] = []
+        // One store-wide budget: every target holds an fd, and the total —
+        // not the per-command count — is what the process limit sees.
+        var watchBudget = Self.maxWatchTargets
         let fileManager = FileManager.default
 
         for root in roots {
@@ -126,9 +129,9 @@ final class CommandStore {
                 // adds and removes, not in-place content edits. Depth and
                 // count are capped — every target is one open fd, and a
                 // vendored node_modules would otherwise exhaust them.
-                var budget = Self.maxWatchTargetsPerCommand
                 watchTargets.append(contentsOf: Self.watchTargets(
-                    under: entry, fileManager: fileManager, depth: 0, budget: &budget))
+                    under: entry, fileManager: fileManager, depth: 0,
+                    budget: &watchBudget))
 
                 do {
                     commands.append(try Command(directory: entry))
@@ -180,11 +183,14 @@ final class CommandStore {
     /// Files and directories under `url`, recursively — a nested entry like
     /// `lib/main.js` or an edit inside `lib/` must hot-reload too. Symlinked
     /// directories are listed but not descended into, so a symlink cycle
-    /// cannot loop the walk forever. `budget` caps targets per command:
-    /// each watched URL holds a file descriptor, and a bundled dependency
-    /// tree (node_modules-scale) must not exhaust the process's fd limit.
+    /// cannot loop the walk forever. `budget` is store-wide and shared
+    /// across commands: each watched URL holds a file descriptor, so a
+    /// bundled dependency tree (node_modules-scale) or simply many
+    /// commands must not exhaust the process's fd limit. Targets past the
+    /// cap go unwatched — their edits still surface via a rescan triggered
+    /// by a shallower watched ancestor.
     private static let maxWatchDepth = 4
-    private static let maxWatchTargetsPerCommand = 500
+    private static let maxWatchTargets = 256
 
     private static func watchTargets(under url: URL, fileManager: FileManager,
                                      depth: Int, budget: inout Int) -> [URL] {

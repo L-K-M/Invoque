@@ -381,7 +381,27 @@ final class JSRuntime {
         while i > source.startIndex {
             i = source.index(before: i)
             let c = source[i]
-            if c == " " || c == "\t" || c == "\n" { continue }
+            // JS whitespace — `\r` matters for CRLF sources.
+            if c == " " || c == "\t" || c == "\n" || c == "\r"
+                || c == "\u{0B}" || c == "\u{0C}" { continue }
+            if c == "+" || c == "-" {
+                // Postfix ++/-- puts an operand right before the slash
+                // (`i++ / total` is division). A lone binary +/- still
+                // opens a regex (`a + /re/`).
+                var j = i
+                var sawIncDec = false
+                while j > source.startIndex {
+                    j = source.index(before: j)
+                    let d = source[j]
+                    if d == " " || d == "\t" || d == "\n" || d == "\r"
+                        || d == "\u{0B}" || d == "\u{0C}" { continue }
+                    if !sawIncDec && (d == "+" || d == "-") { sawIncDec = true; continue }
+                    return !(sawIncDec && (d.isLetter || d.isNumber
+                                           || d == "_" || d == "$"
+                                           || d == ")" || d == "]"))
+                }
+                return true
+            }
             // After an operand character a slash is division; after
             // operators/openers/statement punctuation it's a regex.
             return "(,=:[!&|?{};+-*%^~<>".contains(c)
