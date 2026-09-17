@@ -81,7 +81,8 @@ final class SearchModelTests: XCTestCase {
     }
 
     func testDuplicatePinnedIdsCollapse() {
-        // Pinned rows bypass the fuzzy dedupe, so they get their own.
+        // Pinned rows bypass the fuzzy scoring path, but identical ids
+        // must still collapse to a single row.
         let source = StubSource()
         source.stubbedItems = [
             Self.appItem(id: "calc:2+2", title: "= 4"),
