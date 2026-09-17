@@ -87,13 +87,13 @@ final class Frecency {
     // MARK: Persistence
 
     private static func load(from defaults: UserDefaults) -> [String: Entry] {
-        guard let data = defaults.data(forKey: storageKey) else { return [:] }
+        guard let data = defaults.data(forKey: Self.storageKey) else { return [:] }
         return (try? JSONDecoder().decode([String: Entry].self, from: data)) ?? [:]
     }
 
     private func save() {
         guard let data = try? JSONEncoder().encode(entries) else { return }
-        defaults.set(data, forKey: storageKey)
+        defaults.set(data, forKey: Self.storageKey)
     }
 
     /// Evicts least-recently-used ids beyond the cap. Ties (identical
