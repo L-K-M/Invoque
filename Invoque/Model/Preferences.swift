@@ -45,8 +45,9 @@ final class Preferences: ObservableObject {
     }
 
     /// Tells the Carbon registration's owner to re-register after a change;
-    /// Preferences itself stays free of hotkey machinery. DidSet timing, so it
-    /// fires only after the new value is both published and persisted.
+    /// Preferences itself stays free of hotkey machinery. DidSet timing, so
+    /// it fires after the new value is persisted (note: `@Published`
+    /// subscribers are notified earlier, in willSet).
     var summonHotkeyChanged: ((HotkeyCombination) -> Void)?
 
     @Published var launchAtLogin: Bool {

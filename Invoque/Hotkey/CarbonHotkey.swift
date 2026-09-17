@@ -62,7 +62,10 @@ final class CarbonHotkey {
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandler
         )
-        guard installStatus == noErr else { return false }
+        guard installStatus == noErr else {
+            NSLog("Invoque: failed to install hotkey event handler \(identifier): status \(installStatus)")
+            return false
+        }
 
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: identifier)
         let registerStatus = RegisterEventHotKey(
