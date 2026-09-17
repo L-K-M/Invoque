@@ -29,10 +29,12 @@ final class WebSource: ItemSource {
 
     /// Percent-encodes for a single `q=` value. `urlQueryAllowed` is wrong
     /// here: it leaves `&`, `+`, `=`, and `?` intact, which would split or
-    /// corrupt the parameter. Only unreserved characters pass through, so the
-    /// resulting `URL(string:)` cannot fail on encoding grounds.
+    /// corrupt the parameter. Only RFC 3986 unreserved characters pass
+    /// through — `CharacterSet.alphanumerics` would wrongly let non-ASCII
+    /// letters through unencoded — so the resulting `URL(string:)` cannot
+    /// fail on encoding grounds.
     private static func encode(_ query: String) -> String? {
-        var allowed = CharacterSet.alphanumerics
+        var allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
         allowed.insert(charactersIn: "-._~")
         return query.addingPercentEncoding(withAllowedCharacters: allowed)
     }

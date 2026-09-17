@@ -49,9 +49,12 @@ enum FuzzyMatcher {
     /// | Each skipped character between matches | -2 |
     /// | Candidate length | -1 per 4 characters |
     ///
-    /// Matching is greedy left-to-right in a single pass over the candidate;
-    /// the only allocations are lowercased copies of the inputs, so the
-    /// per-keystroke cost stays flat.
+    /// Matching is greedy left-to-right in a single pass over the candidate —
+    /// a known tradeoff: it can score a scattered early alignment lower than
+    /// a tighter run appearing later in the string (fzf refines with a
+    /// backward pass; revisit if ranking feels off). The only allocations
+    /// are lowercased copies of the inputs, so the per-keystroke cost stays
+    /// flat.
     static func score(_ query: String, candidate: String) -> Int? {
         guard !query.isEmpty, !candidate.isEmpty else { return nil }
 
@@ -87,7 +90,10 @@ enum FuzzyMatcher {
             if Self.isWordStart(matchAt, lowered: loweredCandidate, raw: rawCandidate, shapesMatch: shapesMatch) {
                 total += Self.wordStartBonus
             }
-            if queryIndex < rawQuery.count, matchAt < rawCandidate.count,
+            // Case bonus needs the same 1:1 grapheme alignment as the
+            // camelCase check: when lowercased() reshaped either side
+            // (e.g. "İ"), raw and lowered indexes no longer correspond.
+            if shapesMatch, rawQuery.count == queryChars.count,
                rawQuery[queryIndex] == rawCandidate[matchAt] {
                 total += Self.caseBonus
             }

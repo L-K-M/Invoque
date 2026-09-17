@@ -11,7 +11,9 @@ import Foundation
 /// and the 20-point ceiling means frecency breaks ties without beating a
 /// clearly better text match on its own.
 ///
-/// Not thread-safe: record and score from one thread (the panel's).
+/// `entries` is guarded by `lock`, so a background caller cannot race the
+/// panel's record/score — the single-thread contract is enforced, not
+/// assumed.
 final class Frecency {
 
     // MARK: Types
@@ -48,6 +50,7 @@ final class Frecency {
     // MARK: State
 
     private let defaults: UserDefaults
+    private let lock = NSLock()
     private var entries: [String: Entry]
 
     // MARK: Init
@@ -63,18 +66,22 @@ final class Frecency {
     /// Records a selection. Persists immediately; picks are rare (one per
     /// Return) so a write per pick is cheaper than a timer.
     func record(_ itemID: String) {
+        lock.lock()
         var entry = entries[itemID] ?? Entry(visits: 0, lastUsed: 0)
         entry.visits += 1
         entry.lastUsed = Date().timeIntervalSince1970
         entries[itemID] = entry
         evictIfNeeded()
         save()
+        lock.unlock()
     }
 
     // MARK: Scoring
 
     /// Bounded boost for `itemID`, or 0 for never-recorded ids.
     func score(_ itemID: String) -> Double {
+        lock.lock()
+        defer { lock.unlock() }
         guard let entry = entries[itemID] else { return 0 }
         let daysSinceUse = max(0, (Date().timeIntervalSince1970 - entry.lastUsed) / Self.secondsPerDay)
         let decay = max(

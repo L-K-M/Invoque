@@ -32,6 +32,19 @@ final class CalculatorSourceTests: XCTestCase {
         XCTAssertEqual(items.first?.title, "= 6")
     }
 
+    func testLeadingFunctionExpression() {
+        // A function-first expression is natural calculator input.
+        let items = source.items(matching: "sqrt(9)")
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.title, "= 3")
+    }
+
+    func testBareFunctionNameRejected() {
+        // "exp" passes the prefilter (it prefixes a known function) but
+        // never parses without parens — no row, no false positives.
+        XCTAssertTrue(source.items(matching: "exp").isEmpty)
+    }
+
     func testSurroundingWhitespaceIgnored() {
         let items = source.items(matching: "  2 + 2 ")
         XCTAssertEqual(items.count, 1)
@@ -71,14 +84,14 @@ final class CalculatorSourceTests: XCTestCase {
     }
 
     func testMultiArgumentCallRejected() {
-        // Only single-argument calls evaluate, so an unknown multi-arg
-        // selector can never reach NSExpression and raise.
-        XCTAssertTrue(source.items(matching: "2+pow(2,3)").isEmpty)
+        // Only single-argument functions are implemented, and the comma has
+        // no token, so multi-argument calls fail tokenizing.
+        XCTAssertTrue(source.items(matching: "2+sqrt(2,3)").isEmpty)
     }
 
     func testUndocumentedOperatorsDeclined() {
-        // `%` and `**` read as math but are not in NSExpression's documented
-        // grammar; declining them is safer than risking an exception.
+        // `%` passes the charset gate but has no token, and `**` fails to
+        // parse; declining them beats guessing at a meaning.
         XCTAssertTrue(source.items(matching: "10%3").isEmpty)
         XCTAssertTrue(source.items(matching: "2**3").isEmpty)
     }

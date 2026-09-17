@@ -3,23 +3,27 @@ import XCTest
 
 final class SearchModelTests: XCTestCase {
 
-    /// In-memory source with canned items for aggregation tests.
+    /// In-memory source with canned items for aggregation tests. Records
+    /// the queries it receives so forwarding is verifiable.
     private final class StubSource: ItemSource {
         var stubbedItems: [Item] = []
-        func items(matching query: String) -> [Item] { stubbedItems }
+        private(set) var receivedQueries: [String] = []
+        func items(matching query: String) -> [Item] {
+            receivedQueries.append(query)
+            return stubbedItems
+        }
     }
 
     private var suiteName: String!
     private var defaults: UserDefaults!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() throws {
+        try super.setUp()
         suiteName = "InvoqueTests.SearchModel.\(UUID().uuidString)"
-        guard let suite = UserDefaults(suiteName: suiteName) else {
-            XCTFail("Could not create test UserDefaults suite")
-            return
-        }
-        defaults = suite
+        defaults = try XCTUnwrap(
+            UserDefaults(suiteName: suiteName),
+            "Could not create test UserDefaults suite"
+        )
     }
 
     override func tearDown() {
@@ -61,7 +65,30 @@ final class SearchModelTests: XCTestCase {
         let second = StubSource()
         second.stubbedItems = [Self.appItem(id: "app:terminal", title: "Terminal")]
         let results = makeModel(sources: [first, second]).results(for: "r")
+        XCTAssertEqual(results.count, 2)
         XCTAssertEqual(Set(results.map { $0.id }), Set(["app:safari", "app:terminal"]))
+        XCTAssertEqual(first.receivedQueries, ["r"])
+        XCTAssertEqual(second.receivedQueries, ["r"])
+    }
+
+    func testDuplicateIdsAcrossSourcesCollapse() {
+        let first = StubSource()
+        first.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
+        let second = StubSource()
+        second.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
+        let results = makeModel(sources: [first, second]).results(for: "safari")
+        XCTAssertEqual(results.count, 1)
+    }
+
+    func testDuplicatePinnedIdsCollapse() {
+        // Pinned rows bypass the fuzzy dedupe, so they get their own.
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "calc:2+2", title: "= 4"),
+            Self.appItem(id: "calc:2+2", title: "= 4"),
+        ]
+        let results = makeModel(sources: [source]).results(for: "2+2")
+        XCTAssertEqual(results.count, 1)
     }
 
     func testNonMatchingItemsFiltered() {
@@ -83,6 +110,36 @@ final class SearchModelTests: XCTestCase {
         model.recordSelection(second)
         let results = model.results(for: "dup")
         XCTAssertEqual(results.first?.id, "app:second")
+    }
+
+    func testRepeatedSelectionsPromoteItem() {
+        // "Notes" and "Notion" score identically for "no" apart from the
+        // length divisor, which rounds equal — so the recorded pick wins.
+        let source = StubSource()
+        let notes = Self.appItem(id: "app:notes", title: "Notes")
+        let notion = Self.appItem(id: "app:notion", title: "Notion")
+        source.stubbedItems = [notes, notion]
+        let model = makeModel(sources: [source])
+        model.recordSelection(notion)
+        model.recordSelection(notion)
+        XCTAssertEqual(model.results(for: "no").first?.id, "app:notion")
+    }
+
+    func testSelectionOfPinnedRowsIsNotRecorded() {
+        // web:/calc: ids embed the raw query and are never fuzzy-scored —
+        // recording them would persist queries and evict real history.
+        let source = StubSource()
+        source.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
+        let model = makeModel(sources: [source, WebSource(), CalculatorSource()])
+        for item in model.results(for: "safari") where item.id.hasPrefix("web:") {
+            model.recordSelection(item)
+        }
+        for item in model.results(for: "2+2") where item.id.hasPrefix("calc:") {
+            model.recordSelection(item)
+        }
+        XCTAssertNil(defaults.data(forKey: "SearchFrecency.v1"))
+        model.recordSelection(Self.appItem(id: "app:safari", title: "Safari"))
+        XCTAssertNotNil(defaults.data(forKey: "SearchFrecency.v1"))
     }
 
     func testCalculatorOutranksFuzzyNoise() {

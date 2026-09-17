@@ -49,13 +49,19 @@ final class SearchModel {
 
         var calculatorHits: [Item] = []
         var webHits: [Item] = []
+        // Pinned rows never pass through `bestByID`, so they get their own
+        // dedupe — a misbehaving source emitting the same namespaced id
+        // twice must not produce two rows.
+        var pinnedIDs = Set<String>()
         var bestByID: [String: ScoredItem] = [:]
 
         for source in sources {
             for item in source.items(matching: trimmed) {
                 if item.id.hasPrefix(Item.calculatorIDPrefix) {
+                    guard pinnedIDs.insert(item.id).inserted else { continue }
                     calculatorHits.append(item)
                 } else if item.id.hasPrefix(Item.webIDPrefix) {
+                    guard pinnedIDs.insert(item.id).inserted else { continue }
                     webHits.append(item)
                 } else if let matchScore = FuzzyMatcher.score(trimmed, candidate: item.matchText) {
                     let combined = Double(matchScore) + frecency.score(item.id)
@@ -92,8 +98,13 @@ final class SearchModel {
     // MARK: Selection
 
     /// Records that the user picked `item`, so future ties break in its
-    /// favor.
+    /// favor. `web:` and `calc:` ids embed the raw query, are pinned
+    /// (never fuzzy-scored), and can therefore never be ranked by frecency
+    /// — recording them would persist queries for nothing and gradually
+    /// evict real history from the capped table.
     func recordSelection(_ item: Item) {
+        guard !item.id.hasPrefix(Item.webIDPrefix),
+              !item.id.hasPrefix(Item.calculatorIDPrefix) else { return }
         frecency.record(item.id)
     }
 }

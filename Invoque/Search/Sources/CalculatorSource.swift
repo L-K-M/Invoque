@@ -19,7 +19,9 @@ final class CalculatorSource: ItemSource {
     func items(matching query: String) -> [Item] {
         guard let evaluation = Self.evaluate(query) else { return [] }
         return [Item(
-            id: Item.calculatorIDPrefix + evaluation.expression,
+            // Whitespace is stripped from the id so `2 + 2` and `2+2` share
+            // one identity; the displayed title keeps the user's spacing.
+            id: Item.calculatorIDPrefix + evaluation.expression.filter { !$0.isWhitespace },
             title: "= \(evaluation.result)",
             subtitle: "Copy result to clipboard",
             icon: .symbol("equal.square"),
@@ -51,13 +53,15 @@ final class CalculatorSource: ItemSource {
     private static let maxExpressionLength = 200
 
     /// Cheap prefilter so plain words skip tokenizing: the query must open
-    /// with a digit, an opening paren, or a sign. Notably, a leading function
-    /// name (`sqrt(9)`) does not pass; functions only count mid-expression
-    /// (`2+sqrt(9)`).
+    /// with a digit, an opening paren, a sign — or a letter that begins a
+    /// known function name, so `sqrt(9)` counts. A bare function name with
+    /// no parens still parses to nothing, so words like `exp` yield no row;
+    /// `charsetIsValid` rejects names outside `knownFunctions`.
     private static func looksMathy(_ expression: String) -> Bool {
         guard !expression.isEmpty, expression.count <= Self.maxExpressionLength else { return false }
         guard let first = expression.first else { return false }
         return "0123456789(+-".contains(first)
+            || knownFunctions.contains { $0.hasPrefix(String(first)) }
     }
 
     /// Every letter run must be a known function name; every other character

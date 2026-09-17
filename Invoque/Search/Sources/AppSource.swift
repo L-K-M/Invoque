@@ -87,14 +87,18 @@ final class AppSource: ItemSource {
 
     /// The only folders consulted: system-wide, system, and per-user apps,
     /// plus the Utilities subfolders — Terminal, Disk Utility, and Activity
-    /// Monitor live there, not in the top-level folders.
+    /// Monitor live there, not in the top-level folders — and CoreServices'
+    /// app directory (Archive Utility et al). Order matters: `scan` is
+    /// first-directory-wins on duplicate bundle ids, so the per-user folder
+    /// leads — a user-installed copy shadows the system-wide one.
     private static var searchDirectories: [URL] {
         [
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
             URL(fileURLWithPath: "/Applications", isDirectory: true),
             URL(fileURLWithPath: "/Applications/Utilities", isDirectory: true),
             URL(fileURLWithPath: "/System/Applications", isDirectory: true),
             URL(fileURLWithPath: "/System/Applications/Utilities", isDirectory: true),
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
+            URL(fileURLWithPath: "/System/Library/CoreServices/Applications", isDirectory: true),
         ]
     }
 
