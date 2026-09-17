@@ -41,6 +41,19 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.scanErrors.first?.directory.lastPathComponent, "broken")
     }
 
+    func testWatchBudgetIsStoreWideAndFairlySplit() throws {
+        // Six commands, two nested files each; budget of 4 must give the
+        // first four commands one nested target apiece rather than zero
+        // (integer division) or everything (first-come-first-served).
+        for i in 0..<6 { try writeCommand("cmd\(i)", title: "Cmd \(i)") }
+        let store = CommandStore(rootPaths: [root.path], watchTargetLimit: 4)
+        store.scan()
+
+        XCTAssertEqual(store.commands.count, 6)
+        // 1 root + 6 command dirs + exactly 4 nested targets.
+        XCTAssertEqual(store.watchTargetCount, 11)
+    }
+
     func testMissingRootYieldsNoCommandsAndNoError() {
         let store = CommandStore(rootPaths: [root.appendingPathComponent("does-not-exist").path])
         store.scan()

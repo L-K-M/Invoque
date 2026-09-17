@@ -33,8 +33,10 @@ final class CommandStore {
     private let stateQueue = DispatchQueue(label: "com.invoque.commandstore")
 
     private let roots: [URL]
+    private let watchTargetLimit: Int
     private var _commands: [Command] = []
     private var _errors: [ScanError] = []
+    private var _watchTargetCount = 0
     private var sources: [DispatchSourceFileSystemObject] = []
     private var watchedTargets: [URL] = []
     private var pendingRescan: DispatchWorkItem?
@@ -45,10 +47,13 @@ final class CommandStore {
     private var watching = false
 
     /// `rootPaths` may use `~`; each is expanded to a file URL.
-    init(rootPaths: [String] = [CommandStore.defaultRootPath]) {
+    /// `watchTargetLimit` exists for tests; production uses the default.
+    init(rootPaths: [String] = [CommandStore.defaultRootPath],
+         watchTargetLimit: Int = CommandStore.maxWatchTargets) {
         roots = rootPaths.map {
             URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
         }
+        self.watchTargetLimit = watchTargetLimit
     }
 
     /// The most recent scan's commands, sorted by title.
@@ -56,6 +61,10 @@ final class CommandStore {
 
     /// Directories that failed to load in the most recent scan.
     var scanErrors: [ScanError] { stateQueue.sync { _errors } }
+
+    /// How many watch targets the most recent scan collected — the fd
+    /// budget in action, exposed for tests.
+    var watchTargetCount: Int { stateQueue.sync { _watchTargetCount } }
 
     deinit {
         // Cancel handlers close the watched descriptors.
@@ -94,7 +103,7 @@ final class CommandStore {
         var watchTargets: [URL] = []
         // One store-wide budget: every target holds an fd, and the total —
         // not the per-command count — is what the process limit sees.
-        var watchBudget = Self.maxWatchTargets
+        var watchBudget = watchTargetLimit
         let fileManager = FileManager.default
 
         for root in roots {
@@ -131,10 +140,14 @@ final class CommandStore {
                 // count are capped — every target is one open fd, and a
                 // vendored node_modules would otherwise exhaust them. The
                 // remaining budget is split evenly across commands left to
-                // scan, so one deep tree can't leave later commands with
-                // no watchers at all (the directory itself is already
-                // appended unconditionally above).
-                let share = watchBudget / max(commandDirs.count - index, 1)
+                // scan — with at least one nested target each while any
+                // budget remains, so integer division can't starve early
+                // commands down to zero when budget < command count (the
+                // directory itself is already appended unconditionally).
+                let remaining = max(commandDirs.count - index, 1)
+                let share = watchBudget > 0
+                    ? min(max(watchBudget / remaining, 1), watchBudget)
+                    : 0
                 var slice = share
                 watchTargets.append(contentsOf: Self.watchTargets(
                     under: entry, fileManager: fileManager, depth: 0,
@@ -163,6 +176,7 @@ final class CommandStore {
         let changed = outcome.commands != _commands
         _commands = outcome.commands
         _errors = outcome.errors
+        _watchTargetCount = outcome.watchTargets.count
         if watching, outcome.watchTargets != watchedTargets {
             rebuildWatchers(outcome.watchTargets)
         }
