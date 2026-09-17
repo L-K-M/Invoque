@@ -10,7 +10,12 @@ enum ActionPerformer {
         switch action {
         case .openApp(let url):
             NSWorkspace.shared.openApplication(at: url,
-                                               configuration: NSWorkspace.OpenConfiguration())
+                                               configuration: NSWorkspace.OpenConfiguration()) { _, error in
+                if let error {
+                    NSLog("Invoque: failed to open app at %@: %@",
+                          url.path, error.localizedDescription)
+                }
+            }
         case .openURL(let url):
             NSWorkspace.shared.open(url)
         case .copyText(let text):

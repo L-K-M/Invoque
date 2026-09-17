@@ -80,6 +80,23 @@ final class PanelModelTests: XCTestCase {
         XCTAssertTrue(model.results.isEmpty)
     }
 
+    func testRefreshResultsWithUnchangedDataKeepsSelection() {
+        // A background rescan returning identical rows must not reset the
+        // selection the user already moved off the top row.
+        let source = StubSource(stubbed: [
+            Self.appItem(id: "app:one", title: "Alpha"),
+            Self.appItem(id: "app:two", title: "Amber"),
+        ])
+        let model = PanelModel()
+        model.searchModel = SearchModel(sources: [source],
+                                        frecency: Frecency(defaults: defaults))
+        model.query = "a"
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.selectedRow?.id, "app:two")
+        model.refreshResults()
+        XCTAssertEqual(model.selectedRow?.id, "app:two")
+    }
+
     // MARK: Submit
 
     func testSubmitHandsSelectedRowToCallback() {

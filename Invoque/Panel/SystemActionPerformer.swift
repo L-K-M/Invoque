@@ -39,6 +39,14 @@ enum SystemActionPerformer {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
+        // A denied Automation consent exits osascript non-zero — without
+        // this the restart/shutdown no-ops with zero feedback anywhere.
+        process.terminationHandler = { process in
+            if process.terminationStatus != 0 {
+                NSLog("Invoque: system action %@ exited with status %d",
+                      path, Int(process.terminationStatus))
+            }
+        }
         do {
             try process.run()
         } catch {
