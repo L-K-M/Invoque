@@ -80,18 +80,17 @@ final class AppSource: ItemSource {
     // MARK: Scanning
 
     /// The only folders consulted: system-wide, system, and per-user apps,
-    /// plus the Utilities subfolders — Terminal, Disk Utility, and Activity
-    /// Monitor live there, not in the top-level folders — and CoreServices'
-    /// app directory (Archive Utility et al). Order matters: `scan` is
+    /// and CoreServices' app directory (Archive Utility et al). The
+    /// Utilities subfolders are reached by the recursive walks — an
+    /// explicit entry would just re-scan them into `seenIDs`. Order matters:
+    /// `scan` is
     /// first-directory-wins on duplicate bundle ids, so the per-user folder
     /// leads — a user-installed copy shadows the system-wide one.
     private static var searchDirectories: [URL] {
         [
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
             URL(fileURLWithPath: "/Applications", isDirectory: true),
-            URL(fileURLWithPath: "/Applications/Utilities", isDirectory: true),
             URL(fileURLWithPath: "/System/Applications", isDirectory: true),
-            URL(fileURLWithPath: "/System/Applications/Utilities", isDirectory: true),
             URL(fileURLWithPath: "/System/Library/CoreServices/Applications", isDirectory: true),
         ]
     }
@@ -111,8 +110,16 @@ final class AppSource: ItemSource {
         ) else {
             return []
         }
-        var items: [Item] = []
+        // Sort before dedup: enumerator order is filesystem order and not
+        // stable across scans, so the survivor among same-bundle-id apps
+        // (real app vs. stale backup copy) must not flip between reloads.
+        var urls: [URL] = []
         for case let url as URL in enumerator where url.pathExtension.lowercased() == "app" {
+            urls.append(url)
+        }
+        urls.sort { $0.path < $1.path }
+        var items: [Item] = []
+        for url in urls {
             let item = Self.item(for: url)
             guard seenIDs.insert(item.id).inserted else { continue }
             items.append(item)
@@ -135,7 +142,9 @@ final class AppSource: ItemSource {
         } else {
             title = fileName
         }
-        let identifier = bundle?.bundleIdentifier ?? bundleURL.path
+        // An empty CFBundleIdentifier (malformed/ad-hoc bundles) collides
+        // across apps, so it falls back to the path like a missing key.
+        let identifier = (bundle?.bundleIdentifier).flatMap { $0.isEmpty ? nil : $0 } ?? bundleURL.path
         return Item(
             id: Item.appIDPrefix + identifier,
             title: title,

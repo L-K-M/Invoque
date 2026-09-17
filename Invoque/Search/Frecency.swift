@@ -11,9 +11,11 @@ import Foundation
 /// and the 20-point ceiling means frecency breaks ties without beating a
 /// clearly better text match on its own.
 ///
-/// `entries` is guarded by `lock`, so a background caller cannot race the
-/// panel's record/score — the single-thread contract is enforced, not
-/// assumed.
+/// `entries` is guarded by `lock`, so callers cannot race this instance's
+/// record/score. Persistence is a whole-dictionary snapshot with
+/// last-writer-wins semantics: keep one `Frecency` per defaults suite and
+/// route any history reset through it — concurrent instances over one key
+/// silently clobber each other.
 final class Frecency {
 
     // MARK: Types
@@ -95,7 +97,14 @@ final class Frecency {
 
     private static func load(from defaults: UserDefaults) -> [String: Entry] {
         guard let data = defaults.data(forKey: Self.storageKey) else { return [:] }
-        return (try? JSONDecoder().decode([String: Entry].self, from: data)) ?? [:]
+        do {
+            return try JSONDecoder().decode([String: Entry].self, from: data)
+        } catch {
+            // `try?` here would silently erase all learned ranking history on
+            // the next save; at least make the corruption observable in debug.
+            assertionFailure("SearchFrecency.v1 store corrupted; resetting. \(error)")
+            return [:]
+        }
     }
 
     private func save() {
