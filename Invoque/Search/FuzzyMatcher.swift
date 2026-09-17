@@ -22,7 +22,8 @@ enum FuzzyMatcher {
     private static let prefixBonus = 25
     /// Bonus for same letter, same case, so `Safari` beats `safari`.
     private static let caseBonus = 2
-    /// Cost per skipped character between matches: gaps hurt.
+    /// Cost per skipped character before the first match or between
+    /// matches: gaps hurt, and so does a late start.
     private static let gapPenalty = 2
     /// Length divisor: one point off per four candidate characters, so short
     /// candidates win near-ties (`Mail` beats `Mailmate` for `mail`).
@@ -46,7 +47,7 @@ enum FuzzyMatcher {
     /// | Word start (position 0, after a separator, camelCase hump) | +12 |
     /// | Candidate starts with the whole query | +25 |
     /// | Same case on a matched character | +2 |
-    /// | Each skipped character between matches | -2 |
+    /// | Each skipped character (leading or between matches) | -2 |
     /// | Candidate length | -1 per 4 characters |
     ///
     /// Matching is greedy left-to-right in a single pass over the candidate —
