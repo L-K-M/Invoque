@@ -35,7 +35,12 @@ final class PanelModel: ObservableObject {
                   subtitle: "Fall back to searching the web for the whole query",
                   iconName: "globe"),
     ] {
-        didSet { clampSelection() }
+        didSet {
+            // A replaced list is a new result set: restart at the top row —
+            // Spotlight-style — rather than keeping an index that now names
+            // an unrelated row.
+            selection = 0
+        }
     }
 
     @Published var selection = 0
@@ -73,14 +78,5 @@ final class PanelModel: ObservableObject {
     /// `onSubmit`.
     func submit() {
         onSubmit?(selectedRow)
-    }
-
-    private func clampSelection() {
-        // A shrunken or emptied list must never leave the selection pointing
-        // past the last row (or at a negative index).
-        let upperBound = max(0, results.count - 1)
-        if selection > upperBound {
-            selection = upperBound
-        }
     }
 }

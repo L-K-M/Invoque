@@ -57,6 +57,8 @@ final class PanelGeometryTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(origin.x, visibleFrame.minX)
         XCTAssertGreaterThanOrEqual(origin.y, visibleFrame.minY)
+        XCTAssertLessThanOrEqual(origin.x, visibleFrame.maxX)
+        XCTAssertLessThanOrEqual(origin.y, visibleFrame.maxY)
     }
 
     func testShortDisplayClampsPanelToVisibleBottom() {

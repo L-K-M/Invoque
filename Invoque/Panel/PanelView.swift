@@ -52,6 +52,9 @@ struct PanelView: View {
                 onDown: { model.moveSelection(by: 1) },
                 onReturn: { model.submit() }
             )
+            // The representable's intrinsic size hugs the placeholder —
+            // claim the row's width so the field doesn't resize per keystroke.
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -71,6 +74,10 @@ struct PanelView: View {
                                           isSelected: model.selectedRow?.id == row.id)
                                 .id(row.id)
                                 .onTapGesture {
+                                    model.select(row)
+                                    model.submit()
+                                }
+                                .accessibilityAction {
                                     model.select(row)
                                     model.submit()
                                 }
@@ -143,7 +150,7 @@ private struct ResultRowView: View {
         .contentShape(RoundedRectangle(cornerRadius: Metrics.rowCornerRadius,
                                        style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
     }
 }
 

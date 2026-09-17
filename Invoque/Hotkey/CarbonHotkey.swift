@@ -34,7 +34,7 @@ final class CarbonHotkey {
         )
 
         let handlerCallback: EventHandlerUPP = { _, event, userData in
-            guard let userData, let event else { return noErr }
+            guard let userData, let event else { return OSStatus(eventNotHandledErr) }
             let me = Unmanaged<CarbonHotkey>.fromOpaque(userData).takeUnretainedValue()
 
             var pressedID = EventHotKeyID()
@@ -48,9 +48,14 @@ final class CarbonHotkey {
                 &pressedID
             )
 
-            if pressedID.signature == CarbonHotkey.signature && pressedID.id == me.identifier {
-                DispatchQueue.main.async { me.onPressed?() }
+            // Claim only our own hotkey: handlers on the same target run in
+            // reverse install order and the first `noErr` swallows the event,
+            // so returning it for a foreign id would break a second instance.
+            guard pressedID.signature == CarbonHotkey.signature,
+                  pressedID.id == me.identifier else {
+                return OSStatus(eventNotHandledErr)
             }
+            DispatchQueue.main.async { me.onPressed?() }
             return noErr
         }
 

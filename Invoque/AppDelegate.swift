@@ -121,6 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // already the revert target so no further revert happens.
             let fallback = registeredCombination ?? .default
             if preferences.summonHotkey != fallback {
+                // TODO(settings UI): surface this revert (e.g. a
+                // `summonHotkeyRegistrationFailed` flag on Preferences) so a
+                // conflicting chord isn't discarded without feedback.
                 preferences.summonHotkey = fallback
             }
             return

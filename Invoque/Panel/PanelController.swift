@@ -63,6 +63,16 @@ final class PanelController: NSObject {
         panel.makeKey()
         if let field = panel.preferredFirstResponder {
             panel.makeFirstResponder(field)
+        } else {
+            // On the very first summon the SwiftUI hierarchy may not have
+            // attached yet, so `preferredFirstResponder` is still nil.
+            // SearchTextField.viewDidMoveToWindow covers this too, but a
+            // next-runloop retry keeps focus deterministic either way.
+            DispatchQueue.main.async { [weak panel] in
+                if let field = panel?.preferredFirstResponder {
+                    panel?.makeFirstResponder(field)
+                }
+            }
         }
     }
 
