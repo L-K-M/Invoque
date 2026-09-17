@@ -15,6 +15,7 @@
 # Usage: scripts/release.sh [X.Y[.Z]] [--push]
 # Shared engine: https://github.com/L-K-M/release-tool (this stub only sets config).
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
 export RELEASE_APP_NAME="Invoque"
 export RELEASE_KIND="xcode"
@@ -28,4 +29,7 @@ command -v "$BIN" >/dev/null 2>&1 || {
   echo "error: lkm-release not found — clone https://github.com/L-K-M/release-tool and run ./install.sh" >&2
   exit 1
 }
-exec "$BIN" "$@"
+# ${1+"$@"}: bash 3.2 (macOS system bash) treats "$@" as unbound under
+# `set -u` when there are no positional parameters — the documented
+# no-arg invocation would abort here.
+exec "$BIN" ${1+"$@"}

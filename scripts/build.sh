@@ -7,6 +7,7 @@
 # Usage: scripts/build.sh [--clean] [--debug] [--run] [--install] [--zip] [--dmg]
 # Shared engine: https://github.com/L-K-M/release-tool (this stub only sets config).
 set -euo pipefail
+cd "$(dirname "$0")/.."
 export BUILD_APP_NAME="Invoque"
 export BUILD_KIND="xcode"
 export BUILD_XCODE_PROJECT="Invoque.xcodeproj"
@@ -17,4 +18,7 @@ command -v "$BIN" >/dev/null 2>&1 || {
   echo "error: lkm-build not found — clone https://github.com/L-K-M/release-tool and run ./install.sh" >&2
   exit 1
 }
-exec "$BIN" "$@"
+# ${1+"$@"}: bash 3.2 (macOS system bash) treats "$@" as unbound under
+# `set -u` when there are no positional parameters — the default no-arg
+# invocation would abort here.
+exec "$BIN" ${1+"$@"}

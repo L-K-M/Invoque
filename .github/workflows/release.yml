@@ -42,6 +42,19 @@ jobs:
       - name: Version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
+      # CI only covers pull requests and pushes to main — refuse to publish
+      # a tag whose commit main has never seen tested.
+      - name: Refuse to release a commit CI hasn't tested
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          status=$(gh api "repos/${{ github.repository }}/compare/main...$TAG" --jq .status)
+          case "$status" in
+            behind|identical) ;;
+            *) echo "::error::tag $TAG is not on main (compare: $status) — merge it and let CI test it first"; exit 1 ;;
+          esac
+
       - name: Build (Release, no Developer ID signing)
         run: |
           set -o pipefail
