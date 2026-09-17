@@ -90,6 +90,11 @@ jobs:
           trap - EXIT
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           echo "DMG=$DMG" >> "$GITHUB_ENV"
+          # Ship digests with the release: for an unsigned, un-notarized
+          # build a checksum file is the only way users (and the future
+          # updater) can confirm downloaded bytes match what CI built.
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$ZIP")" "$(basename "$DMG")" > SHA256SUMS.txt)
+          echo "SHA256SUMS=$RUNNER_TEMP/SHA256SUMS.txt" >> "$GITHUB_ENV"
 
       # Publish as a draft first: the byte-compare below is meaningless if the
       # assets are already public when the job dies between upload and verify.
@@ -101,6 +106,7 @@ jobs:
           files: |
             ${{ env.DMG }}
             ${{ env.ZIP }}
+            ${{ env.SHA256SUMS }}
           generate_release_notes: true
           body: |
             ### Unsigned build
