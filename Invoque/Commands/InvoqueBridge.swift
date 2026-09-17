@@ -23,7 +23,10 @@ enum InvoqueBridge {
     /// to the initial URL, and this session re-applies it to every redirect
     /// target rather than trusting URLSession's default cross-scheme policy.
     private static let httpSession: URLSession = {
-        URLSession(configuration: .default,
+        // `.ephemeral`: `.default` would share the app's cookie storage and
+        // URL cache, letting one command's fetch ride another's session —
+        // exactly the cross-command isolation this boundary exists to keep.
+        URLSession(configuration: .ephemeral,
                    delegate: HTTPRedirectGuard(),
                    delegateQueue: nil)
     }()
@@ -145,10 +148,15 @@ enum InvoqueBridge {
         // write in set/delete must be atomic across invocations, or two
         // concurrently running commands clobber each other's keys.
         let get: @convention(block) (String) -> JSValue? = { key in
-            storageQueue.sync {
-                guard let value = load()[key], let context = JSContext.current() else { return nil }
-                return JSValue(object: value, in: context)
-            }
+            // JSContext.current() is thread-local: inside storageQueue.sync
+            // the block can run on the queue's worker thread under
+            // contention, where it returns nil. Capture the context on the
+            // JS thread, do disk I/O inside the serial queue, then build
+            // the JSValue back on the JS thread.
+            guard let context = JSContext.current() else { return nil }
+            let stored = storageQueue.sync { load() }
+            guard let value = stored[key] else { return nil }
+            return JSValue(object: value, in: context)
         }
         let set: @convention(block) (String, JSValue) -> Void = { key, value in
             guard let object = value.toObject(),
