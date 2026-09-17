@@ -110,10 +110,12 @@ final class JSRuntime {
             return
         }
 
-        // evaluateScript doesn't throw; uncaught exceptions land here.
-        var exceptionMessage: String?
+        // evaluateScript doesn't throw; uncaught exceptions land here. The
+        // raw JSValue is captured — `toString()` inside the handler would
+        // render a thrown object as "[object Object]".
+        var exceptionValue: JSValue?
         context.exceptionHandler = { _, value in
-            exceptionMessage = value?.toString() ?? "Unknown JavaScript exception"
+            exceptionValue = value
         }
 
         installConsole(in: context, logs: logs)
@@ -133,7 +135,9 @@ final class JSRuntime {
                                                   callbackQueue: queue, fetches: fetches)
 
         _ = context.evaluateScript(Self.preprocess(source))
-        if let message = exceptionMessage {
+        if let exceptionValue {
+            let message = Self.describeReason(exceptionValue, in: context,
+                                              fallback: "Unknown JavaScript exception")
             box.complete(JSResult(output: .void, logs: logs.snapshot, error: .exception(message)))
             return
         }
@@ -153,7 +157,9 @@ final class JSRuntime {
             contextArgument = NSNull()
         }
         let returned: JSValue? = runFunction.call(withArguments: [args, contextArgument])
-        if let message = exceptionMessage {
+        if let exceptionValue {
+            let message = Self.describeReason(exceptionValue, in: context,
+                                              fallback: "Unknown JavaScript exception")
             box.complete(JSResult(output: .void, logs: logs.snapshot, error: .exception(message)))
             return
         }
@@ -172,14 +178,22 @@ final class JSRuntime {
             box.complete(JSResult(output: Self.decode(value), logs: logs.snapshot, error: nil))
         }
         let reject: @convention(block) (JSValue?) -> Void = { value in
-            let message = value?.toString() ?? "Promise rejected without a reason"
+            let message: String
+            if let context = JSContext.current() {
+                message = Self.describeReason(value, in: context,
+                                              fallback: "Promise rejected without a reason")
+            } else {
+                message = value?.toString() ?? "Promise rejected without a reason"
+            }
             box.complete(JSResult(output: .void, logs: logs.snapshot, error: .rejected(message)))
         }
         context.globalObject.setValue(fulfill, forProperty: "__invoque_fulfill")
         context.globalObject.setValue(reject, forProperty: "__invoque_reject")
         context.globalObject.setValue(returned, forProperty: "__invoque_pending")
         _ = context.evaluateScript("__invoque_pending.then(__invoque_fulfill, __invoque_reject)")
-        if let message = exceptionMessage {
+        if let exceptionValue {
+            let message = Self.describeReason(exceptionValue, in: context,
+                                              fallback: "Unknown JavaScript exception")
             box.complete(JSResult(output: .void, logs: logs.snapshot, error: .exception(message)))
         }
     }
@@ -196,6 +210,26 @@ final class JSRuntime {
             console.setValue(write, forProperty: level)
         }
         context.globalObject.setValue(console, forProperty: "console")
+    }
+
+    /// Renders a thrown or rejected value for an error message. `toString()`
+    /// on a plain object yields "[object Object]", so objects are
+    /// JSON-stringified and `Error` instances unwrap to their `message`.
+    private static func describeReason(_ value: JSValue?, in context: JSContext,
+                                       fallback: String) -> String {
+        guard let value, !value.isUndefined, !value.isNull else { return fallback }
+        context.globalObject.setValue(value, forProperty: "__invoque_reason_arg")
+        let rendered = context.evaluateScript("""
+            (function (v) {
+                if (v instanceof Error) return v.message || String(v);
+                if (typeof v === 'object') {
+                    try { return JSON.stringify(v); } catch (e) { return String(v); }
+                }
+                return String(v);
+            })(__invoque_reason_arg)
+            """)?.toString()
+        context.globalObject.deleteProperty("__invoque_reason_arg")
+        return rendered ?? value.toString()
     }
 
     /// JS-side helpers used by the runtime itself.

@@ -349,26 +349,23 @@ enum InvoqueBridge {
             } catch {
                 return ["code": -1, "stdout": "", "stderr": "invoque.shell: \(error.localizedDescription)"]
             }
-            // Drain both pipes concurrently — a full pipe buffer would block
-            // the child and deadlock waitUntilExit.
-            var stdout = Data()
-            var stderr = Data()
-            let group = DispatchGroup()
-            group.enter()
-            DispatchQueue.global().async {
-                stdout = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                group.leave()
+            // readabilityHandlers accumulate output as it arrives — a
+            // backgrounded grandchild inherits the pipes and holds them open
+            // past the shell's exit, so a wait-for-EOF read would hang
+            // forever (and a bounded one would lose partial output). EOF is
+            // signaled by an empty availableData chunk.
+            let drain = PipeDrain()
+            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                drain.appendStdout(handle.availableData)
             }
-            group.enter()
-            DispatchQueue.global().async {
-                stderr = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                group.leave()
+            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                drain.appendStderr(handle.availableData)
             }
             process.waitUntilExit()
-            // A backgrounded grandchild inherits our pipes and would hold
-            // readDataToEndOfFile open forever — bound the drain so the JS
-            // queue thread is released even when a daemon outlives the shell.
-            _ = group.wait(timeout: .now() + 5)
+            drain.waitUntilDrained(timeout: 5)
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
+            let (stdout, stderr) = drain.output
             return [
                 "code": Int(process.terminationStatus),
                 "stdout": String(decoding: stdout, as: UTF8.self),
@@ -411,6 +408,50 @@ enum InvoqueBridge {
         return arguments
             .map { ($0 as? JSValue)?.toString() ?? String(describing: $0) }
             .joined(separator: " ")
+    }
+}
+
+/// Accumulates a process's stdout/stderr from `readabilityHandler`
+/// callbacks and reports EOF (empty chunk) per pipe. `waitUntilDrained`
+/// returns at both EOFs or the deadline — a backgrounded grandchild
+/// inheriting the pipes means EOF may never come, but partial output is
+/// still returned.
+private final class PipeDrain {
+
+    private let lock = NSLock()
+    private var stdout = Data()
+    private var stderr = Data()
+    private var stdoutEOF = false
+    private var stderrEOF = false
+
+    func appendStdout(_ chunk: Data) {
+        lock.lock()
+        chunk.isEmpty ? (stdoutEOF = true) : stdout.append(chunk)
+        lock.unlock()
+    }
+
+    func appendStderr(_ chunk: Data) {
+        lock.lock()
+        chunk.isEmpty ? (stderrEOF = true) : stderr.append(chunk)
+        lock.unlock()
+    }
+
+    /// Polls until both pipes report EOF or `timeout` elapses.
+    func waitUntilDrained(timeout: TimeInterval) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            lock.lock()
+            let done = stdoutEOF && stderrEOF
+            lock.unlock()
+            if done { return }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+    }
+
+    var output: (stdout: Data, stderr: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (stdout, stderr)
     }
 }
 

@@ -88,6 +88,7 @@ final class JSRuntimeTests: XCTestCase {
     }
 
     func testNonErrorThrowSurfacesError() async throws {
+        // A thrown object JSON-stringifies — not "[object Object]".
         let command = try makeCommand(source: """
             async function run() { throw { code: 42 }; }
             """)
@@ -97,6 +98,18 @@ final class JSRuntimeTests: XCTestCase {
             return
         }
         XCTAssertTrue(message.contains("42"))
+    }
+
+    func testThrownStringSurfacesVerbatim() async throws {
+        let command = try makeCommand(source: """
+            async function run() { throw "plain string boom"; }
+            """)
+        let result = await runtime.run(command: command)
+        guard case .rejected(let message)? = result.error else {
+            XCTFail("expected .rejected, got \(String(describing: result.error))")
+            return
+        }
+        XCTAssertEqual(message, "plain string boom")
     }
 
     func testInfiniteLoopTimesOutAndCommandIsRefused() async throws {
