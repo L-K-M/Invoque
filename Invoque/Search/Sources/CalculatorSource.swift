@@ -3,13 +3,13 @@ import Foundation
 /// Offers one `= result` row with a copy action when the query is arithmetic,
 /// e.g. `2+2` offers `= 4`.
 ///
-/// Safety: `NSExpression.expressionValue` raises an Objective-C exception on
-/// input it cannot evaluate, and Swift cannot catch Objective-C exceptions:
-/// that would be a crash, not an error. So nothing reaches `NSExpression`
-/// unproven. Every query passes three gates: a mathy-shape prefilter, a
-/// character allowlist, and a full recursive-descent parse. Shell text,
-/// unknown identifiers, multi-argument calls, and unbalanced parens are never
-/// evaluated.
+/// Evaluation is a recursive-descent parser over a restricted arithmetic
+/// grammar — deliberately not `NSExpression`: that evaluator raises
+/// Objective-C exceptions on input it dislikes, which Swift cannot catch,
+/// and it evaluates integer literals with integer division (`1/0` yields 0,
+/// not an error). A hand parser computes `Double`s directly, so nothing
+/// uncatchable is ever invoked and `/0` surfaces as a non-finite result that
+/// offers no row.
 final class CalculatorSource: ItemSource {
 
     // MARK: ItemSource
@@ -39,8 +39,7 @@ final class CalculatorSource: ItemSource {
     private static func evaluate(_ query: String) -> Evaluation? {
         let expression = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard looksMathy(expression), charsetIsValid(expression) else { return nil }
-        guard let tokens = tokenize(expression), parsesAsComputation(tokens) else { return nil }
-        guard let value = evaluateWithNSExpression(expression) else { return nil }
+        guard let tokens = tokenize(expression), let value = parse(tokens) else { return nil }
         guard let display = displayString(for: value) else { return nil }
         return Evaluation(expression: expression, result: display)
     }
@@ -70,8 +69,8 @@ final class CalculatorSource: ItemSource {
 
     /// Digits, decimal point, the four basic operators, parens, comma, and
     /// spaces. `%` passes this gate (it reads as math) but is declined while
-    /// tokenizing: `NSExpression`'s format grammar does not document it, and
-    /// offering no row beats risking an Objective-C exception.
+    /// tokenizing: the evaluator's grammar does not include it, and
+    /// offering no row beats guessing at a meaning.
     private static let allowedPunctuation: Set<Character> = Set("0123456789.+-*/%(), ")
 
     private static func charsetIsValid(_ expression: String) -> Bool {
@@ -176,8 +175,7 @@ final class CalculatorSource: ItemSource {
 
     // MARK: Parsing
 
-    /// Recursive-descent proof that the tokens form one well-formed
-    /// expression. Grammar:
+    /// Recursive-descent evaluator for the token stream. Grammar:
     ///
     ///     expression := term (("+" | "-") term)*
     ///     term       := factor (("*" | "/") factor)*
@@ -192,53 +190,67 @@ final class CalculatorSource: ItemSource {
         var position = 0
         var sawComputation = false
 
-        /// Functions `NSExpression` evaluates with one argument. Other known
-        /// names (`sin`, `pow`, `mod`, ...) pass the charset gate but are
-        /// declined here: an unknown selector raises an Objective-C exception
-        /// at eval time, which Swift cannot catch.
-        static let evaluableFunctions: Set<String> = ["sqrt", "log", "ln", "exp", "abs"]
+        /// Single-argument functions the evaluator implements directly.
+        /// Other known names (`sin`, `pow`, `mod`, ...) pass the charset
+        /// gate but are declined here: an offered row must produce a value.
+        static let functions: [String: (Double) -> Double] = [
+            "sqrt": { $0.squareRoot() },
+            "log": { log10($0) },
+            "ln": { log($0) },
+            "exp": { exp($0) },
+            "abs": { abs($0) },
+        ]
 
-        mutating func parseExpression() -> Bool {
-            guard parseTerm() else { return false }
+        mutating func parseExpression() -> Double? {
+            guard var value = parseTerm() else { return nil }
             while position < tokens.count, tokens[position] == .plus || tokens[position] == .minus {
+                let subtract = tokens[position] == .minus
                 sawComputation = true
                 position += 1
-                guard parseTerm() else { return false }
+                guard let rhs = parseTerm() else { return nil }
+                value = subtract ? value - rhs : value + rhs
             }
-            return true
+            return value
         }
 
-        mutating func parseTerm() -> Bool {
-            guard parseFactor() else { return false }
+        mutating func parseTerm() -> Double? {
+            guard var value = parseFactor() else { return nil }
             while position < tokens.count, tokens[position] == .star || tokens[position] == .slash {
+                let divide = tokens[position] == .slash
                 sawComputation = true
                 position += 1
-                guard parseFactor() else { return false }
+                guard let rhs = parseFactor() else { return nil }
+                value = divide ? value / rhs : value * rhs
             }
-            return true
+            return value
         }
 
-        mutating func parseFactor() -> Bool {
-            guard position < tokens.count else { return false }
+        mutating func parseFactor() -> Double? {
+            guard position < tokens.count else { return nil }
             switch tokens[position] {
-            case .plus, .minus:
+            case .plus:
                 position += 1
                 return parseFactor()
-            case .number:
+            case .minus:
                 position += 1
-                return true
+                return parseFactor().map { -$0 }
+            case .number(let value):
+                position += 1
+                return value
             case .function(let name):
-                guard Self.evaluableFunctions.contains(name) else { return false }
+                guard let function = Self.functions[name] else { return nil }
                 position += 1
-                guard consume(.leftParen), parseExpression(), consume(.rightParen) else { return false }
+                guard consume(.leftParen), let argument = parseExpression(), consume(.rightParen) else {
+                    return nil
+                }
                 sawComputation = true
-                return true
+                return function(argument)
             case .leftParen:
                 position += 1
-                guard parseExpression(), consume(.rightParen) else { return false }
-                return true
+                guard let value = parseExpression(), consume(.rightParen) else { return nil }
+                return value
             default:
-                return false
+                return nil
             }
         }
 
@@ -249,23 +261,11 @@ final class CalculatorSource: ItemSource {
         }
     }
 
-    private static func parsesAsComputation(_ tokens: [Token]) -> Bool {
+    private static func parse(_ tokens: [Token]) -> Double? {
         var parser = Parser(tokens: tokens)
-        return parser.parseExpression() && parser.position == tokens.count && parser.sawComputation
-    }
-
-    // MARK: NSExpression
-
-    /// Hands the proven expression to `NSExpression`. Safe by construction:
-    /// the input is balanced single-operator arithmetic over known functions,
-    /// so neither the format parse nor the evaluation should find anything to
-    /// raise about.
-    private static func evaluateWithNSExpression(_ expression: String) -> Double? {
-        let parsed = NSExpression(format: expression)
-        guard let number = parsed.expressionValue(with: nil, context: nil) as? NSNumber else {
-            return nil
-        }
-        return number.doubleValue
+        guard let value = parser.parseExpression(),
+              parser.position == tokens.count, parser.sawComputation else { return nil }
+        return value
     }
 
     /// Display string for a result, or `nil` for non-finite values: `1/0` and
