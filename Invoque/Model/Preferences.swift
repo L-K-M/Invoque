@@ -34,6 +34,10 @@ final class Preferences: ObservableObject {
     @Published var launchAtLogin: Bool {
         didSet {
             guard !isSyncingLaunchAtLogin else { return }
+            // Persist as a fallback: init seeds from the authoritative
+            // SMAppService state, but that read can fail (unsigned/test
+            // contexts) and the stored value keeps the intent.
+            defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
             applyLaunchAtLogin(launchAtLogin)
         }
     }
