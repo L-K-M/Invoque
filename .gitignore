@@ -74,3 +74,6 @@ fastlane/test_output
 .idea/
 .codenomad/
 .vscode/
+
+# Agent reference copies (local only)
+.refs/
