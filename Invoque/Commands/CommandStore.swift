@@ -38,6 +38,10 @@ final class CommandStore {
     private var sources: [DispatchSourceFileSystemObject] = []
     private var watchedTargets: [URL] = []
     private var pendingRescan: DispatchWorkItem?
+    /// Bumped on `stateQueue` whenever a rescan is scheduled; an in-flight
+    /// pass compares its captured value before committing so a superseded
+    /// scan cannot land a stale snapshot last.
+    private var rescanGeneration = 0
     private var watching = false
 
     /// `rootPaths` may use `~`; each is expanded to a file URL.
@@ -92,8 +96,16 @@ final class CommandStore {
 
         for root in roots {
             // A not-yet-created commands root is a normal state, not an
-            // error — it simply contributes no commands.
-            guard fileManager.fileExists(atPath: root.path) else { continue }
+            // error — it simply contributes no commands. Watch the nearest
+            // existing ancestor instead so creating the root later (the
+            // first-run flow) still triggers a rescan.
+            guard fileManager.fileExists(atPath: root.path) else {
+                if let ancestor = Self.nearestExistingAncestor(of: root,
+                                                               fileManager: fileManager) {
+                    watchTargets.append(ancestor)
+                }
+                continue
+            }
             watchTargets.append(root)
 
             let entries: [URL]
@@ -109,14 +121,11 @@ final class CommandStore {
 
             for entry in entries where Self.isDirectory(entry) {
                 watchTargets.append(entry)
-                // Files directly inside (command.json, main.js) are watched
-                // too: a vnode watch on the directory only catches adds and
-                // removes, not in-place content edits.
-                let contents = (try? fileManager.contentsOfDirectory(
-                    at: entry,
-                    includingPropertiesForKeys: [.isDirectoryKey],
-                    options: [.skipsHiddenFiles])) ?? []
-                watchTargets.append(contentsOf: contents.filter { !Self.isDirectory($0) })
+                // Files inside (command.json, main.js, a nested lib/) are
+                // watched too: a vnode watch on the directory only catches
+                // adds and removes, not in-place content edits.
+                watchTargets.append(contentsOf: Self.watchTargets(under: entry,
+                                                                  fileManager: fileManager))
 
                 do {
                     commands.append(try Command(directory: entry))
@@ -153,6 +162,38 @@ final class CommandStore {
         (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
     }
 
+    /// The first ancestor of `url` that exists on disk — watching it means a
+    /// later-created commands root still fires a rescan.
+    private static func nearestExistingAncestor(of url: URL,
+                                                fileManager: FileManager) -> URL? {
+        var current = url.deletingLastPathComponent()
+        while current.path != "/" {
+            if fileManager.fileExists(atPath: current.path) { return current }
+            current = current.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    /// Every file and directory under `url`, recursively — a nested entry
+    /// like `lib/main.js` or an edit inside `lib/` must hot-reload too.
+    /// Symlinked directories are listed but not descended into, so a symlink
+    /// cycle cannot loop the walk forever.
+    private static func watchTargets(under url: URL, fileManager: FileManager) -> [URL] {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]) else { return [] }
+        var targets: [URL] = []
+        for item in contents {
+            targets.append(item)
+            let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            if values?.isDirectory == true && values?.isSymbolicLink != true {
+                targets.append(contentsOf: watchTargets(under: item, fileManager: fileManager))
+            }
+        }
+        return targets
+    }
+
     // MARK: Watching
 
     /// Starts watching roots and command directories, and performs an
@@ -166,6 +207,9 @@ final class CommandStore {
     func stopWatching() {
         stateQueue.sync {
             watching = false
+            // A pass already in flight can no longer commit after watching
+            // stops (and fire onChange for a store that is not watching).
+            rescanGeneration += 1
             pendingRescan?.cancel()
             pendingRescan = nil
             tearDownWatchers()
@@ -180,10 +224,18 @@ final class CommandStore {
     /// outlives its store has nothing to commit to anyway.
     private func scheduleRescan() {
         pendingRescan?.cancel()
+        rescanGeneration += 1
+        let generation = rescanGeneration
         let rescan = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let outcome = self.collectCommands()
-            self.stateQueue.async { self.commit(outcome) }
+            self.stateQueue.async {
+                // cancel() is a no-op once the item has started running, so
+                // a superseded pass must drop its own commit — otherwise a
+                // slow stale scan could overwrite a fresher one.
+                guard self.rescanGeneration == generation else { return }
+                self.commit(outcome)
+            }
         }
         pendingRescan = rescan
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.rescanDebounce, execute: rescan)

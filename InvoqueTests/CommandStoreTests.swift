@@ -48,15 +48,32 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertTrue(store.scanErrors.isEmpty)
     }
 
-    func testTildeExpansion() {
+    func testTildeExpansion() throws {
         // A UUID keeps the path unique across runs and machines — a fixed
         // name could collide with a real directory a developer happens to
-        // have, making the test read actual commands.
-        let store = CommandStore(rootPaths: ["~/invoque-test-\(UUID().uuidString)"])
-        // Not observable directly — but scanning must not crash, and the
-        // directory does not exist.
+        // have, making the test read actual commands. The command must
+        // actually load through the "~/…" spelling or the test proves
+        // nothing about expansion.
+        let name = "invoque-test-\(UUID().uuidString)"
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let commandDirectory = home.appendingPathComponent(name)
+            .appendingPathComponent("tilde")
+        defer { try? FileManager.default.removeItem(at: home.appendingPathComponent(name)) }
+        try FileManager.default.createDirectory(at: commandDirectory,
+                                                withIntermediateDirectories: true)
+        try """
+        { "schemaVersion": 1, "name": "tilde", "title": "Tilde", "runtime": "js", "entry": "main.js", "mode": "action" }
+        """.write(to: commandDirectory.appendingPathComponent("command.json"),
+                  atomically: true, encoding: .utf8)
+        try "async function run() {}".write(
+            to: commandDirectory.appendingPathComponent("main.js"),
+            atomically: true, encoding: .utf8)
+
+        let store = CommandStore(rootPaths: ["~/\(name)"])
         store.scan()
-        XCTAssertTrue(store.commands.isEmpty)
+
+        XCTAssertEqual(store.commands.map(\.name), ["tilde"])
+        XCTAssertTrue(store.scanErrors.isEmpty)
     }
 
     // MARK: Helpers

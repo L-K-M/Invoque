@@ -90,6 +90,29 @@ final class CommandManifestTests: XCTestCase {
         }
     }
 
+    func testRejectsNameWithTrailingNewline() throws {
+        // ICU's `$` matches before a trailing line terminator — the slug
+        // pattern must anchor with \z instead or "format-json\n" validates.
+        let manifest = try manifest(overriding: ["name": "format-json\n"])
+        let directory = try makeCommandDirectory()
+        XCTAssertThrowsError(try manifest.validate(in: directory)) { error in
+            XCTAssertEqual(error as? CommandManifest.ValidationError,
+                           .invalidName("format-json\n"))
+        }
+    }
+
+    func testDirectoryNamedManifestIsUnreadable() throws {
+        // command.json exists but is a directory — "unreadable", not
+        // "missing".
+        let directory = try makeCommandDirectory()
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("command.json"),
+            withIntermediateDirectories: false)
+        XCTAssertThrowsError(try Command(directory: directory)) { error in
+            XCTAssertEqual(error as? Command.LoadError, .manifestUnreadable)
+        }
+    }
+
     func testRejectsMissingEntryFile() throws {
         let manifest = try manifest(overriding: [:])
         let directory = try makeCommandDirectory(writeEntry: false)

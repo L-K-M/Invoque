@@ -26,9 +26,15 @@ struct Command: Equatable, Identifiable {
     init(manifest: CommandManifest, directory: URL) {
         self.manifest = manifest
         self.directory = directory.standardizedFileURL
-        entryURL = self.directory
+        let resolvedEntry = self.directory
             .appendingPathComponent(manifest.entry)
             .standardizedFileURL
+        // `validate(in:)` already enforces this; the precondition is the
+        // backstop for a future call site that skips validation — an entry
+        // is fed to the JS bridge and executed, so it must never escape.
+        precondition(resolvedEntry.path.hasPrefix(self.directory.path + "/"),
+                     "command entry escapes its directory: \(resolvedEntry.path)")
+        entryURL = resolvedEntry
     }
 
     // MARK: Loading
@@ -52,11 +58,16 @@ struct Command: Equatable, Identifiable {
     /// Loads `command.json` from `directory` and validates it. Throws
     /// `LoadError`, a `DecodingError`, or `CommandManifest.ValidationError`.
     init(directory: URL) throws {
+        // Standardize before validating so the path `validate` checks and
+        // the stored directory/entryURL are the same path.
+        let directory = directory.standardizedFileURL
         let manifestURL = directory.appendingPathComponent("command.json")
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: manifestURL.path, isDirectory: &isDirectory),
-              !isDirectory.boolValue else {
+        guard FileManager.default.fileExists(atPath: manifestURL.path, isDirectory: &isDirectory) else {
             throw LoadError.manifestMissing
+        }
+        guard !isDirectory.boolValue else {
+            throw LoadError.manifestUnreadable
         }
         guard let data = try? Data(contentsOf: manifestURL) else {
             throw LoadError.manifestUnreadable

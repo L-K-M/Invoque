@@ -19,6 +19,15 @@ enum InvoqueBridge {
     /// — see `installStorage`.
     private static let storageQueue = DispatchQueue(label: "com.invoque.storage")
 
+    /// Fetch session with a redirect guard: the http(s) allowlist is applied
+    /// to the initial URL, and this session re-applies it to every redirect
+    /// target rather than trusting URLSession's default cross-scheme policy.
+    private static let httpSession: URLSession = {
+        URLSession(configuration: .default,
+                   delegate: HTTPRedirectGuard(),
+                   delegateQueue: nil)
+    }()
+
     /// Installs `invoque` on `context`'s global object and returns it so the
     /// caller can also pass it as `ctx` to `run(args, ctx)`.
     ///
@@ -108,25 +117,20 @@ enum InvoqueBridge {
         guard let storage = JSValue(newObjectIn: context) else { return }
 
         let fileURL = dataDirectory.appendingPathComponent("storage.json")
-        /// nil until first access.
-        var cache: [String: Any]?
 
+        // Always reads disk — a per-invocation cache goes stale the moment
+        // another invocation writes, and persisting the stale snapshot would
+        // silently drop the other invocation's keys.
         func load() -> [String: Any] {
-            if let cache { return cache }
-            var loaded: [String: Any] = [:]
-            if let data = try? Data(contentsOf: fileURL),
-               let object = try? JSONSerialization.jsonObject(with: data),
-               let dictionary = object as? [String: Any] {
-                loaded = dictionary
-            }
-            cache = loaded
-            return loaded
+            guard let data = try? Data(contentsOf: fileURL),
+                  let object = try? JSONSerialization.jsonObject(with: data),
+                  let dictionary = object as? [String: Any] else { return [:] }
+            return dictionary
         }
 
-        func persist() {
-            guard let cache,
-                  JSONSerialization.isValidJSONObject(cache),
-                  let data = try? JSONSerialization.data(withJSONObject: cache) else { return }
+        func persist(_ stored: [String: Any]) {
+            guard JSONSerialization.isValidJSONObject(stored),
+                  let data = try? JSONSerialization.data(withJSONObject: stored) else { return }
             do {
                 try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
                 try data.write(to: fileURL, options: .atomic)
@@ -139,8 +143,7 @@ enum InvoqueBridge {
 
         // All storage I/O runs on a shared serial queue: the read-modify-
         // write in set/delete must be atomic across invocations, or two
-        // concurrently running commands clobber each other's keys (each
-        // holds its own `cache`, so last-writer-wins would drop keys).
+        // concurrently running commands clobber each other's keys.
         let get: @convention(block) (String) -> JSValue? = { key in
             storageQueue.sync {
                 guard let value = load()[key], let context = JSContext.current() else { return nil }
@@ -156,16 +159,14 @@ enum InvoqueBridge {
             storageQueue.sync {
                 var stored = load()
                 stored[key] = object
-                cache = stored
-                persist()
+                persist(stored)
             }
         }
         let delete: @convention(block) (String) -> Void = { key in
             storageQueue.sync {
                 var stored = load()
                 stored.removeValue(forKey: key)
-                cache = stored
-                persist()
+                persist(stored)
             }
         }
         storage.setValue(get, forProperty: "get")
@@ -226,9 +227,16 @@ enum InvoqueBridge {
                 if let method = options["method"] as? String {
                     request.httpMethod = method
                 }
-                if let headers = options["headers"] as? [String: String] {
+                // Values cross JSON.stringify, so a numeric header arrives
+                // as NSNumber — cast to [String: Any] and coerce, or one
+                // numeric header would silently drop the entire set.
+                if let headers = options["headers"] as? [String: Any] {
                     for (name, value) in headers {
-                        request.setValue(value, forHTTPHeaderField: name)
+                        if let string = value as? String {
+                            request.setValue(string, forHTTPHeaderField: name)
+                        } else if let number = value as? NSNumber {
+                            request.setValue(number.stringValue, forHTTPHeaderField: name)
+                        }
                     }
                 }
                 if let body = options["body"] as? String {
@@ -238,12 +246,19 @@ enum InvoqueBridge {
             // The task is registered so the runtime can cancel it when the
             // invocation completes or times out — a completion that fires
             // afterward would call JSValues whose context was abandoned.
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            let task = Self.httpSession.dataTask(with: request) { data, response, error in
                 // JSValues are single-threaded: the resolve must run back on
                 // the invocation's JS queue.
                 callbackQueue.async {
                     if let error {
                         _ = reject.call(withArguments: ["invoque.fetch: \(error.localizedDescription)"])
+                        return
+                    }
+                    // Defense in depth: if a redirect slipped past the
+                    // delegate onto a non-http(s) URL, refuse the body.
+                    if let finalScheme = (response?.url?.scheme)?.lowercased(),
+                       finalScheme != "http" && finalScheme != "https" {
+                        _ = reject.call(withArguments: ["invoque.fetch: redirect left http(s): '\(response?.url?.absoluteString ?? "")'"])
                         return
                     }
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -408,6 +423,19 @@ enum InvoqueBridge {
         return arguments
             .map { ($0 as? JSValue)?.toString() ?? String(describing: $0) }
             .joined(separator: " ")
+    }
+}
+
+/// Refuses to follow a 3xx redirect to a non-http(s) URL: the fetch
+/// allowlist is enforced on the initial URL, and this keeps a `Location`
+/// header from walking it outside the sandbox boundary.
+private final class HTTPRedirectGuard: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        let scheme = request.url?.scheme?.lowercased()
+        completionHandler(scheme == "http" || scheme == "https" ? request : nil)
     }
 }
 

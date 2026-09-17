@@ -120,12 +120,34 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertEqual(result.error, .timedOut)
 
         // A stuck script never releases its queue/context — the runtime
-        // must refuse to strand another one rather than run it again.
+        // must refuse to strand another one rather than run it again, and
+        // must say so instead of looking like a fresh timeout.
         let second = await runtime.run(command: command, timeout: 30)
         XCTAssertEqual(second.error, .timedOut)
+        XCTAssertTrue(second.logs.contains { $0.contains("disabled for the rest of the session") })
+    }
+
+    func testParkedPromiseTimeoutDoesNotBanCommand() async throws {
+        // A script that returns a never-resolving promise is parked, not
+        // wedged: its queue thread is free, so the timeout must not get the
+        // command banned for the session.
+        let command = try makeCommand(source: """
+            function run() { return new Promise(function () {}); }
+            """)
+        let result = await runtime.run(command: command, timeout: 0.5)
+        XCTAssertEqual(result.error, .timedOut)
+
+        try "function run() { return { title: \"healthy\" }; }".write(
+            to: command.entryURL, atomically: true, encoding: .utf8)
+        let second = await runtime.run(command: command)
+        XCTAssertNil(second.error)
+        XCTAssertEqual(second.title, "healthy")
     }
 
     func testUnreadableEntrySurfacesException() async throws {
+        // Root reads through permission bits — the test only works for an
+        // unprivileged process.
+        try XCTSkipIf(getuid() == 0, "chmod-based unreadable file is readable as root")
         let command = try makeCommand(source: """
             async function run() { return { title: "x" }; }
             """)
@@ -245,6 +267,28 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertEqual(second.title, "value")
     }
 
+    func testConcurrentStorageWritesKeepBothKeys() async throws {
+        // Two invocations writing different keys at once: whichever commits
+        // second must merge, not overwrite the other's key.
+        let command = try makeCommand(source: """
+            async function run(args) {
+                invoque.storage.set(args[0], args[1]);
+                return { title: "ok" };
+            }
+            """)
+        async let a = runtime.run(command: command, args: ["k1", "v1"])
+        async let b = runtime.run(command: command, args: ["k2", "v2"])
+        let (resultA, resultB) = await (a, b)
+        XCTAssertNil(resultA.error)
+        XCTAssertNil(resultB.error)
+
+        let data = try Data(contentsOf: directory.appendingPathComponent("data/storage.json"))
+        let stored = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: String])
+        XCTAssertEqual(stored["k1"], "v1")
+        XCTAssertEqual(stored["k2"], "v2")
+    }
+
     // MARK: Result decoding
 
     func testItemsDecode() async throws {
@@ -308,6 +352,28 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertEqual(
             JSRuntime.preprocess(source),
             #"const s = "export default"; globalThis.run = function run() {}"#)
+    }
+
+    func testPreprocessSkipsCallableFormInsideLiteral() {
+        // `export default function` inside a string must stay a string —
+        // rewriting it would corrupt the literal's contents.
+        let source = #"const s = "export default function() {}";"#
+        XCTAssertEqual(JSRuntime.preprocess(source), source)
+        let template = #"const s = `export default function() {}`;"#
+        XCTAssertEqual(JSRuntime.preprocess(template), template)
+    }
+
+    func testPreprocessSkipsCallableFormInsideComment() {
+        // A comment ahead of the real export must not consume the rewrite —
+        // the real declaration is still the one rewritten.
+        let source = "// export default function() {}\nexport default function run() {}"
+        XCTAssertEqual(
+            JSRuntime.preprocess(source),
+            "// export default function() {}\nglobalThis.run = function run() {}")
+        let block = "/* export default function() {} */\nexport default function run() {}"
+        XCTAssertEqual(
+            JSRuntime.preprocess(block),
+            "/* export default function() {} */\nglobalThis.run = function run() {}")
     }
 
     // MARK: Shell

@@ -13,7 +13,13 @@ final class JSRuntime {
     /// JavaScriptCore cannot interrupt a tight synchronous loop, so a stuck
     /// script may keep its queue's thread busy — the caller still gets
     /// `.timedOut` and later invocations are unaffected.
-    var defaultTimeout: TimeInterval
+    /// Lock-guarded: `run` reads it from arbitrary tasks.
+    var defaultTimeout: TimeInterval {
+        get { timeoutLock.lock(); defer { timeoutLock.unlock() }; return _defaultTimeout }
+        set { timeoutLock.lock(); _defaultTimeout = newValue; timeoutLock.unlock() }
+    }
+    private let timeoutLock = NSLock()
+    private var _defaultTimeout: TimeInterval
 
     /// Commands whose last invocation timed out while the script was still
     /// running. A stuck script never releases its queue thread or context,
@@ -24,7 +30,7 @@ final class JSRuntime {
     private var stuckCommands = Set<String>()
 
     init(defaultTimeout: TimeInterval = 10) {
-        self.defaultTimeout = defaultTimeout
+        self._defaultTimeout = defaultTimeout
     }
 
     private func markStuck(_ name: String) {
@@ -51,12 +57,15 @@ final class JSRuntime {
         // abandoned queue thread and context never come back, and filter
         // mode would strand another pair per keystroke.
         guard !isStuck(command.name) else {
-            return JSResult(output: .void, logs: [], error: .timedOut)
+            return JSResult(output: .void,
+                            logs: ["\(command.name) is disabled for the rest of the session — its last run exceeded the time limit"],
+                            error: .timedOut)
         }
         let logs = CommandLog()
         return await withCheckedContinuation { (continuation: CheckedContinuation<JSResult, Never>) in
             let box = CompletionBox(continuation: continuation)
             let fetches = FetchTaskRegistry()
+            let parked = InvocationParkedFlag()
             let effectiveTimeout = timeout ?? defaultTimeout
 
             // The timer deliberately runs off the JS queue: it must still
@@ -65,7 +74,10 @@ final class JSRuntime {
             // of every keystroke leaving a pending timer around.
             let timeoutWork = DispatchWorkItem { [weak self] in
                 let won = box.complete(JSResult(output: .void, logs: logs.snapshot, error: .timedOut))
-                if won { self?.markStuck(command.name) }
+                // Ban only a genuinely wedged script: one that merely exceeded
+                // the deadline while parked on a promise already released its
+                // queue thread and context, so re-running it strands nothing.
+                if won && !parked.isSet { self?.markStuck(command.name) }
             }
             box.onWin = { [weak timeoutWork] in
                 // Weak: box → onWin → timeoutWork → box would otherwise be a
@@ -82,6 +94,7 @@ final class JSRuntime {
             queue.async {
                 self.execute(command: command, args: args,
                              logs: logs, box: box, queue: queue, fetches: fetches)
+                parked.set()
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + effectiveTimeout, execute: timeoutWork)
         }
@@ -252,15 +265,21 @@ final class JSRuntime {
     /// Only the first `export default` that introduces a callable is
     /// rewritten — i.e. one followed by `function`, `async function`, `(`
     /// (arrow function) or a bare identifier (function reference). An
-    /// `export default` in a different position — including inside a string
-    /// literal — is left alone, and a remaining untransformed token fails to
-    /// parse as an ordinary script error rather than silently corrupting
-    /// string contents.
+    /// `export default` inside a string, template literal or comment is left
+    /// alone — the regex can't tell syntax from text, so a lightweight scan
+    /// marks literal/comment regions first. A remaining untransformed token
+    /// fails to parse as an ordinary script error rather than silently
+    /// corrupting string contents.
     static func preprocess(_ source: String) -> String {
         let pattern = #"\bexport\s+default\b"#
+        let opaque = opaqueRanges(in: source)
         var searchStart = source.startIndex
         while let range = source.range(of: pattern, options: .regularExpression,
                                        range: searchStart..<source.endIndex) {
+            if opaque.contains(where: { $0.contains(range.lowerBound) }) {
+                searchStart = range.upperBound
+                continue
+            }
             let rest = source[range.upperBound...]
                 .drop(while: { $0 == " " || $0 == "\t" || $0 == "\n" })
             if rest.hasPrefix("function") || rest.hasPrefix("async") || rest.hasPrefix("(")
@@ -270,6 +289,63 @@ final class JSRuntime {
             searchStart = range.upperBound
         }
         return source
+    }
+
+    /// Ranges of source text that are not executable code: `'…'`/`"…"`/
+    /// `` `…` `` literals and `//`/`/* */` comments. Deliberately a scanner,
+    /// not a parser — regex literals and `${}` nesting inside templates are
+    /// rare enough in commands that treating them approximately is fine; the
+    /// failure mode stays a syntax error, not corruption.
+    private static func opaqueRanges(in source: String) -> [Range<String.Index>] {
+        enum Region { case normal, single, double, template, lineComment, blockComment }
+        var ranges: [Range<String.Index>] = []
+        var region = Region.normal
+        var regionStart = source.startIndex
+        var i = source.startIndex
+
+        func closeOpaque(at end: String.Index) {
+            ranges.append(regionStart..<end)
+            region = .normal
+        }
+
+        while i < source.endIndex {
+            let c = source[i]
+            let next = source.index(after: i) < source.endIndex
+                ? source[source.index(after: i)] : nil
+            switch region {
+            case .normal:
+                switch c {
+                case "'": region = .single; regionStart = i
+                case "\"": region = .double; regionStart = i
+                case "`": region = .template; regionStart = i
+                case "/" where next == "/": region = .lineComment; regionStart = i
+                case "/" where next == "*": region = .blockComment; regionStart = i
+                default: break
+                }
+            case .single:
+                if c == "\\" { i = source.index(i, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex; continue }
+                if c == "'" { closeOpaque(at: source.index(after: i)) }
+            case .double:
+                if c == "\\" { i = source.index(i, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex; continue }
+                if c == "\"" { closeOpaque(at: source.index(after: i)) }
+            case .template:
+                if c == "\\" { i = source.index(i, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex; continue }
+                if c == "`" { closeOpaque(at: source.index(after: i)) }
+            case .lineComment:
+                if c == "\n" { closeOpaque(at: i) }
+            case .blockComment:
+                if c == "*" && next == "/" {
+                    let end = source.index(i, offsetBy: 2, limitedBy: source.endIndex) ?? source.endIndex
+                    closeOpaque(at: end)
+                    i = end
+                    continue
+                }
+            }
+            i = source.index(after: i)
+        }
+        // An unterminated literal/comment stays opaque to end-of-source.
+        if region != .normal { ranges.append(regionStart..<source.endIndex) }
+        return ranges
     }
 
     // MARK: Result decoding
@@ -349,4 +425,14 @@ private final class CompletionBox {
         continuation?.resume(returning: result)
         return continuation != nil
     }
+}
+
+/// Lock-guarded flag telling the timeout whether `execute` returned (the
+/// invocation is parked awaiting a promise and its queue thread is free) or
+/// the script is still running synchronously (queue thread held hostage).
+private final class InvocationParkedFlag {
+    private let lock = NSLock()
+    private var value = false
+    func set() { lock.lock(); value = true; lock.unlock() }
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
 }

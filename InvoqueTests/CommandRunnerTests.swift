@@ -45,7 +45,7 @@ final class CommandRunnerTests: XCTestCase {
         do {
             _ = try await runner.query(command: command, text: "x")
             XCTFail("expected query to throw")
-        } catch {
+        } catch is JSResult.Failure {
             // Expected — a script failure propagates as JSResult.Failure.
         }
     }

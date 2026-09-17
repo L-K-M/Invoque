@@ -133,7 +133,9 @@ struct CommandManifest: Codable, Equatable {
     }
 
     /// Lowercase slug — the name doubles as a directory-unique identifier.
-    private static let namePattern = "^[a-z0-9][a-z0-9_-]*$"
+    /// `\A`/`\z` rather than `^`/`$`: ICU's `$` still matches before a
+    /// trailing newline, which would let "format-json\n" slip through.
+    private static let namePattern = "\\A[a-z0-9][a-z0-9_-]*\\z"
 
     /// Declared permissions this build recognizes. Only meaningful after a
     /// successful `validate` — unknown values are dropped silently here.
