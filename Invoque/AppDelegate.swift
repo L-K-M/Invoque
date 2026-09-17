@@ -31,10 +31,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The menu-bar icon: the `command.bubble` glyph, rendered as a template
     /// image so the system tints it for light/dark menu bars automatically.
+    /// `command.bubble` is SF Symbols 5 (macOS 14+); on older systems the
+    /// lookup returns nil, so fall back to `text.bubble` (SF Symbols 1) —
+    /// an empty image would render the status item invisible.
     static func statusBarImage() -> NSImage {
         let image = NSImage(systemSymbolName: "command.bubble",
                             accessibilityDescription: "Invoque")?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+            ?? NSImage(systemSymbolName: "text.bubble",
+                       accessibilityDescription: "Invoque")
             ?? NSImage()
         image.isTemplate = true
         return image
