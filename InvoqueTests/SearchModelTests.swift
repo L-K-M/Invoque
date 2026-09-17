@@ -17,8 +17,8 @@ final class SearchModelTests: XCTestCase {
     private var suiteName: String!
     private var defaults: UserDefaults!
 
-    override func setUp() throws {
-        try super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         suiteName = "InvoqueTests.SearchModel.\(UUID().uuidString)"
         defaults = try XCTUnwrap(
             UserDefaults(suiteName: suiteName),
