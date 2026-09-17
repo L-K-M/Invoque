@@ -381,6 +381,11 @@ final class JSRuntimeTests: XCTestCase {
         // Division after postfix ++/-- is division, not a regex literal.
         let postfix = #"const pct = i++ / total; const s = "export default function() {}";"#
         XCTAssertEqual(JSRuntime.preprocess(postfix), postfix)
+        // Binary-then-unary is not postfix: `a - -/re/` opens a regex.
+        let unary = #"const r = a - -/re/; const s = "export default function() {}";"#
+        XCTAssertEqual(JSRuntime.preprocess(unary), unary)
+        let mixed = #"const r = i+-/re/; const s = "export default function() {}";"#
+        XCTAssertEqual(JSRuntime.preprocess(mixed), mixed)
     }
 
     func testPreprocessSkipsCallableFormInsideComment() {

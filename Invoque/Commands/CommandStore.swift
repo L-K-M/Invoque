@@ -122,16 +122,24 @@ final class CommandStore {
                 continue
             }
 
-            for entry in entries where Self.isDirectory(entry) {
+            let commandDirs = entries.filter { Self.isDirectory($0) }
+            for (index, entry) in commandDirs.enumerated() {
                 watchTargets.append(entry)
                 // Files inside (command.json, main.js, a nested lib/) are
                 // watched too: a vnode watch on the directory only catches
                 // adds and removes, not in-place content edits. Depth and
                 // count are capped — every target is one open fd, and a
-                // vendored node_modules would otherwise exhaust them.
+                // vendored node_modules would otherwise exhaust them. The
+                // remaining budget is split evenly across commands left to
+                // scan, so one deep tree can't leave later commands with
+                // no watchers at all (the directory itself is already
+                // appended unconditionally above).
+                let share = watchBudget / max(commandDirs.count - index, 1)
+                var slice = share
                 watchTargets.append(contentsOf: Self.watchTargets(
                     under: entry, fileManager: fileManager, depth: 0,
-                    budget: &watchBudget))
+                    budget: &slice))
+                watchBudget -= share - slice
 
                 do {
                     commands.append(try Command(directory: entry))

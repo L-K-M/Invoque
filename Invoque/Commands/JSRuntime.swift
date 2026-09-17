@@ -395,7 +395,12 @@ final class JSRuntime {
                     let d = source[j]
                     if d == " " || d == "\t" || d == "\n" || d == "\r"
                         || d == "\u{0B}" || d == "\u{0C}" { continue }
-                    if !sawIncDec && (d == "+" || d == "-") { sawIncDec = true; continue }
+                    // The paired sign must be immediately adjacent and the
+                    // same sign (`i++ / x`); `a - -/re/` and `i+-/x/` are
+                    // binary-then-unary operators and still open a regex.
+                    if !sawIncDec && d == c && j == source.index(before: i) {
+                        sawIncDec = true; continue
+                    }
                     return !(sawIncDec && (d.isLetter || d.isNumber
                                            || d == "_" || d == "$"
                                            || d == ")" || d == "]"))
