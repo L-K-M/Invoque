@@ -124,21 +124,23 @@ final class JSRuntime {
             return
         }
 
-        // Promise path: park the result in `then` callbacks. If the promise
-        // is already settled, JSC runs the callbacks in the microtask drain
-        // at the end of invokeMethod; otherwise a bridge async completion
-        // (e.g. fetch) resolves it later on this same queue.
-        let keepAlive: [JSValue?] = [returned, runFunction]
+        // Promise path: park the result in `then` callbacks. The native
+        // handlers are installed as globals via setValue — the same bridging
+        // path every `invoque.*` method uses — rather than passed inside an
+        // invokeMethod arguments array, where block-to-function bridging is
+        // unreliable and a non-callable argument makes `then` silently adopt
+        // the promise state (the invocation hangs until timeout).
         let fulfill: @convention(block) (JSValue?) -> Void = { value in
-            _ = keepAlive
             box.complete(JSResult(output: Self.decode(value), logs: logs.snapshot, error: nil))
         }
         let reject: @convention(block) (JSValue?) -> Void = { value in
-            _ = keepAlive
             let message = value?.toString() ?? "Promise rejected without a reason"
             box.complete(JSResult(output: .void, logs: logs.snapshot, error: .rejected(message)))
         }
-        _ = returned.invokeMethod("then", withArguments: [fulfill, reject])
+        context.globalObject.setValue(fulfill, forProperty: "__invoque_fulfill")
+        context.globalObject.setValue(reject, forProperty: "__invoque_reject")
+        context.globalObject.setValue(returned, forProperty: "__invoque_pending")
+        _ = context.evaluateScript("__invoque_pending.then(__invoque_fulfill, __invoque_reject)")
         if let message = exceptionMessage {
             box.complete(JSResult(output: .void, logs: logs.snapshot, error: .exception(message)))
         }
