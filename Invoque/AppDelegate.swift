@@ -106,9 +106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hotkey = CarbonHotkey(identifier: Self.summonHotkeyID)
         hotkey.onPressed = { [weak self] in self?.panelController.toggle() }
         guard hotkey.register(keyCode: combination.keyCode, modifiers: combination.modifiers) else {
-            // CarbonHotkey logged the failure; drop the reference so a later
-            // preference change can try again from a clean state.
-            summonHotkey = nil
+            // CarbonHotkey logged the failure; keep the previous working
+            // registration — a conflicting chord must not leave the app
+            // without any summon hotkey.
             return
         }
         summonHotkey = hotkey

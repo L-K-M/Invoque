@@ -87,10 +87,14 @@ final class Preferences: ObservableObject {
     }
 
     /// Unreadable or missing stored data falls back to the default — a
-    /// hand-edited defaults value must not brick summoning.
+    /// hand-edited defaults value must not brick summoning. A decoded value
+    /// with no modifiers is rejected too: `RegisterEventHotKey` accepts a
+    /// bare key, so `kVK_Space` + 0 would summon the panel on every space
+    /// press system-wide.
     private static func loadSummonHotkey(from defaults: UserDefaults) -> HotkeyCombination {
         guard let data = defaults.data(forKey: Key.summonHotkey),
-              let combination = try? JSONDecoder().decode(HotkeyCombination.self, from: data)
+              let combination = try? JSONDecoder().decode(HotkeyCombination.self, from: data),
+              combination.modifiers != 0
         else { return Default.summonHotkey }
         return combination
     }

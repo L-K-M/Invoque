@@ -45,4 +45,29 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertEqual(origin.y, visibleFrame.minY, accuracy: 0.001)
         XCTAssertEqual(origin.x, visibleFrame.minX, accuracy: 0.001)
     }
+
+    func testOversizedPanelStaysInsideVisibleFrame() {
+        // A panel wider than the screen and taller than the space below the
+        // top edge: the clamp keeps the origin inside the frame so as much of
+        // the panel as possible stays reachable.
+        let visibleFrame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let panelSize = NSSize(width: 900, height: 500)
+
+        let origin = PanelGeometry.panelOrigin(inVisibleFrame: visibleFrame, panelSize: panelSize)
+
+        XCTAssertGreaterThanOrEqual(origin.x, visibleFrame.minX)
+        XCTAssertGreaterThanOrEqual(origin.y, visibleFrame.minY)
+    }
+
+    func testShortDisplayClampsPanelToVisibleBottom() {
+        // Dock + menu bar leave a visible frame shorter than
+        // panelHeight + 25%: without the clamp the result list slides off
+        // the bottom of the screen.
+        let visibleFrame = NSRect(x: 0, y: 0, width: 680, height: 500)
+        let panelSize = NSSize(width: 680, height: 440)
+
+        let origin = PanelGeometry.panelOrigin(inVisibleFrame: visibleFrame, panelSize: panelSize)
+
+        XCTAssertEqual(origin.y, visibleFrame.minY, accuracy: 0.001)
+    }
 }

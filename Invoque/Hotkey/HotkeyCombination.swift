@@ -18,6 +18,8 @@ struct HotkeyCombination: Codable, Equatable {
 
     /// ⌥Space, the default summon hotkey. Carbon hotkeys need no TCC
     /// permission and ⌥Space is unclaimed by the system (PLAN.md §5).
+    /// Note this also intercepts ⌥Space used to type a non-breaking space in
+    /// other apps; users can rebind once the settings recorder lands.
     static let `default` = HotkeyCombination(keyCode: UInt32(kVK_Space),
                                              modifiers: UInt32(optionKey))
 }

@@ -62,6 +62,13 @@ final class PanelModel: ObservableObject {
         selection = ((selection + delta) % count + count) % count
     }
 
+    /// Selects `row` directly — mouse taps land here rather than moving the
+    /// index one step at a time.
+    func select(_ row: ResultRow) {
+        guard let index = results.firstIndex(of: row) else { return }
+        selection = index
+    }
+
     /// Hands the selected row (or `nil`, when there are no results) to
     /// `onSubmit`.
     func submit() {

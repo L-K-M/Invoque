@@ -56,23 +56,37 @@ struct PanelView: View {
     }
 
     private var resultList: some View {
-        ScrollView {
-            VStack(spacing: 6) {
-                if model.results.isEmpty {
-                    Text("No results")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
-                } else {
-                    ForEach(model.results) { row in
-                        ResultRowView(row: row,
-                                      isSelected: model.selectedRow?.id == row.id)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 6) {
+                    if model.results.isEmpty {
+                        Text("No results")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 24)
+                    } else {
+                        ForEach(model.results) { row in
+                            ResultRowView(row: row,
+                                          isSelected: model.selectedRow?.id == row.id)
+                                .id(row.id)
+                                .onTapGesture {
+                                    model.select(row)
+                                    model.submit()
+                                }
+                        }
                     }
                 }
+                .padding(.horizontal, Metrics.edgePadding)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, Metrics.edgePadding)
-            .padding(.vertical, 8)
+            // Arrow-key selection must keep the highlighted row visible.
+            // `.task(id:)` instead of `.onChange`: the non-deprecated
+            // onChange signature requires macOS 14 and we target 13.
+            .task(id: model.selection) {
+                guard let id = model.selectedRow?.id else { return }
+                proxy.scrollTo(id, anchor: .center)
+            }
         }
         .frame(maxHeight: .infinity)
     }
@@ -126,6 +140,8 @@ private struct ResultRowView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: Metrics.rowCornerRadius,
                                        style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
@@ -217,7 +233,9 @@ private final class SearchTextField: NSTextField {
             panel.preferredFirstResponder = self
         }
         // If the panel is already key (first summon), take focus immediately.
-        if window.isKeyWindow {
+        // Restricted to LauncherPanel so previews or other hosts don't lose
+        // their first responder to this field.
+        if window is LauncherPanel, window.isKeyWindow {
             window.makeFirstResponder(self)
         }
     }
