@@ -80,6 +80,12 @@ jobs:
           [ -f "$DMG" ] || { echo "::error::DMG was not created"; exit 1; }
           # `-f` alone passes on a half-written image; verify integrity.
           hdiutil verify "$DMG"
+          # `hdiutil verify` checks the image checksum, not what create-dmg
+          # copied in. Verify the bundle users actually get from inside it.
+          MNT="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >/dev/null
+          codesign --verify --strict "$MNT/$(basename "$APP_PATH")"
+          hdiutil detach "$MNT" >/dev/null || true
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
