@@ -13,11 +13,11 @@ final class CommandRunner {
 
     // MARK: Action mode
 
-    /// Runs a command once and returns its decoded result. Script-level
-    /// failures arrive as `JSResult.error` with the captured logs attached;
-    /// only infrastructure failures (unreadable entry file) throw.
-    func run(command: Command, args: [String] = []) async throws -> JSResult {
-        try await runtime.run(command: command, args: args)
+    /// Runs a command once and returns its decoded result. Every failure —
+    /// script-level or infrastructure — arrives as `JSResult.error` with
+    /// the captured logs attached.
+    func run(command: Command, args: [String] = []) async -> JSResult {
+        await runtime.run(command: command, args: args)
     }
 
     // MARK: Filter mode
@@ -30,7 +30,7 @@ final class CommandRunner {
     /// filter-mode commands even when the manifest declares them — see
     /// `JSRuntime.execute` and PLAN §11.
     func query(command: Command, text: String) async throws -> [JSResult.Item] {
-        let result = try await runtime.run(command: command, args: [text])
+        let result = await runtime.run(command: command, args: [text])
         if let error = result.error {
             throw error
         }

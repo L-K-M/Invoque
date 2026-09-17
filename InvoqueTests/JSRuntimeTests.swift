@@ -27,7 +27,7 @@ final class JSRuntimeTests: XCTestCase {
                 return { title: "hi " + args[0] };
             }
             """)
-        let result = try await runtime.run(command: command, args: ["x"])
+        let result = await runtime.run(command: command, args: ["x"])
         XCTAssertNil(result.error)
         XCTAssertEqual(result.title, "hi x")
     }
@@ -38,7 +38,7 @@ final class JSRuntimeTests: XCTestCase {
                 return { title: "hi " + args[0] };
             }
             """)
-        let result = try await runtime.run(command: command, args: ["x"])
+        let result = await runtime.run(command: command, args: ["x"])
         XCTAssertNil(result.error)
         XCTAssertEqual(result.title, "hi x")
     }
@@ -47,7 +47,7 @@ final class JSRuntimeTests: XCTestCase {
         let command = try makeCommand(source: """
             async function run() { throw new Error("boom"); }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         guard case .rejected(let message)? = result.error else {
             XCTFail("expected .rejected, got \(String(describing: result.error))")
             return
@@ -59,7 +59,7 @@ final class JSRuntimeTests: XCTestCase {
         let command = try makeCommand(source: """
             function run() { throw new Error("sync boom"); }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         guard case .exception(let message)? = result.error else {
             XCTFail("expected .exception, got \(String(describing: result.error))")
             return
@@ -71,8 +71,61 @@ final class JSRuntimeTests: XCTestCase {
         let command = try makeCommand(source: """
             const x = 1;
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         XCTAssertEqual(result.error, .missingEntryPoint)
+    }
+
+    func testPromiseRejectionSurfacesError() async throws {
+        let command = try makeCommand(source: """
+            async function run() { return Promise.reject(new Error("nope")); }
+            """)
+        let result = await runtime.run(command: command)
+        guard case .rejected(let message)? = result.error else {
+            XCTFail("expected .rejected, got \(String(describing: result.error))")
+            return
+        }
+        XCTAssertTrue(message.contains("nope"))
+    }
+
+    func testNonErrorThrowSurfacesError() async throws {
+        let command = try makeCommand(source: """
+            async function run() { throw { code: 42 }; }
+            """)
+        let result = await runtime.run(command: command)
+        guard case .rejected(let message)? = result.error else {
+            XCTFail("expected .rejected, got \(String(describing: result.error))")
+            return
+        }
+        XCTAssertTrue(message.contains("42"))
+    }
+
+    func testInfiniteLoopTimesOutAndCommandIsRefused() async throws {
+        let command = try makeCommand(source: """
+            function run() { while (true) {} }
+            """)
+        let result = await runtime.run(command: command, timeout: 0.5)
+        XCTAssertEqual(result.error, .timedOut)
+
+        // A stuck script never releases its queue/context — the runtime
+        // must refuse to strand another one rather than run it again.
+        let second = await runtime.run(command: command, timeout: 30)
+        XCTAssertEqual(second.error, .timedOut)
+    }
+
+    func testUnreadableEntrySurfacesException() async throws {
+        let command = try makeCommand(source: """
+            async function run() { return { title: "x" }; }
+            """)
+        // Permissions drop below the read — file still exists (validation
+        // already passed) but is no longer readable.
+        try FileManager.default.setAttributes([.posixPermissions: 0o000],
+                                              ofItemAtPath: command.entryURL.path)
+        let result = await runtime.run(command: command)
+        guard case .exception(let message)? = result.error else {
+            XCTFail("expected .exception, got \(String(describing: result.error))")
+            return
+        }
+        XCTAssertTrue(message.contains("could not read entry file"))
     }
 
     // MARK: Permission gating
@@ -81,7 +134,7 @@ final class JSRuntimeTests: XCTestCase {
         let command = try makeCommand(source: """
             async function run() { return { title: typeof invoque.fetch }; }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         XCTAssertNil(result.error)
         XCTAssertEqual(result.title, "undefined")
     }
@@ -90,7 +143,7 @@ final class JSRuntimeTests: XCTestCase {
         let command = try makeCommand(permissions: ["network"], source: """
             async function run() { return { title: typeof invoque.fetch }; }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         XCTAssertNil(result.error)
         XCTAssertEqual(result.title, "function")
     }
@@ -99,7 +152,7 @@ final class JSRuntimeTests: XCTestCase {
         let command = try makeCommand(mode: "filter", permissions: ["shell"], source: """
             async function run() { return { title: typeof invoque.shell }; }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         XCTAssertNil(result.error)
         XCTAssertEqual(result.title, "undefined")
     }
@@ -108,9 +161,49 @@ final class JSRuntimeTests: XCTestCase {
         let command = try makeCommand(permissions: ["shell"], source: """
             async function run() { return { title: typeof invoque.shell }; }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         XCTAssertNil(result.error)
         XCTAssertEqual(result.title, "object")
+    }
+
+    func testPasteAbsentInFilterMode() async throws {
+        let command = try makeCommand(mode: "filter", permissions: ["paste"], source: """
+            async function run() { return { title: typeof invoque.paste }; }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "undefined")
+    }
+
+    func testFetchRejectsFileScheme() async throws {
+        // `network` must not become arbitrary filesystem access.
+        let command = try makeCommand(permissions: ["network"], source: """
+            async function run() {
+                try {
+                    await invoque.fetch("file:///etc/passwd");
+                    return { title: "resolved" };
+                } catch (e) {
+                    return { title: "rejected" };
+                }
+            }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "rejected")
+    }
+
+    func testOpenRejectsNonWebTargets() async throws {
+        // Always-on and permission-free, so it only opens http(s) — local
+        // paths and file: URLs return false rather than launching.
+        let command = try makeCommand(source: """
+            async function run() {
+                return { title: String(invoque.open("file:///etc/passwd"))
+                         + "|" + String(invoque.open("/Applications/Safari.app")) };
+            }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "false|false")
     }
 
     // MARK: Storage
@@ -122,18 +215,19 @@ final class JSRuntimeTests: XCTestCase {
                 return { title: "stored" };
             }
             """)
-        let first = try await runtime.run(command: command)
+        let first = await runtime.run(command: command)
         XCTAssertNil(first.error)
         XCTAssertEqual(first.title, "stored")
 
         let storageFile = directory.appendingPathComponent("data/storage.json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: storageFile.path))
 
-        // Same command, fresh context — the value must come from disk.
+        // Same command, fresh context AND fresh runtime — the value must
+        // come from disk, not a runtime-held cache.
         try """
         async function run() { return { title: invoque.storage.get("key") }; }
         """.write(to: command.entryURL, atomically: true, encoding: .utf8)
-        let second = try await runtime.run(command: command)
+        let second = await JSRuntime().run(command: command)
         XCTAssertNil(second.error)
         XCTAssertEqual(second.title, "value")
     }
@@ -146,7 +240,7 @@ final class JSRuntimeTests: XCTestCase {
                 return { items: [{ title: "a" }] };
             }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         XCTAssertNil(result.error)
         XCTAssertEqual(result.items?.count, 1)
         XCTAssertEqual(result.items?.first?.title, "a")
@@ -156,9 +250,67 @@ final class JSRuntimeTests: XCTestCase {
         let command = try makeCommand(source: """
             async function run() { }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         XCTAssertNil(result.error)
         XCTAssertEqual(result.output, .void)
+    }
+
+    func testPrimitiveAndNullReturnsDecodeAsVoid() async throws {
+        // A bare number or null is not a title — only {title}/{items}
+        // objects carry output. makeCommand rewrites the same directory,
+        // so each variant runs before the next is written.
+        let number = try makeCommand(source: """
+            async function run() { return 42; }
+            """)
+        let numberResult = await runtime.run(command: number)
+        XCTAssertNil(numberResult.error)
+        XCTAssertEqual(numberResult.output, .void)
+
+        let null_ = try makeCommand(source: """
+            async function run() { return null; }
+            """)
+        let nullResult = await runtime.run(command: null_)
+        XCTAssertNil(nullResult.error)
+        XCTAssertEqual(nullResult.output, .void)
+    }
+
+    // MARK: Source transform
+
+    func testPreprocessRewritesEntryForms() {
+        XCTAssertEqual(
+            JSRuntime.preprocess("export default async function run() {}"),
+            "globalThis.run = async function run() {}")
+        XCTAssertEqual(
+            JSRuntime.preprocess("export default function run() {}"),
+            "globalThis.run = function run() {}")
+        XCTAssertEqual(
+            JSRuntime.preprocess("export default (args) => args"),
+            "globalThis.run = (args) => args")
+    }
+
+    func testPreprocessLeavesStringLiteralAlone() {
+        // The token inside the string is not followed by a callable, so the
+        // real declaration later in the file is the one rewritten.
+        let source = #"const s = "export default"; export default function run() {}"#
+        XCTAssertEqual(
+            JSRuntime.preprocess(source),
+            #"const s = "export default"; globalThis.run = function run() {}"#)
+    }
+
+    // MARK: Shell
+
+    func testShellRunDoesNotHangOnBackgroundedChild() async throws {
+        // A backgrounded grandchild inherits our stdout pipe; without a
+        // bound on the drain, readDataToEndOfFile would outlive the shell.
+        let command = try makeCommand(permissions: ["shell"], source: """
+            async function run() {
+                const r = invoque.shell.run("sleep 30 & echo done");
+                return { title: r.stdout.trim() + ":" + r.code };
+            }
+            """)
+        let result = await runtime.run(command: command, timeout: 15)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "done:0")
     }
 
     func testConsoleLogCaptured() async throws {
@@ -168,7 +320,7 @@ final class JSRuntimeTests: XCTestCase {
                 return { title: "done" };
             }
             """)
-        let result = try await runtime.run(command: command)
+        let result = await runtime.run(command: command)
         XCTAssertNil(result.error)
         XCTAssertTrue(result.logs.contains { $0.contains("hello world") })
     }

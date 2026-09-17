@@ -49,9 +49,12 @@ final class CommandStoreTests: XCTestCase {
     }
 
     func testTildeExpansion() {
-        let store = CommandStore(rootPaths: ["~/invoque-test-commands"])
+        // A UUID keeps the path unique across runs and machines — a fixed
+        // name could collide with a real directory a developer happens to
+        // have, making the test read actual commands.
+        let store = CommandStore(rootPaths: ["~/invoque-test-\(UUID().uuidString)"])
         // Not observable directly — but scanning must not crash, and the
-        // directory almost certainly doesn't exist.
+        // directory does not exist.
         store.scan()
         XCTAssertTrue(store.commands.isEmpty)
     }

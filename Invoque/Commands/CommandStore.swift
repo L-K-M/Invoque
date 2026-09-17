@@ -36,6 +36,7 @@ final class CommandStore {
     private var _commands: [Command] = []
     private var _errors: [ScanError] = []
     private var sources: [DispatchSourceFileSystemObject] = []
+    private var watchedTargets: [URL] = []
     private var pendingRescan: DispatchWorkItem?
     private var watching = false
 
@@ -60,19 +61,30 @@ final class CommandStore {
 
     // MARK: Scanning
 
-    /// Rescans synchronously and notifies `onChange` if the list changed.
-    /// Returns the resulting command list.
+    /// A completed filesystem pass, ready to be committed on `stateQueue`.
+    private struct ScanOutcome {
+        let commands: [Command]
+        let errors: [ScanError]
+        let watchTargets: [URL]
+    }
+
+    /// Rescans and notifies `onChange` if the list changed. The disk pass
+    /// runs on the caller's thread; only the state commit hops onto
+    /// `stateQueue`. Returns the resulting command list.
     @discardableResult
     func scan() -> [Command] {
-        stateQueue.sync {
-            performScan()
+        let outcome = collectCommands()
+        return stateQueue.sync {
+            commit(outcome)
             return _commands
         }
     }
 
-    /// Must run on `stateQueue`. Never throws wholesale: a bad command
-    /// directory is collected into `scanErrors` and skipped.
-    private func performScan() {
+    /// All disk I/O in one pass. Touches no store state, so it can run off
+    /// `stateQueue` — keeping the `commands` getter cheap while a rescan is
+    /// in flight. Never throws wholesale: a bad command directory is
+    /// collected into `errors` and skipped.
+    private func collectCommands() -> ScanOutcome {
         var commands: [Command] = []
         var errors: [ScanError] = []
         var watchTargets: [URL] = []
@@ -117,15 +129,22 @@ final class CommandStore {
         commands.sort {
             $0.manifest.title.localizedCaseInsensitiveCompare($1.manifest.title) == .orderedAscending
         }
+        return ScanOutcome(commands: commands, errors: errors, watchTargets: watchTargets)
+    }
 
-        let changed = commands != _commands
-        _commands = commands
-        _errors = errors
-        if watching {
-            rebuildWatchers(watchTargets)
+    /// Must run on `stateQueue`. Commits a collected pass: swaps the command
+    /// list, rebuilds watchers only when the target set actually changed
+    /// (a content edit inside a watched directory reopens nothing), and
+    /// fires `onChange` on the main queue.
+    private func commit(_ outcome: ScanOutcome) {
+        let changed = outcome.commands != _commands
+        _commands = outcome.commands
+        _errors = outcome.errors
+        if watching, outcome.watchTargets != watchedTargets {
+            rebuildWatchers(outcome.watchTargets)
         }
         if changed {
-            let snapshot = commands
+            let snapshot = outcome.commands
             DispatchQueue.main.async { self.onChange?(snapshot) }
         }
     }
@@ -137,12 +156,11 @@ final class CommandStore {
     // MARK: Watching
 
     /// Starts watching roots and command directories, and performs an
-    /// initial scan.
+    /// initial scan. The disk pass runs on the caller's thread.
     func startWatching() {
-        stateQueue.sync {
-            watching = true
-            performScan()
-        }
+        stateQueue.sync { watching = true }
+        let outcome = collectCommands()
+        stateQueue.sync { commit(outcome) }
     }
 
     func stopWatching() {
@@ -155,24 +173,34 @@ final class CommandStore {
     }
 
     /// Schedules a debounced rescan after a filesystem event. Runs on
-    /// `stateQueue` (the sources' target queue).
+    /// `stateQueue` (the sources' target queue); the disk pass itself hops
+    /// to a utility queue so a burst of events never stalls the getters.
+    /// Weak self: the item is retained by `pendingRescan` — a strong capture
+    /// would pin the store for the debounce window, and a rescan that
+    /// outlives its store has nothing to commit to anyway.
     private func scheduleRescan() {
         pendingRescan?.cancel()
-        let rescan = DispatchWorkItem { [self] in performScan() }
+        let rescan = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let outcome = self.collectCommands()
+            self.stateQueue.async { self.commit(outcome) }
+        }
         pendingRescan = rescan
-        stateQueue.asyncAfter(deadline: .now() + Self.rescanDebounce, execute: rescan)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.rescanDebounce, execute: rescan)
     }
 
     /// Must run on `stateQueue`.
     private func rebuildWatchers(_ urls: [URL]) {
         tearDownWatchers()
         sources = urls.compactMap { makeSource(for: $0) }
+        watchedTargets = urls
     }
 
     /// Must run on `stateQueue`.
     private func tearDownWatchers() {
         sources.forEach { $0.cancel() }
         sources = []
+        watchedTargets = []
     }
 
     /// Watches one file or directory vnode for writes, renames and deletes.

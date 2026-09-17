@@ -159,9 +159,12 @@ struct CommandManifest: Codable, Equatable {
         }
         // The entry is read and executed, so a "../" escape would run an
         // arbitrary file outside the command directory. Standardizing both
-        // paths resolves ".." segments lexically before comparing.
-        let root = directory.standardizedFileURL
-        let entryURL = root.appendingPathComponent(entry).standardizedFileURL
+        // paths resolves ".." segments lexically; resolving symlinks too
+        // closes the hole where the command directory (or an ancestor of the
+        // entry) is itself a symlink pointing elsewhere.
+        let root = directory.resolvingSymlinksInPath().standardizedFileURL
+        let entryURL = root.appendingPathComponent(entry)
+            .resolvingSymlinksInPath().standardizedFileURL
         guard entryURL.path.hasPrefix(root.path + "/") else {
             throw ValidationError.entryEscapesDirectory(entry)
         }

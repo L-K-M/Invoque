@@ -23,7 +23,7 @@ final class CommandRunnerTests: XCTestCase {
         let command = try makeCommand(source: """
             async function run() { return { title: "done" }; }
             """)
-        let result = try await runner.run(command: command)
+        let result = await runner.run(command: command)
         XCTAssertEqual(result.title, "done")
     }
 

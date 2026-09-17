@@ -15,6 +15,10 @@ import JavaScriptCore
 /// inside a callback goes through `JSContext.current()`.
 enum InvoqueBridge {
 
+    /// Serializes `invoque.storage` reads and writes across all invocations
+    /// — see `installStorage`.
+    private static let storageQueue = DispatchQueue(label: "com.invoque.storage")
+
     /// Installs `invoque` on `context`'s global object and returns it so the
     /// caller can also pass it as `ctx` to `run(args, ctx)`.
     ///
@@ -22,14 +26,16 @@ enum InvoqueBridge {
     /// strips side-effect modules for filter-mode commands). `callbackQueue`
     /// is the invocation's JS queue: async completions like `fetch` hop onto
     /// it before touching JSValues, because a JSContext may only be used
-    /// from one thread at a time.
+    /// from one thread at a time. `fetches` tracks in-flight URLSession
+    /// tasks so the runtime can cancel them when the invocation ends.
     @discardableResult
     static func install(in context: JSContext,
                         command: Command,
                         args: [String],
                         permissions: Set<CommandManifest.Permission>,
                         logs: CommandLog,
-                        callbackQueue: DispatchQueue) -> JSValue? {
+                        callbackQueue: DispatchQueue,
+                        fetches: FetchTaskRegistry) -> JSValue? {
         guard let invoque = JSValue(newObjectIn: context) else { return nil }
 
         invoque.setValue(args, forProperty: "args")
@@ -40,7 +46,8 @@ enum InvoqueBridge {
             installClipboard(on: invoque, context: context, permissions: permissions)
         }
         if permissions.contains(.network) {
-            installFetch(on: invoque, context: context, callbackQueue: callbackQueue)
+            installFetch(on: invoque, context: context, callbackQueue: callbackQueue,
+                         fetches: fetches)
         }
         if permissions.contains(.files) {
             installFileSystem(on: invoque, context: context, dataDirectory: command.dataDirectory)
@@ -80,12 +87,16 @@ enum InvoqueBridge {
         }
         invoque.setValue(notify, forProperty: "notify")
 
+        // Deliberately web-only: an always-on, permission-free open must not
+        // turn every generated command into an app launcher. Local files and
+        // apps get a dedicated `apps` capability (currently a stub).
         let open: @convention(block) (String) -> Bool = { target in
-            if let url = URL(string: target), let scheme = url.scheme, !scheme.isEmpty {
-                return NSWorkspace.shared.open(url)
+            guard let url = URL(string: target),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else {
+                return false
             }
-            let path = (target as NSString).expandingTildeInPath
-            return NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            return NSWorkspace.shared.open(url)
         }
         invoque.setValue(open, forProperty: "open")
     }
@@ -126,9 +137,15 @@ enum InvoqueBridge {
             }
         }
 
+        // All storage I/O runs on a shared serial queue: the read-modify-
+        // write in set/delete must be atomic across invocations, or two
+        // concurrently running commands clobber each other's keys (each
+        // holds its own `cache`, so last-writer-wins would drop keys).
         let get: @convention(block) (String) -> JSValue? = { key in
-            guard let value = load()[key], let context = JSContext.current() else { return nil }
-            return JSValue(object: value, in: context)
+            storageQueue.sync {
+                guard let value = load()[key], let context = JSContext.current() else { return nil }
+                return JSValue(object: value, in: context)
+            }
         }
         let set: @convention(block) (String, JSValue) -> Void = { key, value in
             guard let object = value.toObject(),
@@ -136,16 +153,20 @@ enum InvoqueBridge {
                 throwError("invoque.storage.set: value must be JSON-serializable")
                 return
             }
-            var stored = load()
-            stored[key] = object
-            cache = stored
-            persist()
+            storageQueue.sync {
+                var stored = load()
+                stored[key] = object
+                cache = stored
+                persist()
+            }
         }
         let delete: @convention(block) (String) -> Void = { key in
-            var stored = load()
-            stored.removeValue(forKey: key)
-            cache = stored
-            persist()
+            storageQueue.sync {
+                var stored = load()
+                stored.removeValue(forKey: key)
+                cache = stored
+                persist()
+            }
         }
         storage.setValue(get, forProperty: "get")
         storage.setValue(set, forProperty: "set")
@@ -186,10 +207,16 @@ enum InvoqueBridge {
     /// promise, so the promise lives in JS and the resolve/reject functions
     /// are handed to the native side. The body crosses as a string; JS uses
     /// `JSON.parse(body)` for JSON, keeping the bridge trivially small.
-    private static func installFetch(on invoque: JSValue, context: JSContext, callbackQueue: DispatchQueue) {
+    private static func installFetch(on invoque: JSValue, context: JSContext,
+                                     callbackQueue: DispatchQueue, fetches: FetchTaskRegistry) {
         let fetchImpl: @convention(block) (String, String, JSValue, JSValue) -> Void = { urlString, optionsJSON, resolve, reject in
-            guard let url = URL(string: urlString) else {
-                _ = reject.call(withArguments: ["invoque.fetch: invalid URL '\(urlString)'"])
+            // Scheme allowlist: `file://` would turn the network permission
+            // into arbitrary filesystem reads, and non-HTTP schemes can hand
+            // requests to handlers outside URLSession.
+            guard let url = URL(string: urlString),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else {
+                _ = reject.call(withArguments: ["invoque.fetch: URL must be http(s): '\(urlString)'"])
                 return
             }
             var request = URLRequest(url: url)
@@ -208,7 +235,10 @@ enum InvoqueBridge {
                     request.httpBody = body.data(using: .utf8)
                 }
             }
-            URLSession.shared.dataTask(with: request) { data, response, error in
+            // The task is registered so the runtime can cancel it when the
+            // invocation completes or times out — a completion that fires
+            // afterward would call JSValues whose context was abandoned.
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 // JSValues are single-threaded: the resolve must run back on
                 // the invocation's JS queue.
                 callbackQueue.async {
@@ -224,7 +254,9 @@ enum InvoqueBridge {
                         "body": body,
                     ]])
                 }
-            }.resume()
+            }
+            fetches.add(task)
+            task.resume()
         }
         context.globalObject.setValue(fetchImpl, forProperty: "__invoque_fetch")
 
@@ -333,7 +365,10 @@ enum InvoqueBridge {
                 group.leave()
             }
             process.waitUntilExit()
-            group.wait()
+            // A backgrounded grandchild inherits our pipes and would hold
+            // readDataToEndOfFile open forever — bound the drain so the JS
+            // queue thread is released even when a daemon outlives the shell.
+            _ = group.wait(timeout: .now() + 5)
             return [
                 "code": Int(process.terminationStatus),
                 "stdout": String(decoding: stdout, as: UTF8.self),
@@ -376,5 +411,28 @@ enum InvoqueBridge {
         return arguments
             .map { ($0 as? JSValue)?.toString() ?? String(describing: $0) }
             .joined(separator: " ")
+    }
+}
+
+/// Per-invocation registry of in-flight `invoque.fetch` tasks. The runtime
+/// cancels them all when the invocation completes or times out, so a late
+/// completion never calls resolve/reject JSValues in an abandoned context.
+final class FetchTaskRegistry {
+
+    private let lock = NSLock()
+    private var tasks: [URLSessionTask] = []
+
+    func add(_ task: URLSessionTask) {
+        lock.lock()
+        tasks.append(task)
+        lock.unlock()
+    }
+
+    func cancelAll() {
+        lock.lock()
+        let pending = tasks
+        tasks = []
+        lock.unlock()
+        pending.forEach { $0.cancel() }
     }
 }

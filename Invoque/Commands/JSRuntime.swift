@@ -15,57 +15,95 @@ final class JSRuntime {
     /// `.timedOut` and later invocations are unaffected.
     var defaultTimeout: TimeInterval
 
+    /// Commands whose last invocation timed out while the script was still
+    /// running. A stuck script never releases its queue thread or context,
+    /// so a filter command that hangs re-run per keystroke would strand a
+    /// thread and a JSContext heap per keystroke — once a command hangs it
+    /// is refused for the rest of the session rather than leaking again.
+    private let stuckLock = NSLock()
+    private var stuckCommands = Set<String>()
+
     init(defaultTimeout: TimeInterval = 10) {
         self.defaultTimeout = defaultTimeout
     }
 
-    /// Failures that prevent producing a `JSResult` at all. Script-level
-    /// failures (exceptions, rejections, timeouts) are `JSResult.error`
-    /// instead, so the captured logs travel with them.
-    enum RuntimeError: Error, Equatable, LocalizedError {
-        /// The entry file could not be read as UTF-8.
-        case entryUnreadable(String)
+    private func markStuck(_ name: String) {
+        stuckLock.lock()
+        stuckCommands.insert(name)
+        stuckLock.unlock()
+    }
 
-        var errorDescription: String? {
-            switch self {
-            case .entryUnreadable(let path):
-                return "could not read entry file at \(path)"
-            }
-        }
+    private func isStuck(_ name: String) -> Bool {
+        stuckLock.lock()
+        defer { stuckLock.unlock() }
+        return stuckCommands.contains(name)
     }
 
     // MARK: Running
 
     /// Runs `run(args, ctx)` from the command's entry script and awaits the
     /// promise it returns. Returns a `JSResult` carrying the decoded output,
-    /// the captured log lines, and any script-level failure.
-    func run(command: Command, args: [String] = [], timeout: TimeInterval? = nil) async throws -> JSResult {
-        guard let data = try? Data(contentsOf: command.entryURL),
-              let source = String(data: data, encoding: .utf8) else {
-            throw RuntimeError.entryUnreadable(command.entryURL.path)
+    /// the captured log lines, and any script-level failure — never throws:
+    /// every failure mode (including an unreadable entry file) arrives as
+    /// `JSResult.error`, so one channel carries all of them.
+    func run(command: Command, args: [String] = [], timeout: TimeInterval? = nil) async -> JSResult {
+        // A command whose script previously hung is refused outright: its
+        // abandoned queue thread and context never come back, and filter
+        // mode would strand another pair per keystroke.
+        guard !isStuck(command.name) else {
+            return JSResult(output: .void, logs: [], error: .timedOut)
         }
-
         let logs = CommandLog()
         return await withCheckedContinuation { (continuation: CheckedContinuation<JSResult, Never>) in
             let box = CompletionBox(continuation: continuation)
-            let queue = DispatchQueue(label: "com.invoque.js.\(command.name)")
-            queue.async {
-                self.execute(source: source, command: command, args: args,
-                             logs: logs, box: box, queue: queue)
-            }
+            let fetches = FetchTaskRegistry()
+            let effectiveTimeout = timeout ?? defaultTimeout
+
             // The timer deliberately runs off the JS queue: it must still
             // fire when the queue is stuck inside synchronous JavaScript.
-            DispatchQueue.global().asyncAfter(deadline: .now() + (timeout ?? defaultTimeout)) {
-                box.complete(JSResult(output: .void, logs: logs.snapshot, error: .timedOut))
+            // A DispatchWorkItem so a fast completion can cancel it instead
+            // of every keystroke leaving a pending timer around.
+            let timeoutWork = DispatchWorkItem { [weak self] in
+                let won = box.complete(JSResult(output: .void, logs: logs.snapshot, error: .timedOut))
+                if won { self?.markStuck(command.name) }
             }
+            box.onWin = { [weak timeoutWork] in
+                // Weak: box → onWin → timeoutWork → box would otherwise be a
+                // retain cycle leaking per invocation. asyncAfter retains
+                // the item while it is pending, so the weak ref is valid
+                // exactly when cancellation matters.
+                timeoutWork?.cancel()
+                // Pending fetches would otherwise complete into an
+                // abandoned context, running dead-world promise callbacks.
+                fetches.cancelAll()
+            }
+
+            let queue = DispatchQueue(label: "com.invoque.js.\(command.name)")
+            queue.async {
+                self.execute(command: command, args: args,
+                             logs: logs, box: box, queue: queue, fetches: fetches)
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + effectiveTimeout, execute: timeoutWork)
         }
     }
 
     // MARK: Execution (JS queue)
 
-    /// The whole invocation, top to bottom, on `queue`.
-    private func execute(source: String, command: Command, args: [String],
-                         logs: CommandLog, box: CompletionBox, queue: DispatchQueue) {
+    /// The whole invocation, top to bottom, on `queue` — including the
+    /// entry-file read, so a filter re-run per keystroke never does disk
+    /// I/O on a caller-owned (possibly main) thread. An unreadable entry
+    /// arrives as `.exception` rather than a throw: a throw cannot cross
+    /// the continuation boundary anyway.
+    private func execute(command: Command, args: [String],
+                         logs: CommandLog, box: CompletionBox, queue: DispatchQueue,
+                         fetches: FetchTaskRegistry) {
+        guard let data = try? Data(contentsOf: command.entryURL),
+              let source = String(data: data, encoding: .utf8) else {
+            box.complete(JSResult(output: .void, logs: logs.snapshot,
+                                  error: .exception("could not read entry file at \(command.entryURL.path)")))
+            return
+        }
+
         guard let context = JSContext() else {
             box.complete(JSResult(output: .void, logs: logs.snapshot,
                                   error: .exception("JavaScriptCore context creation failed")))
@@ -92,7 +130,7 @@ final class JSRuntime {
         }
         let contextObject = InvoqueBridge.install(in: context, command: command, args: args,
                                                   permissions: permissions, logs: logs,
-                                                  callbackQueue: queue)
+                                                  callbackQueue: queue, fetches: fetches)
 
         _ = context.evaluateScript(Self.preprocess(source))
         if let message = exceptionMessage {
@@ -175,16 +213,29 @@ final class JSRuntime {
 
     /// JavaScriptCore has no module system, so the documented entry contract
     /// `export default async function …` is desugared to a plain global
-    /// assignment before evaluation. Only the first `export default` token
-    /// is replaced — enough for an entry file; a stray occurrence inside a
-    /// string literal would produce a syntax error that surfaces like any
-    /// other script error.
+    /// assignment before evaluation.
+    ///
+    /// Only the first `export default` that introduces a callable is
+    /// rewritten — i.e. one followed by `function`, `async function`, `(`
+    /// (arrow function) or a bare identifier (function reference). An
+    /// `export default` in a different position — including inside a string
+    /// literal — is left alone, and a remaining untransformed token fails to
+    /// parse as an ordinary script error rather than silently corrupting
+    /// string contents.
     static func preprocess(_ source: String) -> String {
         let pattern = #"\bexport\s+default\b"#
-        guard let range = source.range(of: pattern, options: .regularExpression) else {
-            return source
+        var searchStart = source.startIndex
+        while let range = source.range(of: pattern, options: .regularExpression,
+                                       range: searchStart..<source.endIndex) {
+            let rest = source[range.upperBound...]
+                .drop(while: { $0 == " " || $0 == "\t" || $0 == "\n" })
+            if rest.hasPrefix("function") || rest.hasPrefix("async") || rest.hasPrefix("(")
+               || rest.first?.isLetter == true || rest.first == "_" || rest.first == "$" {
+                return source.replacingCharacters(in: range, with: "globalThis.run =")
+            }
+            searchStart = range.upperBound
         }
-        return source.replacingCharacters(in: range, with: "globalThis.run =")
+        return source
     }
 
     // MARK: Result decoding
@@ -242,15 +293,26 @@ private final class CompletionBox {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<JSResult, Never>?
 
+    /// Invoked once, only by the winning `complete` — used to cancel the
+    /// losing side's pending work (the timeout timer, in-flight fetches).
+    /// Assigned before any completion can run.
+    var onWin: (() -> Void)?
+
     init(continuation: CheckedContinuation<JSResult, Never>) {
         self.continuation = continuation
     }
 
-    func complete(_ result: JSResult) {
+    /// Returns true when this call delivered the result — false when the
+    /// race was already lost, so callers can act only on the win.
+    @discardableResult
+    func complete(_ result: JSResult) -> Bool {
         lock.lock()
         let continuation = self.continuation
         self.continuation = nil
+        let onWin = continuation != nil ? self.onWin : nil
         lock.unlock()
+        if continuation != nil { onWin?() }
         continuation?.resume(returning: result)
+        return continuation != nil
     }
 }
