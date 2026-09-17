@@ -82,8 +82,10 @@ struct PanelView: View {
             }
             // Arrow-key selection must keep the highlighted row visible.
             // `.task(id:)` instead of `.onChange`: the non-deprecated
-            // onChange signature requires macOS 14 and we target 13.
-            .task(id: model.selection) {
+            // onChange signature requires macOS 14 and we target 13. The key
+            // is the selected row's identity, not the index — a new query can
+            // replace every row while the index stays the same.
+            .task(id: model.selectedRow?.id) {
                 guard let id = model.selectedRow?.id else { return }
                 proxy.scrollTo(id, anchor: .center)
             }

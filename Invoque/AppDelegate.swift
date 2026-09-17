@@ -98,6 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerSummonHotkey()
     }
 
+    /// The combination that is actually registered right now — the fallback
+    /// a failed re-registration reverts the preference to.
+    private var registeredCombination: HotkeyCombination?
+
     /// (Re-)registers the hotkey for the current preference. Replaces any
     /// previous registration — replacing the `CarbonHotkey` unregisters it in
     /// its deinit — so a settings change takes effect immediately.
@@ -108,9 +112,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard hotkey.register(keyCode: combination.keyCode, modifiers: combination.modifiers) else {
             // CarbonHotkey logged the failure; keep the previous working
             // registration — a conflicting chord must not leave the app
-            // without any summon hotkey.
+            // without any summon hotkey. Revert the stored preference to the
+            // chord that is still registered so the next launch re-registers
+            // it instead of retrying the conflict and coming up hotkey-less.
+            // The revert fires summonHotkeyChanged, which re-enters here and
+            // converges: re-registering the live chord either succeeds or is
+            // already-held (`eventHotKeyExistsErr`), and the preference is
+            // already the revert target so no further revert happens.
+            let fallback = registeredCombination ?? .default
+            if preferences.summonHotkey != fallback {
+                preferences.summonHotkey = fallback
+            }
             return
         }
+        registeredCombination = combination
         summonHotkey = hotkey
     }
 
