@@ -16,17 +16,37 @@ final class AppSource: ItemSource {
     /// path reads this and nothing else.
     private var cachedItems: [Item] = []
 
+    /// Backing store for `onReload` — guarded by `lock` like `cachedItems`,
+    /// because reloads read it on a background queue while the owner assigns
+    /// it on the main thread.
+    private var _onReload: (() -> Void)?
+
     /// Fires on the main queue after every reload — the UI re-runs the open
     /// query so results appear as soon as the initial scan lands instead of
     /// waiting for the next keystroke.
-    var onReload: (() -> Void)?
+    var onReload: (() -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _onReload
+        }
+        set {
+            lock.lock()
+            _onReload = newValue
+            lock.unlock()
+        }
+    }
 
     // MARK: Init
 
     /// Kicks off the first scan asynchronously — hundreds of `Bundle` reads
     /// must not stall the launcher's own launch. The source serves an empty
-    /// list until the scan lands, then `onReload` fires.
-    init() {
+    /// list until the scan lands, then `onReload` fires. Pass the handler
+    /// at init rather than assigning it after: a fast first scan could
+    /// complete before a post-init assignment and the "scan landed" signal
+    /// would be missed entirely.
+    init(onReload: (() -> Void)? = nil) {
+        _onReload = onReload
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.reload()
         }
@@ -58,8 +78,8 @@ final class AppSource: ItemSource {
         }
         lock.lock()
         cachedItems = sorted
+        let hook = _onReload
         lock.unlock()
-        let hook = onReload
         DispatchQueue.main.async { hook?() }
     }
 

@@ -62,9 +62,11 @@ final class CalculatorSource: ItemSource {
 
     /// Every letter run must be a known function name; every other character
     /// must be plain math punctuation. Anything else (shell operators,
-    /// quotes, `$()`, stray words like `rm`) is rejected here.
+    /// quotes, `$()`, stray words like `rm`) is rejected here. This set must
+    /// stay in lockstep with `Parser.functions` — a name that passes here but
+    /// is unimplemented clears every gate and then silently produces no row.
     private static let knownFunctions: Set<String> = [
-        "sqrt", "pow", "log", "ln", "exp", "abs", "sin", "cos", "tan", "mod",
+        "sqrt", "log", "ln", "exp", "abs",
     ]
 
     /// Digits, decimal point, the four basic operators, parens, comma, and
@@ -190,9 +192,9 @@ final class CalculatorSource: ItemSource {
         var position = 0
         var sawComputation = false
 
-        /// Single-argument functions the evaluator implements directly.
-        /// Other known names (`sin`, `pow`, `mod`, ...) pass the charset
-        /// gate but are declined here: an offered row must produce a value.
+        /// Single-argument functions the evaluator implements directly —
+        /// in lockstep with `knownFunctions`: a name recognized at the
+        /// charset gate must produce a value here.
         static let functions: [String: (Double) -> Double] = [
             "sqrt": { $0.squareRoot() },
             "log": { log10($0) },
