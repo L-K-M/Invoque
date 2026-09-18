@@ -39,9 +39,12 @@ final class CommandPermissionGrants {
     /// bytes the user was shown — if the file changes before Allow lands,
     /// the resumed run's fresh check sees a different key and re-asks.
     func consentRequest(for command: Command, args: [String]) -> CommandPermissionRequest? {
+        // Skip the entry-file hash entirely for commands with nothing to
+        // gate — this runs on every invocation's run path.
+        let risky = command.permissions.intersection(Self.risky)
+        guard !risky.isEmpty else { return nil }
         let key = grantKey(for: command)
-        let pending = command.permissions
-            .intersection(Self.risky)
+        let pending = risky
             .subtracting(grantedPermissions(for: key))
             .sorted { $0.rawValue < $1.rawValue }
         guard !pending.isEmpty else { return nil }

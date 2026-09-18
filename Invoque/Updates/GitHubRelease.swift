@@ -86,7 +86,16 @@ struct GitHubRelease: Decodable {
             else { archRank = 1 }
             return extRank * 3 + archRank   // extension dominates the tie-break
         }
-        return assets.min { rank($0) < rank($1) }
+        // Architecture dominates the container format: never choose a
+        // build this machine can't run when a runnable asset exists — a
+        // foreign-arch dmg beats a universal zip on rank but is useless
+        // (there is no Rosetta for arm64 on Intel).
+        let runnable = assets.filter { asset in
+            let name = asset.name.lowercased()
+            return !foreignHints.contains { name.contains($0) }
+        }
+        return runnable.min { rank($0) < rank($1) }
+            ?? assets.min { rank($0) < rank($1) }
     }
 
     /// A trimmed, length-capped form of the release body, suitable for an alert's

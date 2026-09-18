@@ -123,9 +123,11 @@ final class GitHubReleaseTests: XCTestCase {
         #endif
     }
 
-    /// Extension preference still dominates the architecture tie-break — a
-    /// foreign-arch dmg beats a native-arch zip on every architecture.
-    func testPreferredAssetExtensionDominatesArch() throws {
+    /// Runnability dominates the container format — a foreign-arch dmg
+    /// must lose to a native or universal zip: there is no Rosetta for
+    /// arm64 on Intel, so the "better" container is worthless if it
+    /// can't execute.
+    func testPreferredAssetRunnabilityDominatesExtension() throws {
         let release = try decode("""
         {
           "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false,
@@ -135,9 +137,13 @@ final class GitHubReleaseTests: XCTestCase {
           ]
         }
         """)
-        // On arm64 the x64 dmg is foreign-arch but still wins — ext first.
-        // On x86_64 it wins on both criteria.
+        #if arch(arm64)
+        // The x64 dmg is foreign — filtered out; the native zip wins.
+        XCTAssertEqual(release.preferredAsset?.name, "App-arm64.zip")
+        #else
+        // On Intel the x64 dmg is native and wins on both criteria.
         XCTAssertEqual(release.preferredAsset?.name, "App-x64.dmg")
+        #endif
     }
 
     func testPreferredAssetNilWhenNoAssets() throws {
