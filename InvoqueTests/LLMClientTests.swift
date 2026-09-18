@@ -177,6 +177,26 @@ final class LLMClientTests: XCTestCase {
         }
     }
 
+    /// A 2xx with empty message content (refusal, content_filter) is a
+    /// failure, not an empty generation — same guard as Anthropic's path.
+    func testEmptyOpenAICompletionThrowsMalformed() async {
+        let transport = StubTransport()
+        transport.response = .success((
+            jsonData(["choices": [["message": ["content": ""],
+                                   "finish_reason": "content_filter"]]]),
+            httpResponse(status: 200)))
+        let client = makeClient(transport: transport)
+
+        do {
+            _ = try await client.complete(messages: [LLMMessage(.user, "hi")])
+            XCTFail("expected throw")
+        } catch LLMError.malformedResponse {
+            // expected
+        } catch {
+            XCTFail("expected malformedResponse, got \(error)")
+        }
+    }
+
     /// Anthropic's equivalent: stop_reason "max_tokens" on a 200.
     func testAnthropicMaxTokensThrowsTruncated() async {
         let transport = StubTransport()

@@ -204,6 +204,9 @@ final class LLMClient: LLMClientServing {
         if (choices.first?["finish_reason"] as? String) == "length" {
             throw LLMError.truncatedOutput(limit: 0)
         }
+        // A 200 with empty content (refusal, content_filter) is not a
+        // generation — surface the same clear error as Anthropic's path.
+        guard !content.isEmpty else { throw LLMError.malformedResponse }
         return content
     }
 
