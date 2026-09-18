@@ -63,7 +63,7 @@ final class PanelController: NSObject {
         // check runs, then resume the paused run — a single owner for the
         // write and the read, so Allow can never re-prompt forever.
         model.onPermissionConfirmed = { [weak self] request in
-            self?.permissionGrants.grant(request.permissions, for: request.command)
+            self?.permissionGrants.grant(request)
             self?.runCommand(named: request.command.name, args: request.args)
         }
         model.searchModel = searchModel
@@ -137,10 +137,8 @@ final class PanelController: NSObject {
         // First-run consent (PLAN §4.3): a command declaring risky
         // permissions pauses here and the panel shows the confirmation
         // card — nothing executes until the user allows.
-        let ungranted = permissionGrants.ungranted(for: command)
-        if !ungranted.isEmpty {
-            model.permissionRequest = CommandPermissionRequest(
-                command: command, args: args, permissions: ungranted)
+        if let request = permissionGrants.consentRequest(for: command, args: args) {
+            model.permissionRequest = request
             return
         }
         // Only the newest run may deliver — a slow earlier command must not

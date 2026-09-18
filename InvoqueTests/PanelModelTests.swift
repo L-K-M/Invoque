@@ -143,12 +143,11 @@ final class PanelModelTests: XCTestCase {
             from: try JSONSerialization.data(withJSONObject: payload))
         let command = Command(manifest: manifest,
                               directory: URL(fileURLWithPath: "/tmp/risky-demo"))
-        // The request's permission set comes from the production
-        // derivation — if "risky" ever changes, the fixture can't drift
-        // into requests the run path would never build.
-        return CommandPermissionRequest(
-            command: command, args: args,
-            permissions: grants.ungranted(for: command))
+        // The request comes from the production derivation — if "risky"
+        // ever changes, the fixture can't drift into requests the run
+        // path would never build.
+        return try XCTUnwrap(grants.consentRequest(for: command, args: args),
+                             "fixture permissions must include a risky one")
     }
 
     /// An isolated grants store on a fresh suite, with teardown cleanup

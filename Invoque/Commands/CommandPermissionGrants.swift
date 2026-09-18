@@ -33,25 +33,40 @@ final class CommandPermissionGrants {
         self.defaults = defaults
     }
 
+    /// Returns a paused-run request if the command has ungranted risky
+    /// permissions, nil when it may run. The entry-file digest is captured
+    /// once, here, so the grant later recorded for the request binds to the
+    /// bytes the user was shown — if the file changes before Allow lands,
+    /// the resumed run's fresh check sees a different key and re-asks.
+    func consentRequest(for command: Command, args: [String]) -> CommandPermissionRequest? {
+        let key = grantKey(for: command)
+        let pending = command.permissions
+            .intersection(Self.risky)
+            .subtracting(grantedPermissions(for: key))
+            .sorted { $0.rawValue < $1.rawValue }
+        guard !pending.isEmpty else { return nil }
+        return CommandPermissionRequest(command: command, args: args,
+                                        permissions: pending, grantKey: key)
+    }
+
     /// The command's declared risky permissions not yet granted, sorted for
     /// a stable confirmation display. An empty result means "run it".
     func ungranted(for command: Command) -> [CommandManifest.Permission] {
-        let granted = grantedPermissions(for: grantKey(for: command))
-        return command.permissions
-            .intersection(Self.risky)
-            .subtracting(granted)
-            .sorted { $0.rawValue < $1.rawValue }
+        consentRequest(for: command, args: [])?.permissions ?? []
     }
 
-    /// Records consent for `permissions`; already-granted ones are kept.
-    /// Older content hashes under the same name are dropped — a grant for
-    /// new bytes supersedes them, keeping the store to one entry per name
-    /// instead of accumulating every hash ever consented to. Reverting to
-    /// the old bytes just re-asks, which is the safe direction.
-    func grant(_ permissions: [CommandManifest.Permission], for command: Command) {
+    /// Records consent for a request's permissions; already-granted ones
+    /// are kept. The grant lands under the key captured when the request
+    /// was built — never a re-hash of whatever the file holds now, which
+    /// would consent to bytes the user never saw. Older content hashes
+    /// under the same name are dropped — a grant for new bytes supersedes
+    /// them, keeping the store to one entry per name instead of
+    /// accumulating every hash ever consented to. Reverting to the old
+    /// bytes just re-asks, which is the safe direction.
+    func grant(_ request: CommandPermissionRequest) {
         var store = loadStore()
-        let key = grantKey(for: command)
-        let prefix = "\(command.name)@"
+        let key = request.grantKey
+        let prefix = "\(request.command.name)@"
         // Collect first — mutating a dictionary while iterating it traps.
         // "@" appears exactly once per key: command names are slug-validated
         // (`[a-z0-9][a-z0-9_-]*`, CommandManifest.validateStructure) and the
@@ -60,7 +75,7 @@ final class CommandPermissionGrants {
         let superseded = store.keys.filter { $0.hasPrefix(prefix) && $0 != key }
         superseded.forEach { store.removeValue(forKey: $0) }
         var granted = Set(store[key] ?? [])
-        granted.formUnion(permissions.map(\.rawValue))
+        granted.formUnion(request.permissions.map(\.rawValue))
         store[key] = granted.sorted()
         defaults.set(store, forKey: Self.defaultsKey)
     }
@@ -78,14 +93,16 @@ final class CommandPermissionGrants {
         }
     }
 
-    /// `name@sha256(entry file, 16 hex)` — readable prefix for debugging,
-    /// hash tail so identical code keeps its grant and any byte of changed
-    /// code re-asks. An unreadable entry hashes as empty, which is fine:
-    /// the grant check only runs for commands the runtime could load.
+    /// `name@sha256(entry file)` — readable prefix for debugging, hash
+    /// tail so identical code keeps its grant and any byte of changed code
+    /// re-asks. The digest is full-length: a truncated one would let a
+    /// crafted file inherit a grant under ~2^32 hash evaluations. An
+    /// unreadable entry hashes as empty, which is fine: the grant check
+    /// only runs for commands the runtime could load.
     private func grantKey(for command: Command) -> String {
         let entryData = (try? Data(contentsOf: command.entryURL)) ?? Data()
         let digest = SHA256.hash(data: entryData)
-            .map { String(format: "%02x", $0) }.joined().prefix(16)
+            .map { String(format: "%02x", $0) }.joined()
         return "\(command.name)@\(digest)"
     }
 
@@ -105,4 +122,8 @@ struct CommandPermissionRequest {
     let args: [String]
     /// The ungranted risky permissions being asked about, sorted for display.
     let permissions: [CommandManifest.Permission]
+    /// Entry-file digest captured when the prompt was built — the grant is
+    /// recorded under this key so consent binds to the bytes the user saw,
+    /// not whatever the file holds when Allow lands.
+    let grantKey: String
 }

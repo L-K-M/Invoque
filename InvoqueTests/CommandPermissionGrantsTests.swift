@@ -46,7 +46,7 @@ final class CommandPermissionGrantsTests: XCTestCase {
 
     func testGrantRetiresTheRequest() throws {
         let command = try makeCommand(permissions: ["shell"])
-        grants.grant([.shell], for: command)
+        try grantShell(to: command)
         XCTAssertTrue(grants.ungranted(for: command).isEmpty)
     }
 
@@ -54,7 +54,7 @@ final class CommandPermissionGrantsTests: XCTestCase {
     /// earlier grants are kept, not re-litigated.
     func testNewRiskyPermissionReAsks() throws {
         let command = try makeCommand(permissions: ["shell", "paste"])
-        grants.grant([.shell], for: command)
+        try grantShell(to: command)
         XCTAssertEqual(grants.ungranted(for: command), [.paste])
     }
 
@@ -74,7 +74,7 @@ final class CommandPermissionGrantsTests: XCTestCase {
         let v2 = try makeCommandOnDisk(name: "demo",
                                        entry: "return { title: \"v2\" };",
                                        directoryName: "v2")
-        grants.grant([.shell], for: v1)
+        try grantShell(to: v1)
         XCTAssertTrue(grants.ungranted(for: v1).isEmpty)
         XCTAssertEqual(grants.ungranted(for: v2), [.shell],
                        "changed code must not inherit the old code's grant")
@@ -90,11 +90,33 @@ final class CommandPermissionGrantsTests: XCTestCase {
         let v2 = try makeCommandOnDisk(name: "demo",
                                        entry: "return { title: \"v2\" };",
                                        directoryName: "v2")
-        grants.grant([.shell], for: v1)
-        grants.grant([.shell], for: v2)
+        try grantShell(to: v1)
+        try grantShell(to: v2)
         XCTAssertEqual(grants.ungranted(for: v1), [.shell],
                        "the superseded hash's grant must be gone")
         XCTAssertTrue(grants.ungranted(for: v2).isEmpty)
+    }
+
+    /// The grant binds to the bytes shown at prompt time: if the entry file
+    /// changes while the card is up, Allow records under the *seen* digest —
+    /// the resumed run's fresh check hits a different key and re-asks rather
+    /// than executing swapped-in code under consent it never earned.
+    func testFileChangedBetweenPromptAndAllowReAsks() throws {
+        let directory = tempRoot.appendingPathComponent("swap")
+        let command = try makeCommandOnDisk(name: "demo",
+                                            entry: "return { title: \"v1\" };",
+                                            directoryName: "swap")
+        let request = try XCTUnwrap(grants.consentRequest(for: command, args: []))
+        // The file is replaced while the consent card is open.
+        try "return { title: \"v2\" };".write(
+            to: directory.appendingPathComponent("main.js"),
+            atomically: true, encoding: .utf8)
+
+        grants.grant(request)
+
+        let changed = try Command(directory: directory)
+        XCTAssertEqual(grants.ungranted(for: changed), [.shell],
+                       "consent for v1 bytes must not run v2")
     }
 
     /// Identical code under the same name keeps its grant — reinstalls and
@@ -105,7 +127,7 @@ final class CommandPermissionGrantsTests: XCTestCase {
                                         directoryName: "one")
         let two = try makeCommandOnDisk(name: "demo", entry: source,
                                         directoryName: "two")
-        grants.grant([.shell], for: one)
+        try grantShell(to: one)
         XCTAssertTrue(grants.ungranted(for: two).isEmpty)
     }
 
@@ -137,6 +159,15 @@ final class CommandPermissionGrantsTests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    /// The production consent flow in miniature: build the request (which
+    /// captures the entry-file digest), then record the grant for it.
+    private func grantShell(to command: Command) throws {
+        let request = try XCTUnwrap(
+            grants.consentRequest(for: command, args: []),
+            "fixture commands all declare shell")
+        grants.grant(request)
+    }
 
     /// A real command on disk — the grant key hashes the entry file, so
     /// content-scoping tests need actual bytes, not just a manifest.

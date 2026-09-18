@@ -227,10 +227,8 @@ final class MakerModel: ObservableObject {
             // First-run consent applies to drafts too: generated code is
             // untrusted, so a shell/paste draft pauses for Allow before
             // anything executes.
-            let ungranted = permissionGrants.ungranted(for: command)
-            guard ungranted.isEmpty else {
-                permissionRequest = CommandPermissionRequest(
-                    command: command, args: args, permissions: ungranted)
+            if let request = permissionGrants.consentRequest(for: command, args: args) {
+                permissionRequest = request
                 return
             }
             phase = .testing
@@ -255,7 +253,7 @@ final class MakerModel: ObservableObject {
         permissionRequest = nil
         guard phase == .draft || phase == .readyToSave,
               draft?.manifest != nil else { return }
-        permissionGrants.grant(request.permissions, for: request.command)
+        permissionGrants.grant(request)
         await test(args: request.args)
     }
 
