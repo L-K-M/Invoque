@@ -181,8 +181,8 @@ post-v1.
   | `clipboard` | `clipboard.read` / `clipboard.write` | NSPasteboard |
   | `fetch` | `network` | URLSession wrapper, returns text/JSON |
   | `fs` | `files` | scoped to `data/` + user-granted paths |
-  | `apps` | `apps` | NSWorkspace query/launch |
-  | `paste` | `paste` | simulate ⌘V — needs app-level AX grant |
+  | `apps` | `apps` | `list()` → `{name, path, bundleID}` (AppCatalog scan, shared with AppSource); `launch(name \| bundleID \| path)` — exact match, `NSWorkspace.open` |
+  | `paste` | `paste` | `text(t)` — clipboard write, re-activate frontmost app, simulate ⌘V; needs the app-level AX grant (lazy `AXIsProcessTrustedWithOptions` prompt on first call) |
   | `shell` | `shell` | `/bin/sh -c`; first-run confirmation sheet |
 
   Migration: commands written before `open` was gated must add `"open"` to
@@ -288,7 +288,7 @@ make command to format clipboard json
 - System prompt (`Maker/SystemPrompt.swift`): compact `invoque.d.ts` of the
   API, manifest schema, one worked example, and rules (no sync loops, declare
   permissions honestly, prefer `action` unless listing). Kept in sync with
-  `InvoqueBridge` — `paste`/`apps` are listed as not-yet-implemented.
+  `InvoqueBridge`.
 - Provider settings: base URL (OpenAI-compatible → OpenAI/OpenRouter/Ollama/
   LM Studio), model, API key (Keychain), Anthropic mode toggle — implemented
   (`/v1/messages` + `x-api-key` + `anthropic-version`). Test button in

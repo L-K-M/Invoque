@@ -210,6 +210,48 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertEqual(result.title, "undefined")
     }
 
+    func testPastePresentInActionMode() async throws {
+        // Presence only — calling paste.text would trigger an AX prompt.
+        let command = try makeCommand(permissions: ["paste"], source: """
+            async function run() { return { title: typeof invoque.paste.text }; }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "function")
+    }
+
+    func testAppsPresentInActionMode() async throws {
+        // Presence only — apps.launch is a side effect; the resolution
+        // logic behind it is covered in AppCatalogTests.
+        let command = try makeCommand(permissions: ["apps"], source: """
+            async function run() {
+                return { title: typeof invoque.apps.list
+                         + "|" + typeof invoque.apps.launch };
+            }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "function|function")
+    }
+
+    func testPasteAbsentWithoutPermission() async throws {
+        let command = try makeCommand(source: """
+            async function run() { return { title: typeof invoque.paste }; }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "undefined")
+    }
+
+    func testAppsAbsentWithoutPermission() async throws {
+        let command = try makeCommand(source: """
+            async function run() { return { title: typeof invoque.apps }; }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "undefined")
+    }
+
     func testFetchRejectsFileScheme() async throws {
         // `network` must not become arbitrary filesystem access.
         let command = try makeCommand(permissions: ["network"], source: """

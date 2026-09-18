@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import JavaScriptCore
 
@@ -70,14 +71,11 @@ enum InvoqueBridge {
         if permissions.contains(.shell) {
             installShell(on: invoque, context: context)
         }
-        // Declared but unimplemented in this milestone: objects exist so
-        // `typeof invoque.paste` answers truthfully, but every method throws
-        // "not implemented yet".
         if permissions.contains(.paste) {
-            installStub(named: "paste", methods: ["text"], on: invoque, context: context)
+            installPaste(on: invoque, context: context)
         }
         if permissions.contains(.apps) {
-            installStub(named: "apps", methods: ["list", "launch"], on: invoque, context: context)
+            installApps(on: invoque, context: context)
         }
         // `notification` needs no module of its own: `notify` is always
         // present (and currently a log sink — see installUtilities).
@@ -109,8 +107,8 @@ enum InvoqueBridge {
     /// arbitrary http(s) URLs are a network-egress channel (query strings
     /// can carry read clipboard contents to a remote host), so it must be
     /// a declared capability like `network`, not an ambient one.
-    /// Deliberately web-only — local files and apps get a dedicated `apps`
-    /// capability (currently a stub).
+    /// Deliberately web-only — local files and apps get the dedicated `apps`
+    /// capability instead.
     private static func installOpen(on invoque: JSValue) {
         let open: @convention(block) (String) -> Bool = { target in
             guard let url = URL(string: target),
@@ -409,20 +407,98 @@ enum InvoqueBridge {
         invoque.setValue(shell, forProperty: "shell")
     }
 
-    // MARK: Stubs
+    // MARK: paste
 
-    /// Declared-but-unimplemented modules: present as objects whose methods
-    /// throw when called, so scripts fail loudly instead of silently.
-    private static func installStub(named name: String, methods: [String],
-                                    on invoque: JSValue, context: JSContext) {
-        guard let module = JSValue(newObjectIn: context) else { return }
-        for method in methods {
-            let block: @convention(block) () -> Void = {
-                throwError("invoque.\(name).\(method) is not implemented yet")
+    /// `invoque.paste.text(text)` — copies `text` onto the clipboard and
+    /// posts ⌘V at the HID event tap so it lands in the app the user was
+    /// working in. Two gates apply before this module even exists in JS:
+    /// the manifest's `paste` permission and the risky-permission consent
+    /// card. This layer adds the third: Accessibility trust, checked per
+    /// call (and prompted lazily on first use) rather than at app launch.
+    private static func installPaste(on invoque: JSValue, context: JSContext) {
+        guard let paste = JSValue(newObjectIn: context) else { return }
+
+        let text: @convention(block) (String) -> Bool = { contents in
+            guard AccessibilityAuthorizer.isTrusted || AccessibilityAuthorizer.prompt() else {
+                throwError("invoque.paste.text: Accessibility access required — grant Invoque in System Settings → Privacy & Security → Accessibility")
+                return false
             }
-            module.setValue(block, forProperty: method)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(contents, forType: .string)
+
+            // The keystroke lands wherever the system's focus is. The panel
+            // is nonactivating, so `frontmostApplication` is still the app
+            // the user was working in; activating it gives it a real key
+            // window — and resigns our panel, which hides it — before the
+            // synthetic ⌘V posts. Without this the keystroke could land in
+            // the launcher's own search field.
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            if let frontmost, frontmost != NSRunningApplication.current {
+                frontmost.activate()
+                // Give the window server a beat to finish the activation —
+                // a keystroke posted mid-switch still lands on the resigning
+                // panel.
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+
+            // kVK_ANSI_V. Posting down and up as a spread pair — some apps
+            // debounce same-timestamp pairs.
+            let vKey: CGKeyCode = 9
+            guard let source = CGEventSource(stateID: .hidSystemState),
+                  let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
+                  let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false) else {
+                throwError("invoque.paste.text: could not synthesize the ⌘V keystroke")
+                return false
+            }
+            keyDown.flags = .maskCommand
+            keyUp.flags = .maskCommand
+            keyDown.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.02)
+            keyUp.post(tap: .cghidEventTap)
+            // The pasted text stays on the clipboard — that's the point for
+            // the transform-clipboard commands this module exists for.
+            return true
         }
-        invoque.setValue(module, forProperty: name)
+        paste.setValue(text, forProperty: "text")
+        invoque.setValue(paste, forProperty: "paste")
+    }
+
+    // MARK: apps
+
+    /// `invoque.apps.list()` → `[{name, path, bundleID}]` and
+    /// `invoque.apps.launch(target)` → Bool. `list` rescans the app folders
+    /// on every call — a few hundred bundle reads on the JS queue — so the
+    /// answer is what's installed *now*, not what the launcher's own cache
+    /// last saw. The scan itself is `AppCatalog`, shared with `AppSource`.
+    private static func installApps(on invoque: JSValue, context: JSContext) {
+        guard let apps = JSValue(newObjectIn: context) else { return }
+
+        let list: @convention(block) () -> [[String: Any]] = {
+            AppCatalog.installedApps().map { entry in
+                var dictionary: [String: Any] = ["name": entry.name, "path": entry.path]
+                if let bundleID = entry.bundleID {
+                    dictionary["bundleID"] = bundleID
+                }
+                return dictionary
+            }
+        }
+
+        // Resolution is strict — path, then bundle id, then exact display
+        // name (AppCatalog.resolve) — because launching is a side effect:
+        // a fuzzy guess that opens the wrong app is worse than an error the
+        // script can report.
+        let launch: @convention(block) (String) -> Bool = { target in
+            guard let url = AppCatalog.resolve(target, in: AppCatalog.installedApps()) else {
+                throwError("invoque.apps.launch: no app matching '\(target)'")
+                return false
+            }
+            return NSWorkspace.shared.open(url)
+        }
+
+        apps.setValue(list, forProperty: "list")
+        apps.setValue(launch, forProperty: "launch")
+        invoque.setValue(apps, forProperty: "apps")
     }
 
     // MARK: Helpers

@@ -140,8 +140,8 @@ final class JSRuntime {
 
         // A filter command re-runs on every keystroke, so side-effectful
         // modules are withheld even when declared — a keystroke-driven side
-        // effect is a footgun (PLAN §11). `paste` is in the same class and is
-        // only a stub anyway.
+        // effect is a footgun (PLAN §11). `paste` is in the same class: a
+        // simulated ⌘V per keystroke would spray text into the frontmost app.
         var permissions = command.permissions
         if command.manifest.mode == .filter {
             permissions.remove(.shell)
