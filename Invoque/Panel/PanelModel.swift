@@ -179,9 +179,10 @@ final class PanelModel: ObservableObject {
             let rows = await Self.filterRows(command: command, text: text,
                                              runner: commandRunner)
             await MainActor.run {
-                // Count every arrival — dropped ones too — so tests can
-                // await "the run happened" separately from "rows changed".
-                filterRunCompletions += 1
+                // Count every completion — dropped ones too — but only
+                // after this run's effects land, so a poller that sees the
+                // tick also sees the final rows/selection state.
+                defer { filterRunCompletions += 1 }
                 // Identical rows must not re-assign: results' didSet resets
                 // the selection, so a no-op refresh would yank it to the top.
                 guard generation == filterGeneration, rows != results else { return }

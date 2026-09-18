@@ -338,9 +338,9 @@ final class PanelModelTests: XCTestCase {
 
         model.query = "jf" // back to bare keyword → normal search
         XCTAssertEqual(model.results.map(\.id), ["app:jf"])
-        // Wait for the in-flight run's completion to actually land — it
-        // must be dropped by the generation bump on mode exit.
-        await awaitCompletions(model, atLeast: 1)
+        // The counter is cumulative — wait for one *new* completion: the
+        // in-flight run's landing, which the generation bump must drop.
+        await awaitCompletions(model, atLeast: model.filterRunCompletions + 1)
         XCTAssertEqual(model.results.map(\.id), ["app:jf"])
     }
 
