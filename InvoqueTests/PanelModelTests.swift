@@ -151,13 +151,21 @@ final class PanelModelTests: XCTestCase {
             permissions: grants.ungranted(for: command))
     }
 
+    /// An isolated grants store on a fresh suite, with teardown cleanup
+    /// registered — one place so future tests can't leak a persistent domain.
+    private func makeFreshGrants() -> CommandPermissionGrants {
+        let suiteName = "PanelModelTests-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create UserDefaults suite \(suiteName)")
+        }
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return CommandPermissionGrants(defaults: defaults)
+    }
+
     /// Plain ⏎ is neutral while the consent card is up — a permanent grant
     /// must take ⌘⏎ or a click, never a habitual double-⏎.
     func testPlainSubmitIsNeutralOnPendingPermissionRequest() throws {
-        let suiteName = "PanelModelTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let model = makeModel(items: [])
         model.permissionRequest = try makePermissionRequest(grants: grants)
 
@@ -175,10 +183,7 @@ final class PanelModelTests: XCTestCase {
     /// ⌘⏎ while a consent card is up means Allow — the paused run is handed
     /// back to the controller (which records the grant before resuming).
     func testCommandSubmitConfirmsPendingPermissionRequest() throws {
-        let suiteName = "PanelModelTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let model = makeModel(items: [])
         model.permissionRequest = try makePermissionRequest(grants: grants)
 
@@ -195,26 +200,23 @@ final class PanelModelTests: XCTestCase {
     }
 
     func testDismissPermissionRequestClearsWithoutGrant() throws {
-        let suiteName = "PanelModelTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let model = makeModel(items: [])
         let request = try makePermissionRequest(grants: grants)
         model.permissionRequest = request
 
         model.dismissPermissionRequest()
         XCTAssertNil(model.permissionRequest)
+        // PanelModel holds no grants store by design — the controller owns
+        // grant recording — so "dismiss doesn't grant" is a structural
+        // guarantee this assertion pins on the store a grant *would* use.
         XCTAssertEqual(grants.ungranted(for: request.command), [.shell])
     }
 
     /// A pending consent prompt belongs to the summon that produced it —
     /// the next summon starts clean.
     func testResetClearsPermissionRequest() throws {
-        let suiteName = "PanelModelTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let model = makeModel(items: [])
         model.permissionRequest = try makePermissionRequest(grants: grants)
         model.reset(clearQuery: false)
@@ -487,13 +489,10 @@ final class PanelModelTests: XCTestCase {
             --- main.js ---
             async function run() { return { title: "done" }; }
             """
-        let suiteName = "PanelModelTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
         return MakerModel(client: { client },
                           runner: CommandRunner(),
                           writer: CommandWriter(rootURL: commandDirectory),
-                          permissionGrants: CommandPermissionGrants(defaults: defaults))
+                          permissionGrants: makeFreshGrants())
     }
 
     func testMakeKeywordActivatesMaker() {

@@ -46,7 +46,9 @@ struct UpdateDownloader {
     /// so the downloading app must. Best-effort: a failure mustn't fail the
     /// download.
     private static func applyQuarantine(to url: URL) {
-        let value = "0002;\(Int(Date().timeIntervalSince1970));Invoque;\(UUID().uuidString)"
+        // Timestamp field is hex seconds — the format Safari/Chromium write.
+        let timestamp = String(Int(Date().timeIntervalSince1970), radix: 16)
+        let value = "0002;\(timestamp);Invoque;\(UUID().uuidString)"
         value.withCString { cValue in
             "com.apple.quarantine".withCString { name in
                 _ = setxattr(url.path, name, cValue, strlen(cValue), 0, 0)
