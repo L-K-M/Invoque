@@ -5,6 +5,10 @@ import Foundation
 ///
 /// Reusable across apps — depends only on Foundation.
 struct GitHubRelease: Decodable {
+    /// Shared and thread-safe — a 30-release page shouldn't allocate 30
+    /// ICU-backed formatters.
+    private static let iso8601Formatter = ISO8601DateFormatter()
+
     let tagName: String
     let name: String?
     let body: String?
@@ -51,7 +55,7 @@ struct GitHubRelease: Decodable {
         prerelease = try c.decode(Bool.self, forKey: .prerelease)
         draft = try c.decode(Bool.self, forKey: .draft)
         publishedAt = try c.decodeIfPresent(String.self, forKey: .publishedAt)
-            .flatMap { ISO8601DateFormatter().date(from: $0) }
+            .flatMap { Self.iso8601Formatter.date(from: $0) }
         assets = try c.decode([Asset].self, forKey: .assets)
     }
 

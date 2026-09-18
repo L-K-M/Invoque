@@ -180,11 +180,18 @@ final class UpdateChecker: ObservableObject {
                 self.lastCheckDate = Date()
                 self.defaults.set(self.lastCheckDate, forKey: self.key("lastCheck"))
 
-                guard let remote = SemanticVersion(release.tagName),
-                      let current = SemanticVersion(self.configuration.currentVersion) else {
-                    // "Couldn't determine" is not "you're up to date" — an
-                    // unparseable tag must not assert the user is current.
+                // "Couldn't determine" is not "you're up to date" — an
+                // unparseable version must not assert the user is current,
+                // and the alert must blame the string that actually failed.
+                guard let remote = SemanticVersion(release.tagName) else {
                     if report { self.presentUnparseable(tag: release.tagName) }
+                    return
+                }
+                guard let current = SemanticVersion(self.configuration.currentVersion) else {
+                    if report {
+                        self.presentUnparseable(
+                            tag: "installed version \(self.configuration.currentVersion)")
+                    }
                     return
                 }
                 if remote > current {
@@ -327,7 +334,7 @@ final class UpdateChecker: ObservableObject {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Couldn't check for updates"
-        alert.informativeText = "The latest release tag (“\(tag)”) couldn't be parsed."
+        alert.informativeText = "The version string (“\(tag)”) couldn't be parsed."
         alert.addButton(withTitle: "OK")
         _ = runModal(alert)
     }

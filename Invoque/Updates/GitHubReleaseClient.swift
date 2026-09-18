@@ -66,9 +66,10 @@ struct GitHubReleaseClient {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ClientError.badResponse(-1) }
-        // 404 means "no published release yet" only on the latest endpoint —
-        // the list endpoint answers 200 [] for that. A 404 there means the
-        // repo is missing, private, or misconfigured: report it as such.
+        // A 404 on the latest endpoint means "no published release yet" — or
+        // a missing/private repo, which GitHub reports identically. The list
+        // endpoint answers 200 [] for "none yet", so its 404 is unambiguously
+        // repo-level: report it as such.
         if http.statusCode == 404 {
             if path.hasSuffix("releases/latest") { throw ClientError.noReleases }
             throw ClientError.badResponse(404)

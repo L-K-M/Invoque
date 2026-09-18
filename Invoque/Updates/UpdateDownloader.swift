@@ -17,17 +17,41 @@ struct UpdateDownloader {
         }
         let downloads = try fileManager.url(for: .downloadsDirectory, in: .userDomainMask,
                                             appropriateFor: nil, create: true)
-        let destination = Self.uniqueDestination(
-            in: downloads, fileName: Self.safeFileName(asset.name), fileManager: fileManager)
-        do {
-            try fileManager.moveItem(at: tempURL, to: destination)
-        } catch {
-            // Don't strand a full-size temp file when the move fails
-            // (disk-full on another volume, permissions, TOCTOU collision).
-            try? fileManager.removeItem(at: tempURL)
-            throw error
+        let fileName = Self.safeFileName(asset.name)
+        // Retry the name race a few times: a same-named file appearing between
+        // the exists-check and the move shouldn't discard a finished download.
+        for _ in 0..<5 {
+            let destination = Self.uniqueDestination(
+                in: downloads, fileName: fileName, fileManager: fileManager)
+            do {
+                try fileManager.moveItem(at: tempURL, to: destination)
+                Self.applyQuarantine(to: destination)
+                return destination
+            } catch let error as CocoaError where error.code == .fileWriteFileExists {
+                continue
+            } catch {
+                // Don't strand a full-size temp file when the move fails
+                // (disk-full on another volume, permissions).
+                try? fileManager.removeItem(at: tempURL)
+                throw error
+            }
         }
-        return destination
+        try? fileManager.removeItem(at: tempURL)
+        throw CocoaError(.fileWriteFileExists)
+    }
+
+    /// Marks the download with `com.apple.quarantine` so Gatekeeper and
+    /// notarization checks still apply when the user opens it — the same
+    /// protection a browser gives its downloads. URLSession doesn't set it,
+    /// so the downloading app must. Best-effort: a failure mustn't fail the
+    /// download.
+    private static func applyQuarantine(to url: URL) {
+        let value = "0002;\(Int(Date().timeIntervalSince1970));Invoque;\(UUID().uuidString)"
+        value.withCString { cValue in
+            "com.apple.quarantine".withCString { name in
+                _ = setxattr(url.path, name, cValue, strlen(cValue), 0, 0)
+            }
+        }
     }
 
     /// Reduces a remote-controlled asset name to a single path component —
