@@ -38,6 +38,16 @@ struct MakerView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: .infinity)
+        // `.task(id:)` rather than `.onChange`: the non-deprecated
+        // signature needs macOS 14 and we target 13. The view stays
+        // mounted across discard-and-retype, so per-session fields are
+        // cleared when the model returns to `.idle`.
+        .task(id: model.phase) {
+            if model.phase == .idle {
+                feedback = ""
+                testArgs = ""
+            }
+        }
     }
 
     // MARK: Header
