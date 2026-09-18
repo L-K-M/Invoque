@@ -52,6 +52,7 @@ struct CommandManifest: Codable, Equatable {
         case network
         case files
         case apps
+        case open
         case paste
         case shell
         case notification

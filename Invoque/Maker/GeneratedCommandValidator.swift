@@ -155,6 +155,7 @@ enum GeneratedCommandValidator {
     private static let modulePermissions: [String: CommandManifest.Permission] = [
         "fetch": .network,
         "fs": .files,
+        "open": .open,
         "shell": .shell,
     ]
 
@@ -165,10 +166,11 @@ enum GeneratedCommandValidator {
     private static let stubModules: Set<String> = ["paste", "apps"]
 
     /// Modules injected regardless of permissions: `args`, `log`, `notify`,
-    /// `open`, `storage` (see InvoqueBridge). `notify` is always present —
-    /// the `notification` permission exists in the schema but gates nothing.
+    /// `storage` (see InvoqueBridge). `notify` is always present — the
+    /// `notification` permission exists in the schema but gates nothing.
+    /// `open` is gated: http(s) opens are an egress channel, not ambient.
     private static let alwaysAvailable: Set<String> = [
-        "args", "log", "notify", "open", "storage",
+        "args", "log", "notify", "storage",
     ]
 
     /// The permission a declared `notification` maps back to for the

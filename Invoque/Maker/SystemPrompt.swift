@@ -66,12 +66,13 @@ enum SystemPrompt {
       invoque.args: string[]           // same as the args parameter
       invoque.log(...): void           // captured, shown with the result
       invoque.notify(text): void       // user-visible notification
-      invoque.open(url): boolean       // http/https only
       invoque.storage.get(key): any    // per-command JSON store in data/
       invoque.storage.set(key, value): void   // value must be JSON-serializable
       invoque.storage.delete(key): void
 
     Permission-gated — present only when declared in manifest.permissions:
+      "open"            → invoque.open(url): boolean
+                          // http/https only
       "clipboard.read"  → invoque.clipboard.read(): string | null
       "clipboard.write" → invoque.clipboard.write(text): void
       "network"         → invoque.fetch(url, {method?, headers?, body?}?):

@@ -334,6 +334,26 @@ final class CommandWriterTests: XCTestCase {
         XCTAssertTrue(moved, "user file should live in a snapshot: \(snapshots)")
     }
 
+    /// A renamed entry is the prune's collision case: the snapshot already
+    /// holds `index.js` (the old entry), so the live one can't move there —
+    /// it must be removed outright, or the stale file survives silently.
+    func testRenamedEntryPrunesOldEntryFile() throws {
+        let writer = CommandWriter(rootURL: root)
+        let v1JSON = manifestJSON()
+            .replacingOccurrences(of: "\"main.js\"", with: "\"index.js\"")
+        let v1 = GeneratedCommand(
+            manifestJSON: v1JSON, entryName: "index.js",
+            entrySource: "async function run() { return { title: \"v1\" }; }",
+            extraFiles: [:])
+        let directory = try writer.save(v1, prompt: "p", model: "m")
+        XCTAssertNotNil(fileContents(directory, "index.js"))
+
+        let (v2, _) = try generation()
+        try writer.save(v2, prompt: "p2", model: "m2")
+        XCTAssertNil(fileContents(directory, "index.js"))
+        XCTAssertNotNil(fileContents(directory, "main.js"))
+    }
+
     /// A hand-authored command's extra files aren't the generation's to
     /// prune — only maker-generated directories converge.
     func testUpdateKeepsHandAuthoredExtraFiles() throws {

@@ -208,10 +208,11 @@ enum GenerationParser {
                 .trimmingCharacters(in: .newlines)
             // Models often fence the payload inside a `--- name ---` block;
             // unwrap a single enclosing fence so the file isn't polluted
-            // with ``` markers (a standalone all-backtick line is never
-            // valid JS or JSON anyway).
+            // with ``` markers. Code files only — a .md/.txt payload could
+            // legitimately begin and end with fence lines.
+            let codeFile = name.hasSuffix(".js") || name.hasSuffix(".json")
             let block = content.components(separatedBy: "\n")
-            if block.count >= 2,
+            if codeFile, block.count >= 2,
                block.first?.trimmingCharacters(in: .whitespaces)
                    .hasPrefix("```") == true,
                let last = block.last?.trimmingCharacters(in: .whitespaces),

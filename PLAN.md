@@ -176,7 +176,8 @@ post-v1.
   | Module | Permission | Notes |
   |---|---|---|
   | `storage` | — (always) | per-command key-value store under `data/` |
-  | `args`, `log`, `notify`, `open` | — (always) | args, os_log, HUD/notification, open URL/file |
+  | `args`, `log`, `notify` | — (always) | args, os_log, HUD/notification |
+  | `open` | `open` | `NSWorkspace.open` — http(s) only; gated because query strings are an egress channel |
   | `clipboard` | `clipboard.read` / `clipboard.write` | NSPasteboard |
   | `fetch` | `network` | URLSession wrapper, returns text/JSON |
   | `fs` | `files` | scoped to `data/` + user-granted paths |

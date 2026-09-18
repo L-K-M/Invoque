@@ -228,9 +228,9 @@ final class JSRuntimeTests: XCTestCase {
     }
 
     func testOpenRejectsNonWebTargets() async throws {
-        // Always-on and permission-free, so it only opens http(s) — local
-        // paths and file: URLs return false rather than launching.
-        let command = try makeCommand(source: """
+        // Permission-gated, and it only opens http(s) — local paths and
+        // file: URLs return false rather than launching.
+        let command = try makeCommand(permissions: ["open"], source: """
             async function run() {
                 return { title: String(invoque.open("file:///etc/passwd"))
                          + "|" + String(invoque.open("/Applications/Safari.app")) };
@@ -239,6 +239,17 @@ final class JSRuntimeTests: XCTestCase {
         let result = await runtime.run(command: command)
         XCTAssertNil(result.error)
         XCTAssertEqual(result.title, "false|false")
+    }
+
+    /// `open` is an egress channel — http(s) URLs can carry read data in
+    /// their query strings — so it must be declared, not ambient.
+    func testOpenAbsentWithoutPermission() async throws {
+        let command = try makeCommand(source: """
+            async function run() { return { title: typeof invoque.open }; }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "undefined")
     }
 
     // MARK: Storage

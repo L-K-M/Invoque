@@ -285,8 +285,14 @@ struct CommandWriter {
         var stale: [String] = []
         for case let url as URL in enumerator {
             let resolved = url.resolvingSymlinksInPath().path
-            guard resolved.count > base.count + 1 else { continue }
-            let rel = String(resolved.dropFirst(base.count + 1)).lowercased()
+            // Prefix check, not just length: a symlink resolving outside
+            // the command directory must not manufacture a bogus rel.
+            guard resolved.hasPrefix(base + "/") else { continue }
+            // Keep the exact spelling for filesystem ops — the case-folded
+            // form is only for membership checks (case-sensitive volumes
+            // would otherwise build a source path that doesn't exist).
+            let exactRel = String(resolved.dropFirst(base.count + 1))
+            let rel = exactRel.lowercased()
             if rel == "data" || rel.hasPrefix("data/")
                 || rel == "history" || rel.hasPrefix("history/") {
                 enumerator.skipDescendants()
@@ -295,7 +301,7 @@ struct CommandWriter {
             if generatedPaths.contains(rel) || prefixes.contains(rel) {
                 continue
             }
-            stale.append(rel)
+            stale.append(exactRel)
             // A stale directory's contents move with it — no per-child
             // re-report needed.
             enumerator.skipDescendants()
@@ -304,10 +310,17 @@ struct CommandWriter {
             let source = directory.appendingPathComponent(rel)
             if let snapshotURL {
                 let destination = snapshotURL.appendingPathComponent(rel)
-                try? fileManager.createDirectory(
-                    at: destination.deletingLastPathComponent(),
-                    withIntermediateDirectories: true)
-                try? fileManager.moveItem(at: source, to: destination)
+                if fileManager.fileExists(atPath: destination.path) {
+                    // The snapshot already holds this path — a renamed
+                    // entry was snapshotted before the writes. The snapshot
+                    // copy is the recovery; the live one just goes away.
+                    try? fileManager.removeItem(at: source)
+                } else {
+                    try? fileManager.createDirectory(
+                        at: destination.deletingLastPathComponent(),
+                        withIntermediateDirectories: true)
+                    try? fileManager.moveItem(at: source, to: destination)
+                }
             } else {
                 try? fileManager.removeItem(at: source)
             }
