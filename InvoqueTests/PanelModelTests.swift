@@ -286,11 +286,11 @@ final class PanelModelTests: XCTestCase {
         model.moveSelection(by: 1)
         XCTAssertEqual(model.selection, 1)
         // A rescan firing while a filter session is active re-runs the
-        // command — identical output must not yank the selection.
+        // command — identical output must not yank the selection. The
+        // count predicate is already satisfied by the first run's rows,
+        // so just wait out the debounce plus the JS run.
         model.refreshResults()
-        await awaitResults(model) { $0.count == 2 }
-        // Let the second debounced run complete before asserting.
-        try await Task.sleep(nanoseconds: 300_000_000)
+        try await Task.sleep(nanoseconds: 500_000_000)
         XCTAssertEqual(model.selection, 1)
     }
 

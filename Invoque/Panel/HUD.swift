@@ -55,6 +55,8 @@ enum HUD {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.contentView = effect
+        // Informational only — never eat clicks aimed at what's underneath.
+        panel.ignoresMouseEvents = true
 
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main

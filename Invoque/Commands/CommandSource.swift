@@ -50,8 +50,8 @@ final class CommandSource: ItemSource {
                 action: action,
                 // The name doubles as the fallback trigger word for
                 // keywordless filters, so it must be matchable too.
-                matchText: manifest.title + " " + manifest.keywords.joined(separator: " ")
-                    + " " + manifest.name
+                matchText: ([manifest.title] + manifest.keywords + [manifest.name])
+                    .joined(separator: " ")
             )
         }
     }

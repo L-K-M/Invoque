@@ -96,7 +96,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // onReload is wired — wire first, then kick the scan explicitly.
         let commandSource = CommandSource(store: commandStore, autoReload: false)
         commandSource.onReload = { [weak model] in model?.refreshResults() }
-        Task { await commandSource.reload() }
         let commandRunner = CommandRunner()
         model.commandRunner = commandRunner
         model.filterLookup = { [commandSource] keyword in
@@ -105,6 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.commandLookup = { [commandStore] name in
             commandStore.command(named: name)
         }
+        // Kick the initial scan only after the model is fully wired — an
+        // unstructured Task starts immediately and can outrun the lines
+        // above. (The store's onChange→onReload subscription is init-time,
+        // so commands installed later still refresh the open panel.)
+        Task { await commandSource.reload() }
         let sources: [ItemSource] = [
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
             commandSource,
