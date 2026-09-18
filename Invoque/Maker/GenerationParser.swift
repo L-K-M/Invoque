@@ -102,8 +102,8 @@ enum GenerationParser {
         if lines.contains(where: { delimiterName(in: $0) != nil }) {
             do {
                 return try assemble(try collectDelimited(lines))
-            } catch let error as Failure {
-                switch error {
+            } catch let delimitedError as Failure {
+                switch delimitedError {
                 case .missingManifest, .missingEntryFile:
                     // The header-like line was probably prose — retry as
                     // fences. If that fails too, the delimited error is the
@@ -112,10 +112,10 @@ enum GenerationParser {
                     do {
                         return try assemble(try collectFenced(lines))
                     } catch {
-                        throw error
+                        throw delimitedError
                     }
                 default:
-                    throw error
+                    throw delimitedError
                 }
             }
         }
