@@ -18,6 +18,7 @@ final class PanelController: NSObject {
     private let model: PanelModel
     private let commandStore: CommandStore
     private let commandRunner: CommandRunner
+    private let permissionGrants: CommandPermissionGrants
     /// Sequencing for overlapping command runs — only the newest delivers.
     private var commandRunGeneration = 0
     /// Bumped on every `hide()` — distinguishes "still the same summon"
@@ -30,12 +31,14 @@ final class PanelController: NSObject {
     /// `model` is injected because the app's `AppSource.onReload` hook must
     /// reference it before `SearchModel` (which owns the source) exists.
     init(preferences: Preferences, model: PanelModel, searchModel: SearchModel,
-         commandStore: CommandStore, commandRunner: CommandRunner) {
+         commandStore: CommandStore, commandRunner: CommandRunner,
+         permissionGrants: CommandPermissionGrants) {
         self.preferences = preferences
         self.searchModel = searchModel
         self.model = model
         self.commandStore = commandStore
         self.commandRunner = commandRunner
+        self.permissionGrants = permissionGrants
         super.init()
 
         // Dismiss first, then perform: a slow action (app launch, AppleEvent
@@ -55,6 +58,11 @@ final class PanelController: NSObject {
             }
             self.hide()
             ActionPerformer.perform(row.action)
+        }
+        // Consent granted → resume the paused run. The grants are already
+        // recorded, so the re-dispatch passes the check this time.
+        model.onPermissionConfirmed = { [weak self] request in
+            self?.runCommand(named: request.command.name, args: request.args)
         }
         model.searchModel = searchModel
     }
@@ -122,6 +130,15 @@ final class PanelController: NSObject {
         guard let command = commandStore.command(named: name) else {
             hide()
             HUD.show("Unknown command: \(name)")
+            return
+        }
+        // First-run consent (PLAN §4.3): a command declaring risky
+        // permissions pauses here and the panel shows the confirmation
+        // card — nothing executes until the user allows.
+        let ungranted = permissionGrants.ungranted(for: command)
+        if !ungranted.isEmpty {
+            model.permissionRequest = CommandPermissionRequest(
+                command: command, args: args, permissions: ungranted)
             return
         }
         // Only the newest run may deliver — a slow earlier command must not

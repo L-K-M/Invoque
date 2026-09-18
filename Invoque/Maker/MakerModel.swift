@@ -61,6 +61,10 @@ final class MakerModel: ObservableObject {
     @Published private(set) var lastUsedModel: String?
     /// Prompt/output pairs for every completed generation this session.
     @Published private(set) var sessionHistory: [Exchange] = []
+    /// A test run paused on first-run consent for the draft's risky
+    /// permissions — same gate the panel applies to installed commands
+    /// (PLAN §4.3); generated code is untrusted, so testing can't bypass it.
+    @Published private(set) var permissionRequest: CommandPermissionRequest?
 
     /// The conversation sent to the model: system prompt, the original
     /// request, then alternating assistant outputs and user feedback.
@@ -72,6 +76,7 @@ final class MakerModel: ObservableObject {
     private let runner: CommandRunner
     private let writer: CommandWriter
     private let store: CommandStore?
+    private let permissionGrants: CommandPermissionGrants
 
     private var generationTask: Task<Void, Never>?
     /// Temp directory the current draft is staged into for test runs.
@@ -90,11 +95,13 @@ final class MakerModel: ObservableObject {
     nonisolated init(client: @escaping () -> LLMClientServing,
                      runner: CommandRunner,
                      writer: CommandWriter,
-                     store: CommandStore? = nil) {
+                     store: CommandStore? = nil,
+                     permissionGrants: CommandPermissionGrants = CommandPermissionGrants()) {
         self.clientProvider = client
         self.runner = runner
         self.writer = writer
         self.store = store
+        self.permissionGrants = permissionGrants
     }
 
     // MARK: Generate
@@ -208,12 +215,21 @@ final class MakerModel: ObservableObject {
     func test(args: [String] = []) async {
         guard let draft, draft.manifest != nil,
               phase == .draft || phase == .readyToSave else { return }
-        phase = .testing
         let epoch = self.epoch
         let result: JSResult
         do {
             let directory = try stage(draft)
             let command = try Command(directory: directory)
+            // First-run consent applies to drafts too: generated code is
+            // untrusted, so a shell/paste draft pauses for Allow before
+            // anything executes.
+            let ungranted = permissionGrants.ungranted(for: command)
+            guard ungranted.isEmpty else {
+                permissionRequest = CommandPermissionRequest(
+                    command: command, args: args, permissions: ungranted)
+                return
+            }
+            phase = .testing
             result = await runner.run(command: command, args: args)
         } catch {
             result = JSResult(output: .void, logs: [],
@@ -224,6 +240,20 @@ final class MakerModel: ObservableObject {
         guard epoch == self.epoch else { return }
         testResult = result
         phase = draft.isValid ? .readyToSave : .draft
+    }
+
+    /// Consent granted for the paused test — records the grant and re-runs
+    /// the same args (the check passes this time).
+    func confirmPermissionRequest() async {
+        guard let request = permissionRequest else { return }
+        permissionGrants.grant(request.permissions, for: request.command)
+        permissionRequest = nil
+        await test(args: request.args)
+    }
+
+    /// Declines the consent prompt: no grant, no test run.
+    func dismissPermissionRequest() {
+        permissionRequest = nil
     }
 
     /// Writes the draft's files into a fresh temp dir so `Command` can load
@@ -301,6 +331,7 @@ final class MakerModel: ObservableObject {
         transcript = []
         sessionHistory = []
         lastRawOutput = nil
+        permissionRequest = nil
         if let stagingDirectory {
             try? FileManager.default.removeItem(at: stagingDirectory)
             self.stagingDirectory = nil

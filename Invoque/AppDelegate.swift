@@ -104,6 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.commandLookup = { [commandStore] name in
             commandStore.command(named: name)
         }
+        // First-run consent for risky permissions — one store shared by the
+        // panel's run path and the Maker's test path, so Allow once covers
+        // both (PLAN §4.3).
+        let permissionGrants = CommandPermissionGrants()
+        model.permissionGrants = permissionGrants
         // The Maker: `make `/`mk ` routes to it. The client is a factory so
         // each generation picks up the current Settings (model/key changes
         // apply without a relaunch).
@@ -113,7 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The writer saves into the same root the store scans — a saved
             // command is visible to the launcher immediately.
             writer: CommandWriter(rootURL: commandStore.primaryRootURL),
-            store: commandStore)
+            store: commandStore,
+            permissionGrants: permissionGrants)
         // Kick the initial scan only after the model is fully wired — an
         // unstructured Task starts immediately and can outrun the lines
         // above. (The store's onChange→onReload subscription is init-time,
@@ -130,7 +136,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return PanelController(preferences: preferences, model: model,
                                searchModel: searchModel,
                                commandStore: commandStore,
-                               commandRunner: commandRunner)
+                               commandRunner: commandRunner,
+                               permissionGrants: permissionGrants)
     }
 
     @objc private func quit() {

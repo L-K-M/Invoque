@@ -199,8 +199,12 @@ post-v1.
 ### 4.3 Permissions UX
 
 - Declared in the manifest, visible on the command's detail line (small lock
-  badge). First run of a `shell`/`paste` command shows a confirmation sheet
-  explaining what it will do.
+  badge). First run of a `shell`/`paste` command pauses at the run boundary
+  and shows an in-panel consent card spelling out each risky permission —
+  ⏎ allows (the grant is recorded in UserDefaults under the command name),
+  "Don't Run"/esc declines. A manifest that gains a risky permission
+  re-asks for that one only. The Maker's Test button applies the same gate
+  to generated drafts.
 - The Maker never silently grants: generated manifests suggest the minimum set;
   elevating requires the user to tick it (or edit the JSON).
 
@@ -330,6 +334,7 @@ Invoque/
 │   ├── Commands/
 │   │   ├── CommandManifest.swift        # Codable + validation
 │   │   ├── CommandStore.swift           # scan roots, FS-watch, reload
+│   │   ├── CommandPermissionGrants.swift # first-run consent records
 │   │   ├── JSRuntime.swift              # JSContext lifecycle, eval, errors
 │   │   ├── InvoqueBridge.swift          # invoque.* assembly per permissions
 │   │   └── Modules/                     # Clipboard, Fetch, FS, Shell, …

@@ -72,6 +72,34 @@ final class PanelModel: ObservableObject {
         didSet { refreshResults() }
     }
 
+    /// Recorded consent for risky permissions — injected at wiring time so
+    /// the model can persist the user's Allow without knowing the store.
+    var permissionGrants: CommandPermissionGrants?
+
+    /// A command run paused on first-run consent (PLAN §4.3). While set,
+    /// the panel shows the confirmation card instead of the results list
+    /// and ⏎ means Allow.
+    @Published var permissionRequest: CommandPermissionRequest?
+
+    /// Fires after the user allows a `permissionRequest` — the controller
+    /// re-dispatches the run (the grants are already recorded, so it
+    /// proceeds this time).
+    var onPermissionConfirmed: ((CommandPermissionRequest) -> Void)?
+
+    /// Grants the requested permissions and hands the request back to the
+    /// controller to resume the paused run.
+    func confirmPermissionRequest() {
+        guard let request = permissionRequest else { return }
+        permissionGrants?.grant(request.permissions, for: request.command)
+        permissionRequest = nil
+        onPermissionConfirmed?(request)
+    }
+
+    /// Declines the request: no grant, no run — back to the results list.
+    func dismissPermissionRequest() {
+        permissionRequest = nil
+    }
+
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
@@ -314,6 +342,9 @@ final class PanelModel: ObservableObject {
     func reset(clearQuery: Bool) {
         if clearQuery { query = "" }
         selection = 0
+        // A pending consent prompt belongs to the last summon — it must
+        // not greet the next one.
+        permissionRequest = nil
     }
 
     /// Moves the selection by `delta` rows, wrapping at both ends.
@@ -336,6 +367,12 @@ final class PanelModel: ObservableObject {
     /// the query expands to `"<keyword> "`, entering the command's filter
     /// mode instead of dismissing.
     func submit() {
+        // A pending consent prompt owns ⏎ — it means Allow, not "run
+        // whatever row is selected underneath the card".
+        if permissionRequest != nil {
+            confirmPermissionRequest()
+            return
+        }
         // While the maker owns the panel ⏎ means "advance the maker flow"
         // (generate when idle, save when clean) — `MakerModel` decides.
         if makerIsActive, let maker, let prompt = makerPrompt {

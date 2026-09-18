@@ -163,6 +163,9 @@ struct MakerView: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let request = model.permissionRequest {
+                permissionRow(request)
+            }
             feedbackRow
             actionRow
         }
@@ -211,6 +214,25 @@ struct MakerView: View {
             parts.append("+ \(generation.extraFiles.keys.sorted().joined(separator: ", "))")
         }
         return parts.joined(separator: "  ")
+    }
+
+    /// The paused-test consent row — same first-run gate the panel applies
+    /// to installed commands (PLAN §4.3), because generated code is
+    /// untrusted too. Allow records the grant and re-runs the test.
+    private func permissionRow(_ request: CommandPermissionRequest) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "lock.shield")
+                .foregroundStyle(.secondary)
+            Text("Wants to: " + request.permissions
+                .map { CommandPermissionGrants.consentLine(for: $0) }
+                .joined(separator: "; "))
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Allow & Test") { Task { await model.confirmPermissionRequest() } }
+                .buttonStyle(.borderedProminent)
+            Button("Decline") { model.dismissPermissionRequest() }
+        }
     }
 
     // MARK: Test

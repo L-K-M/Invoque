@@ -45,20 +45,30 @@ final class MakerModelTests: XCTestCase {
         }
     }
 
-    private func makeModel(_ client: StubClient) -> MakerModel {
+    private func makeModel(_ client: StubClient,
+                           permissionGrants: CommandPermissionGrants? = nil) -> MakerModel {
         MakerModel(client: { client },
                    runner: CommandRunner(),
                    writer: CommandWriter(rootURL: root),
-                   store: store)
+                   store: store,
+                   permissionGrants: permissionGrants ?? CommandPermissionGrants(
+                       defaults: UserDefaults(
+                           suiteName: "MakerModelTests-\(UUID().uuidString)")!))
     }
 
     private func generationOutput(name: String = "gen-demo",
                                   permissions: [String] = [],
-                                  usesClipboard: Bool = false) -> String {
+                                  usesClipboard: Bool = false,
+                                  usesShell: Bool = false) -> String {
         let list = permissions.map { "\"\($0)\"" }.joined(separator: ", ")
-        let body = usesClipboard
-            ? "const t = ctx.clipboard.read() ?? \"\"; return { title: t };"
-            : "return { title: \"done\" };"
+        let body: String
+        if usesShell {
+            body = "const r = ctx.shell.run(\"echo hi\"); return { title: r.stdout.trim() };"
+        } else if usesClipboard {
+            body = "const t = ctx.clipboard.read() ?? \"\"; return { title: t };"
+        } else {
+            body = "return { title: \"done\" };"
+        }
         return """
         --- command.json ---
         {
@@ -174,6 +184,67 @@ final class MakerModelTests: XCTestCase {
         // testResult stays nil until the Test button.
         let result = await model.testResult
         XCTAssertNil(result)
+    }
+
+    // MARK: Permission consent
+
+    /// A draft declaring `shell` pauses the test run for first-run consent
+    /// — generated code is untrusted, so testing can't bypass the gate
+    /// installed commands pass through.
+    func testShellDraftPausesForConsent() async {
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+
+        let request = await model.permissionRequest
+        XCTAssertEqual(request?.permissions, [.shell])
+        let result = await model.testResult
+        XCTAssertNil(result, "nothing must execute before consent")
+        // The phase is untouched — the draft stays testable/saveable.
+        let phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+    }
+
+    /// Allow records the grant and runs the paused test with the same args.
+    func testConfirmPermissionRequestRunsTest() async {
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+        XCTAssertNotNil(await model.permissionRequest)
+
+        await model.confirmPermissionRequest()
+        let result = await model.testResult
+        XCTAssertEqual(result?.title, "hi")
+        XCTAssertNil(await model.permissionRequest)
+    }
+
+    func testDismissPermissionRequestLeavesDraftUntested() async {
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client)
+
+        await model.start(prompt: "x")
+        await model.test()
+        await model.dismissPermissionRequest()
+        XCTAssertNil(await model.permissionRequest)
+        XCTAssertNil(await model.testResult)
     }
 
     // MARK: Save
