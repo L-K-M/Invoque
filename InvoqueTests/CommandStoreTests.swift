@@ -59,8 +59,8 @@ final class CommandStoreTests: XCTestCase {
         // hand-built URLs.
         let rootPath = root.standardizedFileURL.path
         let nestedCommandDirs = Set(store.scanWatchTargets
-            .map { $0.deletingLastPathComponent().standardizedFileURL.path }
-            .filter { $0 != rootPath && $0.hasPrefix(rootPath + "/") })
+            .map { $0.deletingLastPathComponent() }
+            .filter { $0.deletingLastPathComponent().standardizedFileURL.path == rootPath })
         XCTAssertEqual(nestedCommandDirs.count, 4)
     }
 
