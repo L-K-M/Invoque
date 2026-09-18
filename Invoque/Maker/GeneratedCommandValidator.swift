@@ -217,7 +217,9 @@ enum GeneratedCommandValidator {
         var cursor = source.startIndex
         for range in opaque {
             masked += source[cursor..<range.lowerBound]
-            masked += String(repeating: " ", count: range.count)
+            masked += String(repeating: " ",
+                             count: source.distance(from: range.lowerBound,
+                                                    to: range.upperBound))
             cursor = range.upperBound
         }
         masked += source[cursor...]
