@@ -299,6 +299,7 @@ final class MakerModel: ObservableObject {
         lastError = nil
         prompt = ""
         transcript = []
+        sessionHistory = []
         lastRawOutput = nil
         if let stagingDirectory {
             try? FileManager.default.removeItem(at: stagingDirectory)
