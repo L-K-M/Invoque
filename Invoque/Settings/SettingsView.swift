@@ -107,16 +107,26 @@ struct SettingsView: View {
         // failed experiment must not clobber the stored working key, and
         // the field keeps its text so the user can fix and retry.
         let keyOverride = apiKeyDraft.isEmpty ? nil : apiKeyDraft
+        // The key this run describes — a late completion must not publish
+        // a result for a key that's no longer stored or drafted (Save and
+        // Remove can land while the request is in flight).
+        let testedKey = keyOverride ?? makerSettings.apiKey
         connectionTestRunning = true
         connectionTestResult = nil
         connectionTestedDraft = keyOverride
         let client = makerSettings.makeClient(keyOverride: keyOverride)
         Task { @MainActor in
+            let result: String
             do {
-                let status = try await client.testConnection()
-                connectionTestResult = status
+                result = try await client.testConnection()
             } catch {
-                connectionTestResult = error.localizedDescription
+                result = error.localizedDescription
+            }
+            // Evaluated at completion: a Save/Remove that landed while
+            // the request was in flight retires the result.
+            if makerSettings.apiKey == testedKey
+                || apiKeyDraft == testedKey {
+                connectionTestResult = result
             }
             connectionTestRunning = false
         }
