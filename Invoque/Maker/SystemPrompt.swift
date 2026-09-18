@@ -57,8 +57,8 @@ enum SystemPrompt {
 
     Filter mode: the command re-runs per keystroke (~80 ms debounce) with
     args[0] = the text after the keyword, and must return { items }. Keep it
-    fast and side-effect free: `shell` and `paste` are withheld in filter
-    mode even when declared.
+    fast and side-effect free: `shell` is withheld in filter mode even
+    when declared.
 
     ## invoque.* API
 

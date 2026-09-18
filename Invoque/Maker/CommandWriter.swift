@@ -140,8 +140,9 @@ struct CommandWriter {
             at: directory.appendingPathComponent("data", isDirectory: true),
             withIntermediateDirectories: true)
         // The manifest is the commit point: written last, a failure above
-        // leaves the previous command.json describing a complete command —
-        // a mid-save rescan sees old manifest + new files, still loadable.
+        // leaves the previous command.json intact and loadable, though its
+        // entry file may already hold new content — the runtime still
+        // enforces the old manifest's permissions, so this fails safe.
         try manifestData.write(to: manifestURL, options: .atomic)
         return directory
     }

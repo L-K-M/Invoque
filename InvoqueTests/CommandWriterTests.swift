@@ -97,10 +97,10 @@ final class CommandWriterTests: XCTestCase {
 
     func testUpdateSnapshotsHistoryAndBumpsRevision() throws {
         let writer = CommandWriter(rootURL: root)
-        let (v1, m1) = try generation(source: "async function run() { return { title: \"v1\" }; }")
+        let (v1, _) = try generation(source: "async function run() { return { title: \"v1\" }; }")
         try writer.save(v1, prompt: "first", model: "m1")
 
-        let (v2, m2) = try generation(source: "async function run() { return { title: \"v2\" }; }")
+        let (v2, _) = try generation(source: "async function run() { return { title: \"v2\" }; }")
         let directory = try writer.save(v2, prompt: "second", model: "m2")
 
         let history = directory.appendingPathComponent("history")

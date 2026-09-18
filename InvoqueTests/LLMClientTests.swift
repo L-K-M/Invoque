@@ -275,7 +275,25 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(transport.request?.url?.absoluteString,
                        "https://api.anthropic.com/v1/models")
         XCTAssertEqual(transport.request?.httpMethod, "GET")
+        XCTAssertEqual(transport.request?.timeoutInterval, 15)
         XCTAssertEqual(transport.request?
             .value(forHTTPHeaderField: "x-api-key"), "sk-test")
+    }
+
+    /// URLRequest's 60 s default would silently override the session's
+    /// timeout configuration — generation requests must carry the budget.
+    func testGenerationRequestCarriesFullTimeoutBudget() async throws {
+        let transport = StubTransport()
+        transport.response = .success((
+            jsonData(["choices": [["message": ["content": "x"],
+                                   "finish_reason": "stop"]]]),
+            httpResponse(status: 200)))
+        let client = makeClient(transport: transport)
+
+        _ = try await client.complete(messages: [
+            LLMMessage(role: .user, content: "hi"),
+        ])
+        XCTAssertEqual(transport.request?.timeoutInterval,
+                       LLMClient.generationBudget)
     }
 }

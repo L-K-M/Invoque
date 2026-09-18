@@ -115,6 +115,14 @@ final class LLMClient: LLMClientServing {
     /// than the 60 s default, for long generations on slow local models.
     static let requestTimeout: TimeInterval = 60
 
+    /// The full per-request budget, applied to both the session
+    /// configuration and each `URLRequest` — a request built with the
+    /// plain initializer defaults to 60 s and that value wins over the
+    /// session's, so the session-level setting alone would be dead code.
+    static var generationBudget: TimeInterval {
+        max(requestTimeout * 2, 300)
+    }
+
     init(configuration: Configuration, transport: LLMTransport = LLMClient.defaultTransport()) {
         self.configuration = configuration
         self.transport = transport
@@ -126,9 +134,8 @@ final class LLMClient: LLMClientServing {
     /// is still working, and that's exactly the wait we're allowing.
     private static func defaultTransport() -> LLMTransport {
         let config = URLSessionConfiguration.ephemeral
-        let budget = max(requestTimeout * 2, 300)
-        config.timeoutIntervalForRequest = budget
-        config.timeoutIntervalForResource = budget
+        config.timeoutIntervalForRequest = generationBudget
+        config.timeoutIntervalForResource = generationBudget
         return URLSession(configuration: config)
     }
 
@@ -156,6 +163,9 @@ final class LLMClient: LLMClientServing {
             ? try anthropicEndpoint("models") : try endpoint("models")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        // A probe should fail fast — an unreachable host otherwise spins
+        // for the full generation budget under the Settings button.
+        request.timeoutInterval = 15
         applyAuth(to: &request)
         let (data, response) = try await send(request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -224,7 +234,7 @@ final class LLMClient: LLMClientServing {
         // A 200 is not success when the cap cut the output: the text ends
         // mid-file and fails far downstream as a confusing parse error.
         if (object["stop_reason"] as? String) == "max_tokens" {
-            throw LLMError.truncatedOutput(limit: 4096)
+            throw LLMError.truncatedOutput(limit: body["max_tokens"] as? Int ?? 0)
         }
         return text
     }
@@ -277,6 +287,9 @@ final class LLMClient: LLMClientServing {
     private func post(_ body: [String: Any], to url: URL) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        // URLRequest's own 60 s default overrides the session
+        // configuration for data tasks — the budget must land here too.
+        request.timeoutInterval = Self.generationBudget
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuth(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
