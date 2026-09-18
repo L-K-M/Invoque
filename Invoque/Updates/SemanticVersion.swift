@@ -65,8 +65,13 @@ struct SemanticVersion: Comparable, Equatable, CustomStringConvertible {
             }
             return l.split(separator: ".").lexicographicallyPrecedes(
                 r.split(separator: ".")) { a, b in
-                    if isNumeric(a) && isNumeric(b), let x = Int(a), let y = Int(b) {
-                        return x < y
+                    if isNumeric(a) && isNumeric(b) {
+                        if let x = Int(a), let y = Int(b) { return x < y }
+                        // Digit strings too long for Int: longer is larger;
+                        // equal length orders lexically. A plain lexical
+                        // fallback re-opens a cycle ("3" < "19" < "20…0" < "3").
+                        if a.count != b.count { return a.count < b.count }
+                        return a < b
                     }
                     switch (isNumeric(a), isNumeric(b)) {
                     case (true, false): return true    // numeric < alphanumeric

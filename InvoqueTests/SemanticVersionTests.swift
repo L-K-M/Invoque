@@ -61,6 +61,18 @@ final class SemanticVersionTests: XCTestCase {
         XCTAssertTrue(SemanticVersion("1.0.0-beta")! < SemanticVersion("1.0.0-beta.1")!)
     }
 
+    /// Numeric identifiers longer than `Int` can hold must still order
+    /// numerically — a lexical fallback on the overflow pair re-opens the
+    /// strict-weak-ordering cycle ("3" < "19" < "20000000000000000000" < "3").
+    func testPrereleaseOverflowLengthNumericsOrderByMagnitude() {
+        let huge = SemanticVersion("1.0.0-a.20000000000000000000")!
+        XCTAssertTrue(SemanticVersion("1.0.0-a.3")! < SemanticVersion("1.0.0-a.19")!)
+        XCTAssertTrue(SemanticVersion("1.0.0-a.19")! < huge)
+        XCTAssertFalse(huge < SemanticVersion("1.0.0-a.3")!)
+        // Equal-length digit strings order like their digits.
+        XCTAssertTrue(SemanticVersion("1.0.0-a.10000000000000000000")! < huge)
+    }
+
     func testNewerThanCurrentDetection() {
         let current = SemanticVersion("1.0")!
         XCTAssertTrue(SemanticVersion("1.0.1")! > current)

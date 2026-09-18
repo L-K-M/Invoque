@@ -32,6 +32,9 @@ final class CommandPermissionGrantsTests: XCTestCase {
     }
 
     func testUngrantedReturnsOnlyRiskyPermissions() throws {
+        // clipboard.read is intentionally NOT consent-gated — it is declared
+        // (and surfaced on the permission badge) but only shell/paste gate.
+        // If that classification changes, this fixture must change with it.
         let command = try makeCommand(permissions: ["shell", "network", "clipboard.read"])
         XCTAssertEqual(grants.ungranted(for: command), [.shell])
     }
