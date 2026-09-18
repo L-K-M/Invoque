@@ -487,12 +487,13 @@ final class PanelModelTests: XCTestCase {
             --- main.js ---
             async function run() { return { title: "done" }; }
             """
+        let suiteName = "PanelModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
         return MakerModel(client: { client },
                           runner: CommandRunner(),
                           writer: CommandWriter(rootURL: commandDirectory),
-                          permissionGrants: CommandPermissionGrants(
-                              defaults: UserDefaults(
-                                  suiteName: "PanelModelTests-\(UUID().uuidString)")!))
+                          permissionGrants: CommandPermissionGrants(defaults: defaults))
     }
 
     func testMakeKeywordActivatesMaker() {

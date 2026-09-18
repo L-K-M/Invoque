@@ -47,13 +47,15 @@ final class MakerModelTests: XCTestCase {
 
     private func makeModel(_ client: StubClient,
                            permissionGrants: CommandPermissionGrants? = nil) -> MakerModel {
-        MakerModel(client: { client },
-                   runner: CommandRunner(),
-                   writer: CommandWriter(rootURL: root),
-                   store: store,
-                   permissionGrants: permissionGrants ?? CommandPermissionGrants(
-                       defaults: UserDefaults(
-                           suiteName: "MakerModelTests-\(UUID().uuidString)")!))
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return MakerModel(client: { client },
+                          runner: CommandRunner(),
+                          writer: CommandWriter(rootURL: root),
+                          store: store,
+                          permissionGrants: permissionGrants
+                              ?? CommandPermissionGrants(defaults: defaults))
     }
 
     private func generationOutput(name: String = "gen-demo",

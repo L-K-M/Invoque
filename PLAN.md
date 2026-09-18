@@ -204,10 +204,13 @@ post-v1.
   ⌘⏎ or the Allow button grants (plain ⏎ is neutral, so a habitual
   double-⏎ can't record a permanent grant); "Don't Run"/esc declines.
   Grants persist in UserDefaults keyed by command name plus a hash of the
-  entry file — consent attaches to the code the user saw, so regenerated,
-  replaced, or same-named code re-asks, and a manifest that gains a risky
-  permission re-asks for that one only. The Maker's Test button applies
-  the same gate to generated drafts.
+  entry file — consent attaches to the entry bytes the user approved, so
+  regenerated, replaced, or same-named entry code re-asks, and a manifest
+  that gains a risky permission re-asks for that one only. (Widening the
+  key to hash auxiliary files is a follow-up once commands actually ship
+  executable siblings — today nothing can `require` them, though a
+  `shell`-permitted entry could `exec` one.) The Maker's Test button
+  applies the same gate to generated drafts.
 - The Maker never silently grants: generated manifests suggest the minimum set;
   elevating requires the user to tick it (or edit the JSON).
 
