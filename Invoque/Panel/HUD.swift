@@ -13,7 +13,7 @@ enum HUD {
     /// replaces the current overlay rather than stacking. Callable from
     /// any context — the AppKit work always happens on the main queue.
     static func show(_ text: String) {
-        DispatchQueue.main.async { present(text) }
+        Task { @MainActor in present(text) }
     }
 
     @MainActor
@@ -73,7 +73,8 @@ enum HUD {
         // dismissed early by the first show's timer.
         generation += 1
         let shown = generation
-        DispatchQueue.main.asyncAfter(deadline: .now() + visibleSeconds) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(visibleSeconds * 1_000_000_000))
             if generation == shown { dismiss() }
         }
     }
