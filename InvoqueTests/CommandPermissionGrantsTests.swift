@@ -54,7 +54,7 @@ final class CommandPermissionGrantsTests: XCTestCase {
     /// earlier grants are kept, not re-litigated.
     func testNewRiskyPermissionReAsks() throws {
         let command = try makeCommand(permissions: ["shell", "paste"])
-        try grantShell(to: command)
+        try grantShell(to: command, granting: [.shell])
         XCTAssertEqual(grants.ungranted(for: command), [.paste])
     }
 
@@ -162,11 +162,18 @@ final class CommandPermissionGrantsTests: XCTestCase {
 
     /// The production consent flow in miniature: build the request (which
     /// captures the entry-file digest), then record the grant for it.
-    private func grantShell(to command: Command) throws {
+    /// `granting` narrows the recorded permissions — a request carries all
+    /// pending ones, but a test may need to simulate a partial Allow.
+    private func grantShell(to command: Command,
+                            granting subset: [CommandManifest.Permission]? = nil) throws {
         let request = try XCTUnwrap(
             grants.consentRequest(for: command, args: []),
             "fixture commands all declare shell")
-        grants.grant(request)
+        let scoped = subset.map {
+            CommandPermissionRequest(command: request.command, args: request.args,
+                                     permissions: $0, grantKey: request.grantKey)
+        } ?? request
+        grants.grant(scoped)
     }
 
     /// A real command on disk — the grant key hashes the entry file, so
