@@ -148,8 +148,11 @@ final class UpdateCheckerTests: XCTestCase {
         private let lock = NSLock()
         private var continuation: CheckedContinuation<GitHubRelease, Never>?
         private var released = false
+        private var storage = 0
+        var calls: Int { lock.lock(); defer { lock.unlock() }; return storage }
         init(release: GitHubRelease) { self.release = release }
         func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease {
+            lock.lock(); storage += 1; lock.unlock()
             await withCheckedContinuation { c in
                 lock.lock()
                 if released { lock.unlock(); c.resume(returning: release) }
@@ -199,6 +202,11 @@ final class UpdateCheckerTests: XCTestCase {
 
         let done = await waitFor { !checker.isChecking }
         XCTAssertTrue(done)
+        // The flag must be consumed-and-cleared at the read site: if it
+        // leaked, the defer would queue a second user-initiated run —
+        // settle, then require exactly one fetch.
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(client.calls, 1)
         XCTAssertTrue(probe.calls.isEmpty,
                       "a run requested mid-flight must present, not queue")
     }
