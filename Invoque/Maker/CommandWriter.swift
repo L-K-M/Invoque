@@ -99,12 +99,16 @@ struct CommandWriter {
         // is written from the normalized manifest, so a generated file that
         // only differs in case would silently overwrite it on APFS — the
         // comparison is case-insensitive for the same reason.
+        var seenCaseFolded = Set<String>()
         for name in generation.files.keys {
             let firstComponent = name.components(separatedBy: "/")
                 .first?.lowercased()
             guard Self.isSafeRelativePath(name),
                   firstComponent != "data", firstComponent != "history",
-                  name == "command.json" || name.lowercased() != "command.json" else {
+                  name == "command.json" || name.lowercased() != "command.json",
+                  // Two names differing only by case collide on APFS —
+                  // the second write would silently replace the first.
+                  seenCaseFolded.insert(name.lowercased()).inserted else {
                 throw SaveError.unsafeFileName(name)
             }
         }
@@ -117,69 +121,151 @@ struct CommandWriter {
             throw SaveError.entryNotPresent(persisted.entry)
         }
 
-        let previousRevision = try snapshotExisting(in: directory,
-                                                    fileManager: fileManager)
+        let snapshot = try snapshotExisting(in: directory,
+                                            fileManager: fileManager)
         let manifestData = try normalizedManifest(generation.manifestJSON,
-                                                  revision: previousRevision + 1,
+                                                  revision: snapshot.revision + 1,
                                                   prompt: prompt, model: model)
 
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        for (name, contents) in generation.files
-        where name.lowercased() != "command.json" {
-            guard Self.isSafeRelativePath(name) else {
-                throw SaveError.unsafeFileName(name)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            for (name, contents) in generation.files
+            where name.lowercased() != "command.json" {
+                guard Self.isSafeRelativePath(name) else {
+                    throw SaveError.unsafeFileName(name)
+                }
+                let fileURL = directory.appendingPathComponent(name)
+                try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+                try contents.write(to: fileURL, atomically: true, encoding: .utf8)
             }
-            let fileURL = directory.appendingPathComponent(name)
-            try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(),
-                                            withIntermediateDirectories: true)
-            try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+            // `data/` always exists so `invoque.fs`/`storage` have their
+            // scope — it stays empty until the command itself writes.
+            try fileManager.createDirectory(
+                at: directory.appendingPathComponent("data", isDirectory: true),
+                withIntermediateDirectories: true)
+            // The manifest is the commit point — written last.
+            try manifestData.write(to: manifestURL, options: .atomic)
+        } catch {
+            // Roll back so a failed save never leaves old manifest + new
+            // files: the runtime would otherwise apply the previous
+            // permissions to code they were never checked against.
+            rollback(snapshot, removingGenerated: generation.files.keys,
+                     in: directory, fileManager: fileManager)
+            throw error
         }
-        // `data/` always exists so `invoque.fs`/`storage` have their scope —
-        // it stays empty until the command itself writes.
-        try fileManager.createDirectory(
-            at: directory.appendingPathComponent("data", isDirectory: true),
-            withIntermediateDirectories: true)
-        // The manifest is the commit point: written last, a failure above
-        // leaves the previous command.json intact and loadable, though its
-        // entry file may already hold new content — the runtime still
-        // enforces the old manifest's permissions, so this fails safe.
-        try manifestData.write(to: manifestURL, options: .atomic)
+        if snapshot.wasGenerated {
+            pruneStaleFiles(in: directory, generation: generation,
+                            fileManager: fileManager)
+        }
         return directory
     }
 
     // MARK: History
 
+    /// What `snapshotExisting` learned about the command being replaced —
+    /// enough to bump the revision, roll back a failed save, and know
+    /// whether pruning dropped files is safe.
+    private struct ExistingSnapshot {
+        var revision = 0
+        /// The old manifest was maker-generated — its extra files are
+        /// fair to prune on update. Hand-authored commands keep theirs.
+        var wasGenerated = false
+        /// The `history/<timestamp>/` directory, `nil` for a fresh save.
+        var url: URL?
+        /// Relative paths actually snapshotted (manifest plus old entry).
+        var fileNames: [String] = []
+    }
+
     /// If `directory` already holds a command, copies its `command.json` and
-    /// entry file into `history/<timestamp>/` and returns its previous
-    /// revision (0 for a fresh command). The snapshot happens before any
-    /// write, so a failed save leaves the old command untouched.
+    /// entry file into `history/<timestamp>/` and describes them in the
+    /// returned snapshot. The snapshot happens before any write, so the
+    /// rollback path can restore the old command on a failed save.
     private func snapshotExisting(in directory: URL,
-                                  fileManager: FileManager) throws -> Int {
+                                  fileManager: FileManager) throws -> ExistingSnapshot {
+        var snapshot = ExistingSnapshot()
         let manifestURL = directory.appendingPathComponent("command.json")
-        guard fileManager.fileExists(atPath: manifestURL.path) else { return 0 }
+        guard fileManager.fileExists(atPath: manifestURL.path) else {
+            return snapshot
+        }
 
         // The previous entry name comes from the previous manifest — usually
         // "main.js", but a hand-edited command may differ. An undecodable old
         // manifest still snapshots command.json alone.
         let oldManifest = (try? Data(contentsOf: manifestURL))
             .flatMap { try? JSONDecoder().decode(CommandManifest.self, from: $0) }
-        let previousRevision = oldManifest?.generated?.revision ?? 0
+        snapshot.revision = oldManifest?.generated?.revision ?? 0
+        snapshot.wasGenerated = oldManifest?.generated != nil
 
-        let snapshot = uniqueSnapshotDirectory(in: directory, fileManager: fileManager)
-        try fileManager.createDirectory(at: snapshot, withIntermediateDirectories: true)
+        let snapshotURL = uniqueSnapshotDirectory(in: directory, fileManager: fileManager)
+        try fileManager.createDirectory(at: snapshotURL, withIntermediateDirectories: true)
+        snapshot.url = snapshotURL
         var names = ["command.json"]
         if let oldEntry = oldManifest?.entry { names.append(oldEntry) }
         for name in names {
             guard Self.isSafeRelativePath(name) else { continue }
             let source = directory.appendingPathComponent(name)
             guard fileManager.fileExists(atPath: source.path) else { continue }
-            let destination = snapshot.appendingPathComponent(name)
+            let destination = snapshotURL.appendingPathComponent(name)
             try fileManager.createDirectory(
                 at: destination.deletingLastPathComponent(),
                 withIntermediateDirectories: true)
             try fileManager.copyItem(at: source, to: destination)
+            snapshot.fileNames.append(name)
         }
-        return previousRevision
+        return snapshot
+    }
+
+    /// A failed save restores the snapshotted manifest and entry — without
+    /// it the directory holds old manifest + new files, a mixed-revision
+    /// state where the runtime applies permissions the new code was never
+    /// checked against. A fresh command's partial writes are just removed.
+    /// New files the failed generation introduced stay behind as inert
+    /// extras the old manifest doesn't reference (a later generated save
+    /// prunes them); byte-for-byte rollback of every file is the deferred
+    /// snapshot-all-files work.
+    private func rollback(_ snapshot: ExistingSnapshot,
+                          removingGenerated names: Dictionary<String, String>.Keys,
+                          in directory: URL,
+                          fileManager: FileManager) {
+        if let snapshotURL = snapshot.url {
+            for name in snapshot.fileNames {
+                let destination = directory.appendingPathComponent(name)
+                try? fileManager.removeItem(at: destination)
+                try? fileManager.copyItem(
+                    at: snapshotURL.appendingPathComponent(name),
+                    to: destination)
+            }
+        } else {
+            for name in names where Self.isSafeRelativePath(name) {
+                try? fileManager.removeItem(
+                    at: directory.appendingPathComponent(name))
+            }
+        }
+    }
+
+    /// An update should leave the directory matching the generation —
+    /// files a new revision dropped (a renamed entry, a removed helper)
+    /// are deleted. `data/` and `history/` are runtime state and always
+    /// stay, and only maker-generated commands are pruned: a hand-authored
+    /// command may carry files the generation never knew about.
+    private func pruneStaleFiles(in directory: URL,
+                                 generation: GeneratedCommand,
+                                 fileManager: FileManager) {
+        var keep: Set<String> = ["command.json", "data", "history"]
+        for name in generation.files.keys {
+            if let first = name.components(separatedBy: "/").first {
+                keep.insert(first.lowercased())
+            }
+        }
+        guard let items = try? fileManager.contentsOfDirectory(
+            atPath: directory.path) else { return }
+        // Runs after the manifest commit: a prune hiccup must not fail an
+        // already-committed save, so removals are best-effort.
+        for item in items where !keep.contains(item.lowercased()) {
+            try? fileManager.removeItem(
+                at: directory.appendingPathComponent(item))
+        }
     }
 
     /// Same rules the parser enforces: a relative path with no `..`, no

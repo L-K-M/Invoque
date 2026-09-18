@@ -63,6 +63,7 @@ final class LLMClientTests: XCTestCase {
                        "Bearer sk-test")
         // OpenAI mode must not leak the Anthropic header pair.
         XCTAssertNil(request?.value(forHTTPHeaderField: "x-api-key"))
+        XCTAssertNil(request?.value(forHTTPHeaderField: "anthropic-version"))
         let body = request?.httpBody.flatMap {
             try? JSONSerialization.jsonObject(with: $0)
         } as? [String: Any]

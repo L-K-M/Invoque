@@ -244,4 +244,96 @@ final class CommandWriterTests: XCTestCase {
         XCTAssertEqual(try FileManager.default
             .contentsOfDirectory(atPath: root.path), [])
     }
+
+    /// Two names differing only by case collide on case-insensitive APFS —
+    /// the second write would silently replace the first, so the pair is
+    /// rejected before anything lands.
+    func testCaseVariantFileNamesAreRejected() throws {
+        let (generation, _) = try generation(
+            extraFiles: ["Readme.md": "a", "readme.md": "b"])
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, prompt: "p", model: "m")
+        ) { error in
+            guard case CommandWriter.SaveError.unsafeFileName = error else {
+                return XCTFail("expected unsafeFileName, got \(error)")
+            }
+        }
+        XCTAssertEqual(try FileManager.default
+            .contentsOfDirectory(atPath: root.path), [])
+    }
+
+    /// A regeneration that drops a file must delete it — otherwise the
+    /// directory silently diverges from what was reviewed and approved.
+    func testUpdatePrunesFilesTheNewRevisionDropped() throws {
+        let writer = CommandWriter(rootURL: root)
+        let (v1, _) = try generation(
+            extraFiles: ["helpers.js": "function h() {}"])
+        let directory = try writer.save(v1, prompt: "p", model: "m")
+        XCTAssertNotNil(fileContents(directory, "helpers.js"))
+
+        let (v2, _) = try generation()
+        try writer.save(v2, prompt: "p2", model: "m2")
+        XCTAssertNil(fileContents(directory, "helpers.js"))
+        // data/ and history/ are runtime state and always survive.
+        let items = try FileManager.default
+            .contentsOfDirectory(atPath: directory.path)
+        XCTAssertTrue(items.contains("data"))
+        XCTAssertTrue(items.contains("history"))
+    }
+
+    /// A hand-authored command's extra files aren't the generation's to
+    /// prune — only maker-generated directories converge.
+    func testUpdateKeepsHandAuthoredExtraFiles() throws {
+        let directory = root.appendingPathComponent("demo")
+        try FileManager.default.createDirectory(at: directory,
+                                                withIntermediateDirectories: true)
+        try manifestJSON().write(to: directory.appendingPathComponent("command.json"),
+                                 atomically: true, encoding: .utf8)
+        try "async function run() {}".write(
+            to: directory.appendingPathComponent("main.js"),
+            atomically: true, encoding: .utf8)
+        try "function mine() {}".write(
+            to: directory.appendingPathComponent("mine.js"),
+            atomically: true, encoding: .utf8)
+
+        let (generation, _) = try generation()
+        try CommandWriter(rootURL: root)
+            .save(generation, prompt: "p", model: "m")
+        XCTAssertNotNil(fileContents(directory, "mine.js"))
+    }
+
+    /// A write failure mid-save restores the snapshotted manifest and
+    /// entry — the directory must not end up with old manifest + new code.
+    func testFailedUpdateRestoresManifestAndEntry() throws {
+        let writer = CommandWriter(rootURL: root)
+        let (v1, _) = try generation(
+            source: "async function run() { return { title: \"v1\" }; }")
+        let directory = try writer.save(v1, prompt: "p", model: "m")
+        let originalManifest = fileContents(directory, "command.json")
+        let originalEntry = fileContents(directory, "main.js")
+
+        let (v2, _) = try generation(
+            source: "async function run() { return { title: \"v2\" }; }")
+        XCTAssertThrowsError(
+            try writer.save(v2, prompt: "p2", model: "m2",
+                            fileManager: FailOnDataDirectory()))
+        XCTAssertEqual(fileContents(directory, "command.json"), originalManifest)
+        XCTAssertEqual(fileContents(directory, "main.js"), originalEntry)
+    }
+
+    /// Fails when the save reaches `data/` — after the file writes, before
+    /// the manifest commit, the exact mixed-revision window.
+    private final class FailOnDataDirectory: FileManager {
+        override func createDirectory(
+            at url: URL, withIntermediateDirectories createIntermediates: Bool,
+            attributes: [FileAttributeKey: Any]? = nil) throws {
+            if url.lastPathComponent == "data" {
+                throw CocoaError(.fileWriteNoPermission)
+            }
+            try super.createDirectory(
+                at: url, withIntermediateDirectories: createIntermediates,
+                attributes: attributes)
+        }
+    }
 }
