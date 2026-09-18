@@ -47,15 +47,20 @@ final class MakerModelTests: XCTestCase {
 
     private func makeModel(_ client: StubClient,
                            permissionGrants: CommandPermissionGrants? = nil) -> MakerModel {
+        MakerModel(client: { client },
+                   runner: CommandRunner(),
+                   writer: CommandWriter(rootURL: root),
+                   store: store,
+                   permissionGrants: permissionGrants ?? makeFreshGrants())
+    }
+
+    /// An isolated grants store on a fresh suite, with teardown cleanup
+    /// registered — same pattern as `PanelModelTests.makeFreshGrants`.
+    private func makeFreshGrants() -> CommandPermissionGrants {
         let suiteName = "MakerModelTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
-        return MakerModel(client: { client },
-                          runner: CommandRunner(),
-                          writer: CommandWriter(rootURL: root),
-                          store: store,
-                          permissionGrants: permissionGrants
-                              ?? CommandPermissionGrants(defaults: defaults))
+        return CommandPermissionGrants(defaults: defaults)
     }
 
     private func generationOutput(name: String = "gen-demo",
@@ -194,10 +199,7 @@ final class MakerModelTests: XCTestCase {
     /// — generated code is untrusted, so testing can't bypass the gate
     /// installed commands pass through.
     func testShellDraftPausesForConsent() async {
-        let suiteName = "MakerModelTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],
                                                       usesShell: true))]
@@ -217,10 +219,7 @@ final class MakerModelTests: XCTestCase {
 
     /// Allow records the grant and runs the paused test with the same args.
     func testConfirmPermissionRequestRunsTest() async throws {
-        let suiteName = "MakerModelTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],
                                                       usesShell: true))]
@@ -250,10 +249,7 @@ final class MakerModelTests: XCTestCase {
     /// replace the paused request — the paused snapshot and args stand until
     /// the user answers.
     func testSecondTestWhileConsentPendingKeepsPausedRequest() async throws {
-        let suiteName = "MakerModelTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],
                                                       usesShell: true))]
@@ -275,10 +271,7 @@ final class MakerModelTests: XCTestCase {
     /// between pause and confirm flips phase to .saved; granting anyway would
     /// persist consent for code that never executed.
     func testConfirmAfterSaveRecordsNoGrant() async throws {
-        let suiteName = "MakerModelTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],
                                                       usesShell: true))]
@@ -303,10 +296,7 @@ final class MakerModelTests: XCTestCase {
     }
 
     func testDismissPermissionRequestLeavesDraftUntested() async {
-        let suiteName = "MakerModelTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let grants = CommandPermissionGrants(defaults: defaults)
+        let grants = makeFreshGrants()
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],
                                                       usesShell: true))]
@@ -365,14 +355,7 @@ final class MakerModelTests: XCTestCase {
                                runner: CommandRunner(),
                                writer: CommandWriter(rootURL: blocker),
                                store: nil,
-                               permissionGrants: {
-                                   let suite = "MakerModelTests-\(UUID().uuidString)"
-                                   let defaults = UserDefaults(suiteName: suite)!
-                                   addTeardownBlock {
-                                       defaults.removePersistentDomain(forName: suite)
-                                   }
-                                   return CommandPermissionGrants(defaults: defaults)
-                               }())
+                               permissionGrants: makeFreshGrants())
 
         await model.start(prompt: "demo")
         await model.save()
