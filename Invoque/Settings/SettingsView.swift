@@ -111,6 +111,10 @@ struct SettingsView: View {
         // a result for a key that's no longer stored or drafted (Save and
         // Remove can land while the request is in flight).
         let testedKey = keyOverride ?? makerSettings.apiKey
+        // Same staleness axis for the endpoint: a baseURL or provider edit
+        // mid-flight would show a result describing the old target.
+        let testedBaseURL = makerSettings.baseURL
+        let testedProvider = makerSettings.provider
         connectionTestRunning = true
         connectionTestResult = nil
         connectionTestedDraft = keyOverride
@@ -126,7 +130,9 @@ struct SettingsView: View {
             // the request was in flight retires the result.
             if Self.shouldPublishTestResult(testedKey: testedKey,
                                             storedKey: makerSettings.apiKey,
-                                            draft: apiKeyDraft) {
+                                            draft: apiKeyDraft),
+               makerSettings.baseURL == testedBaseURL,
+               makerSettings.provider == testedProvider {
                 connectionTestResult = result
             }
             connectionTestRunning = false

@@ -185,6 +185,10 @@ post-v1.
   | `paste` | `paste` | simulate ⌘V — needs app-level AX grant |
   | `shell` | `shell` | `/bin/sh -c`; first-run confirmation sheet |
 
+  Migration: commands written before `open` was gated must add `"open"` to
+  `manifest.permissions` (or be regenerated) — otherwise `invoque.open` is
+  `undefined` and calls throw a `TypeError`.
+
 - Errors: `context.exceptionHandler` → surfaced in-panel and logged.
   Async contract: entry point is `export default async function`; a tight
   synchronous loop cannot be interrupted — on timeout the context is abandoned

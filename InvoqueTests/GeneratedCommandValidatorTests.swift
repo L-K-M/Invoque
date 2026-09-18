@@ -116,20 +116,22 @@ final class GeneratedCommandValidatorTests: XCTestCase {
     /// hanging the test process on the loop.
     func testJSIsCompiledNotRun() {
         let finished = expectation(description: "validate returned")
+        // Asserted after the wait — assertions inside the async closure
+        // would fire late if validation ever ran the script past the
+        // timeout, leaking the failure into whatever test runs next.
+        nonisolated(unsafe) var outcome: GeneratedCommandValidator.Outcome?
         DispatchQueue.global().async {
-            let outcome = GeneratedCommandValidator.validate(self.generation(
+            outcome = GeneratedCommandValidator.validate(self.generation(
                 manifest: self.manifestJSON(),
                 entry: """
                 while (true) {}
                 async function run() {}
                 """))
-            // The compile itself is clean: no parse issue, and `run`
-            // exists so no entry-point issue either.
-            XCTAssertFalse(outcome.issues.contains { $0.contains("doesn't parse") })
-            XCTAssertFalse(outcome.issues.contains { $0.contains("no entry point") })
             finished.fulfill()
         }
         wait(for: [finished], timeout: 10)
+        XCTAssertFalse(outcome?.issues.contains { $0.contains("doesn't parse") } ?? true)
+        XCTAssertFalse(outcome?.issues.contains { $0.contains("no entry point") } ?? true)
     }
 
     func testMissingEntryPointIsAnIssue() {
