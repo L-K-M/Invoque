@@ -78,7 +78,7 @@ enum AppCatalog {
             let path = trimmed.hasPrefix("file://")
                 ? URL(string: trimmed)?.path ?? String(trimmed.dropFirst("file://".count))
                 : trimmed
-            var standardized = URL(fileURLWithPath: (path as NSString).expandingTildePath)
+            var standardized = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
                 .standardizedFileURL.resolvingSymlinksInPath().path
             // A file:// URL built for a directory carries a trailing slash
             // ("…/Foo.app/") — drop it or the .app check can never pass.
