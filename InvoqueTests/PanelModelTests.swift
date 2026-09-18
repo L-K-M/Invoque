@@ -336,11 +336,15 @@ final class PanelModelTests: XCTestCase {
         model.query = "jf a"
         try await Task.sleep(nanoseconds: 150_000_000) // run is in flight
 
+        // Snapshot before exiting filter mode — the in-flight run can land
+        // at any point after the query change, which would inflate the
+        // baseline read below and make the target unreachable.
+        let completionsBeforeExit = model.filterRunCompletions
         model.query = "jf" // back to bare keyword → normal search
         XCTAssertEqual(model.results.map(\.id), ["app:jf"])
         // The counter is cumulative — wait for one *new* completion: the
         // in-flight run's landing, which the generation bump must drop.
-        await awaitCompletions(model, atLeast: model.filterRunCompletions + 1)
+        await awaitCompletions(model, atLeast: completionsBeforeExit + 1)
         XCTAssertEqual(model.results.map(\.id), ["app:jf"])
     }
 
