@@ -296,9 +296,18 @@ SwiftUI window from the menu-bar item (Zap's pattern):
 3. **AI** — provider, base URL, model, API key, test-connection.
 4. **Permissions** — Accessibility status (needed only for `paste` commands) +
    System Settings deep links.
-5. **About/Updates** — GitHub-release updater copied from Zap `Updates/`.
+5. **About/Updates** — GitHub-release updater ported from Zap `Updates/`:
+   `UpdateChecker` checks `L-K-M/Invoque` releases on launch + daily (24 h
+   throttle, state in UserDefaults under `UpdateChecker.L-K-M.Invoque.*`),
+   and its alert offers Download (asset → `~/Downloads`, revealed in
+   Finder), Remind Me Later, or Skip This Version. Settings shows the
+   automatic-check toggle, a "Check Now" button and the last-check date;
+   the status menu has "Check for Updates…". A ported `ActivationHandoff`
+   + `AppActivator` (activation-only subset of Zap's `WindowEnumerator`)
+   brings the agent forward for alerts and returns focus to the previous
+   app — also wired into the Settings window lifetime.
 
-Menu: *Open Invoque* · *Settings…* · *Commands folder* · *Quit*.
+Menu: *Open Invoque* · *Settings…* · *Check for Updates…* · *Quit*.
 
 ---
 
@@ -324,6 +333,8 @@ Invoque/
 │   ├── InvoqueApp.swift        # @main (or manual NSApplication bootstrap —
 │   │                           #   evaluate; Zap uses App+delegate)
 │   ├── AppDelegate.swift
+│   ├── AppActivator.swift      # activation subset of Zap's WindowEnumerator
+│   ├── ActivationHandoff.swift # focus handoff after alerts/Settings (Zap)
 │   ├── Hotkey/
 │   │   ├── CarbonHotkey.swift           # from Zap
 │   │   └── HotkeyRecorder.swift         # settings UI

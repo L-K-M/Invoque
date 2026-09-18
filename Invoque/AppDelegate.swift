@@ -5,7 +5,11 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
-    private lazy var settingsWindow = SettingsWindowController(preferences: preferences)
+    private let updateChecker = UpdateChecker(
+        configuration: .init(owner: "L-K-M", repo: "Invoque", appName: "Invoque")
+    )
+    private lazy var settingsWindow = SettingsWindowController(preferences: preferences,
+                                                               updateChecker: updateChecker)
     private lazy var panelController = Self.makePanelController(preferences: preferences)
 
     private var statusItem: NSStatusItem?
@@ -25,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenu.install(into: NSApplication.shared)
         setUpStatusItem()
         setUpSummonHotkey()
+        updateChecker.start()   // check GitHub for a newer release on launch + daily
     }
 
     // MARK: Status item
@@ -64,6 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updatesItem.target = self
+        menu.addItem(updatesItem)
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: "Quit Invoque", action: #selector(quit), keyEquivalent: "q")
@@ -83,6 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openPanel() {
         panelController.show()
+    }
+
+    @objc private func checkForUpdates() {
+        updateChecker.checkNow()
     }
 
     /// Assembles the search stack and its owner. `model` is built first so
