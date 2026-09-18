@@ -314,7 +314,12 @@ final class UpdateChecker: ObservableObject {
             NSWorkspace.shared.open(release.htmlURL)
             return
         }
-        guard !isDownloading else { return }
+        // A second Download click while a download runs gets the same
+        // fallback as every other failure here — never a silent no-op.
+        guard !isDownloading else {
+            NSWorkspace.shared.open(release.htmlURL)
+            return
+        }
         isDownloading = true
         Task { @MainActor [weak self] in
             guard let self else { return }
