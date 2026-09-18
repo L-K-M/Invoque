@@ -375,6 +375,7 @@ enum GeneratedCommandValidator {
         case .apps: return usedModules.contains("apps")
         case .paste: return usedModules.contains("paste")
         case .shell: return usedModules.contains("shell")
+        case .open: return usedModules.contains("open")
         }
     }
 
@@ -389,6 +390,7 @@ enum GeneratedCommandValidator {
         case .paste: return "paste"
         case .shell: return "shell"
         case .notification: return "notify"
+        case .open: return "open"
         }
     }
 }
