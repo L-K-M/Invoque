@@ -16,6 +16,10 @@ struct Item: Identifiable, Equatable {
     static let systemIDPrefix = "sys:"
     static let webIDPrefix = "web:"
     static let calculatorIDPrefix = "calc:"
+    /// Rows produced by a filter-mode command's per-keystroke run. Their
+    /// index-based ids are meaningless across queries, so frecency must
+    /// never record them (see `SearchModel.recordSelection`).
+    static let filterRowIDPrefix = "filter:"
 
     /// Stable namespaced id, e.g. `"app:com.apple.Safari"`,
     /// `"cmd:format-json"`, `"sys:lockScreen"`, `"web:safari"`, `"calc:2+2"`.
@@ -50,6 +54,12 @@ struct Item: Identifiable, Equatable {
         case openURL(URL)
         case copyText(String)
         case runCommand(String, [String])
+        /// Enter a filter-mode command: the panel expands the query to
+        /// `"<keyword> "` rather than dismissing. `PanelModel.submit`
+        /// intercepts this case, so performers never see it. `commandName`
+        /// pins the session to this exact command — two commands can claim
+        /// the same trigger word, and the picked row must win.
+        case enterFilter(keyword: String, commandName: String)
         case system(SystemAction)
     }
 

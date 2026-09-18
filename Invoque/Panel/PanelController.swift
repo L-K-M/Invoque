@@ -16,26 +16,45 @@ final class PanelController: NSObject {
     private let preferences: Preferences
     private let searchModel: SearchModel
     private let model: PanelModel
+    private let commandStore: CommandStore
+    private let commandRunner: CommandRunner
+    /// Sequencing for overlapping command runs — only the newest delivers.
+    private var commandRunGeneration = 0
+    /// Bumped on every `hide()` — distinguishes "still the same summon"
+    /// from "dismissed and re-summoned" when deciding whether an in-flight
+    /// command run may still deliver `.items` rows.
+    private var panelSession = 0
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
 
     /// `model` is injected because the app's `AppSource.onReload` hook must
     /// reference it before `SearchModel` (which owns the source) exists.
-    init(preferences: Preferences, model: PanelModel, searchModel: SearchModel) {
+    init(preferences: Preferences, model: PanelModel, searchModel: SearchModel,
+         commandStore: CommandStore, commandRunner: CommandRunner) {
         self.preferences = preferences
         self.searchModel = searchModel
         self.model = model
+        self.commandStore = commandStore
+        self.commandRunner = commandRunner
         super.init()
 
         // Dismiss first, then perform: a slow action (app launch, AppleEvent
-        // consent) must not hold the panel open.
+        // consent) must not hold the panel open. `.runCommand` is the
+        // exception — an async command run isn't blocking, and a `{items}`
+        // result needs the list to stay.
         model.onSubmit = { [weak self] row in
             guard let self else { return }
-            self.hide()
-            if let row {
-                self.searchModel.recordSelection(itemID: row.id)
-                ActionPerformer.perform(row.action)
+            guard let row else {
+                self.hide()
+                return
             }
+            self.searchModel.recordSelection(itemID: row.id)
+            if case .runCommand(let name, let args) = row.action {
+                self.runCommand(named: name, args: args)
+                return
+            }
+            self.hide()
+            ActionPerformer.perform(row.action)
         }
         model.searchModel = searchModel
     }
@@ -88,7 +107,64 @@ final class PanelController: NSObject {
     }
 
     func hide() {
+        panelSession += 1
         panel?.orderOut(nil)
+    }
+
+    // MARK: Commands
+
+    /// Runs an action-mode command. The panel stays up while it runs —
+    /// the run is async, so nothing blocks — then:
+    /// `{items}` replaces the list in place (PLAN §4.1), `{title}` shows
+    /// the HUD and dismisses, `.void` dismisses silently, and a failure
+    /// surfaces as a one-line HUD so it isn't invisible.
+    private func runCommand(named name: String, args: [String]) {
+        guard let command = commandStore.command(named: name) else {
+            hide()
+            HUD.show("Unknown command: \(name)")
+            return
+        }
+        // Only the newest run may deliver — a slow earlier command must not
+        // overwrite a newer run's results (or fire a second stale HUD).
+        commandRunGeneration += 1
+        let generation = commandRunGeneration
+        let submittedQuery = model.query
+        let submittedPanelSession = panelSession
+        let runner = commandRunner
+        Task {
+            let result = await runner.run(command: command, args: args)
+            await MainActor.run { [weak self] in
+                guard let self,
+                      self.commandRunGeneration == generation else { return }
+                // A failure surfaces as a one-line HUD regardless of the
+                // output shape — today errors always carry .void, but a
+                // future runner could pair partial output with an error.
+                if let error = result.error {
+                    self.hide()
+                    HUD.show(error.localizedDescription)
+                    return
+                }
+                switch result.output {
+                case .items(let items):
+                    // Dropped when the panel was dismissed mid-run or the
+                    // query moved on — stale rows must not greet the next
+                    // summon or stomp fresh search results. The session
+                    // check catches dismiss-then-resummon, where visibility
+                    // and query can both match again.
+                    if self.panel?.isVisible == true,
+                       self.model.query == submittedQuery,
+                       self.panelSession == submittedPanelSession {
+                        self.model.showCommandResults(
+                            PanelModel.commandRows(command: command, items: items))
+                    }
+                case .title(let title):
+                    self.hide()
+                    HUD.show(title)
+                case .void:
+                    self.hide()
+                }
+            }
+        }
     }
 
     // MARK: Panel lifecycle

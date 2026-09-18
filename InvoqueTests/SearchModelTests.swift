@@ -98,6 +98,22 @@ final class SearchModelTests: XCTestCase {
         XCTAssertTrue(makeModel(sources: [source]).results(for: "zzz").isEmpty)
     }
 
+    func testInvisibleKeywordInMatchTextSurfacesItem() {
+        // Command rows carry keywords that aren't in the title — matching
+        // runs against matchText, so "pretty" must find "Format JSON".
+        let item = Item(
+            id: "cmd:fmt-json",
+            title: "Format JSON",
+            subtitle: "Command",
+            icon: .symbol("terminal"),
+            action: .runCommand("fmt-json", []),
+            matchText: "Format JSON pretty json fmt-json")
+        let source = StubSource()
+        source.stubbedItems = [item]
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "pretty")
+            .map(\.id), ["cmd:fmt-json"])
+    }
+
     // MARK: Ranking
 
     func testFrecencyBreaksTies() {

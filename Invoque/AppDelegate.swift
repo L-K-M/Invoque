@@ -90,14 +90,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// passed at init (a post-init assignment can miss the first scan).
     private static func makePanelController(preferences: Preferences) -> PanelController {
         let model = PanelModel()
+        let commandStore = CommandStore()
+        commandStore.startWatching()
+        // autoReload off: the initial scan must not fire onChange before
+        // onReload is wired — wire first, then kick the scan explicitly.
+        let commandSource = CommandSource(store: commandStore, autoReload: false)
+        commandSource.onReload = { [weak model] in model?.refreshResults() }
+        let commandRunner = CommandRunner()
+        model.commandRunner = commandRunner
+        model.filterLookup = { [commandSource] keyword in
+            commandSource.filterCommand(forKeyword: keyword)
+        }
+        model.commandLookup = { [commandStore] name in
+            commandStore.command(named: name)
+        }
+        // Kick the initial scan only after the model is fully wired — an
+        // unstructured Task starts immediately and can outrun the lines
+        // above. (The store's onChange→onReload subscription is init-time,
+        // so commands installed later still refresh the open panel.)
+        Task { await commandSource.reload() }
         let sources: [ItemSource] = [
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
+            commandSource,
             CalculatorSource(),
             SystemSource(),
             WebSource(),
         ]
         let searchModel = SearchModel(sources: sources, frecency: Frecency())
-        return PanelController(preferences: preferences, model: model, searchModel: searchModel)
+        return PanelController(preferences: preferences, model: model,
+                               searchModel: searchModel,
+                               commandStore: commandStore,
+                               commandRunner: commandRunner)
     }
 
     @objc private func quit() {

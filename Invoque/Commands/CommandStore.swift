@@ -62,6 +62,12 @@ final class CommandStore {
     /// Directories that failed to load in the most recent scan.
     var scanErrors: [ScanError] { stateQueue.sync { _errors } }
 
+    /// The loaded command named `name`, if any — the panel resolves
+    /// `.runCommand` rows through here.
+    func command(named name: String) -> Command? {
+        commands.first { $0.manifest.name == name }
+    }
+
     /// The watch targets the most recent scan collected — the fd budget in
     /// action, exposed for tests.
     var scanWatchTargets: [URL] { stateQueue.sync { _scanWatchTargets } }
