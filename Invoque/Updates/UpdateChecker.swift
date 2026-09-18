@@ -259,7 +259,7 @@ final class UpdateChecker: ObservableObject {
         // update that is the same or older — otherwise a stale "Update
         // Available" would resurface on the next activation after the user
         // already saw the newer alert.
-        if let pendingRemote = pendingUpdate?.tagName.flatMap(SemanticVersion.init),
+        if let pendingRemote = pendingUpdate.flatMap({ SemanticVersion($0.tagName) }),
            pendingRemote <= remote {
             pendingUpdate = nil
             onPendingUpdateChanged?(nil)
