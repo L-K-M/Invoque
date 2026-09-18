@@ -15,6 +15,20 @@ import SwiftUI
 struct PanelView: View {
 
     @ObservedObject var model: PanelModel
+    @ObservedObject var preferences: Preferences
+    /// Live mirror of the system's Reduce Transparency/Motion settings — the
+    /// themed fills and the selection animation are ours, so they adapt here
+    /// rather than relying on the material to do it.
+    @ObservedObject var a11y: AccessibilityDisplaySettings
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(model: PanelModel, preferences: Preferences,
+         a11y: AccessibilityDisplaySettings = .shared) {
+        self.model = model
+        self.preferences = preferences
+        self.a11y = a11y
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,10 +41,13 @@ struct PanelView: View {
 
             if let request = model.permissionRequest {
                 PermissionRequestCard(request: request,
+                                      titleColor: titleColor,
+                                      secondaryColor: secondaryColor,
                                       onAllow: model.confirmPermissionRequest,
                                       onDecline: model.dismissPermissionRequest)
             } else if model.makerIsActive, let maker = model.maker {
-                MakerView(model: maker, prompt: model.makerPrompt ?? "")
+                MakerView(model: maker, prompt: model.makerPrompt ?? "",
+                          titleColor: titleColor, secondaryColor: secondaryColor)
             } else {
                 resultList
             }
@@ -42,10 +59,139 @@ struct PanelView: View {
                 .padding(.vertical, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial,
-                    in: RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous))
+        .background(cardBackground)
+        .overlay(cardDecoration)
+        .overlay(crtOverlay)
         // Transparent margin around the card so the window's shadow has room.
         .padding(Metrics.cardInset)
+    }
+
+    // MARK: Theme
+
+    /// The card's background: Liquid Glass on macOS 26, a blurred panel below
+    /// that, or the user's own fill for `solid`/`gradient`. Reduce Transparency
+    /// forces the fill opaque — the colors stay, only the see-through goes.
+    private var cardBackground: some View {
+        PanelBackground(
+            material: preferences.panelMaterial,
+            tint: Color(hexString: preferences.tintHex),
+            gradientColor: Color(hexString: preferences.gradientHex),
+            gradientAngle: preferences.gradientAngle,
+            opacity: AccessibilityDisplaySettings.effectiveBackgroundOpacity(
+                configured: preferences.backgroundOpacity,
+                reduceTransparency: a11y.reduceTransparency),
+            cornerRadius: preferences.panelCornerRadius,
+            reduceTransparency: a11y.reduceTransparency)
+    }
+
+    /// The retro corner flourish — ZX stripes, boing ball, … — drawn hugging a
+    /// top corner and clipped flush by the card's rounded shape.
+    @ViewBuilder
+    private var cardDecoration: some View {
+        if preferences.decorationStyle != .none {
+            Group {
+                switch preferences.decorationStyle.kind {
+                case .stripes:
+                    PanelDecoration(style: preferences.decorationStyle,
+                                    position: preferences.decorationPosition,
+                                    cornerRadius: preferences.panelCornerRadius,
+                                    thickness: preferences.decorationSize)
+                case .ball:
+                    BoingBallDecoration(position: preferences.decorationPosition,
+                                        cornerRadius: preferences.panelCornerRadius,
+                                        diameter: Self.ballDiameter(decorationSize: preferences.decorationSize),
+                                        pixelated: preferences.decorationStyle == .amigaPixel)
+                }
+            }
+            .opacity(preferences.decorationOpacity)
+            // Decorative: each style disables hit-testing internally, and the
+            // guard here keeps any future case from swallowing header clicks.
+            .allowsHitTesting(false)
+            .clipShape(RoundedRectangle(cornerRadius: preferences.panelCornerRadius,
+                                        style: .continuous))
+        }
+    }
+
+    /// The CRT scanline/vignette effect, drawn over the whole card — a
+    /// phosphor-screen look, so it goes over the content too.
+    @ViewBuilder
+    private var crtOverlay: some View {
+        if preferences.crtEnabled {
+            CRTScreenOverlay(intensity: preferences.crtIntensity,
+                             cornerRadius: preferences.panelCornerRadius)
+        }
+    }
+
+    /// Approximate height of the header row — keep in sync with `searchField`'s
+    /// font/padding if the header is ever restyled.
+    static let headerRowHeight: CGFloat = 54
+
+    /// The boing ball's diameter, proportional to the header like Zap's
+    /// (`headerHeight × min(size × 0.12, 2)`).
+    static func ballDiameter(decorationSize: Double) -> CGFloat {
+        headerRowHeight * min(decorationSize * 0.12, 2)
+    }
+
+    /// Whether the theme owns the text color — true on `solid`/`gradient`,
+    /// where the user picked the background outright. Glass materials defer to
+    /// the system, which adapts `.primary` to the appearance automatically.
+    private var usesThemeText: Bool {
+        preferences.panelMaterial.usesThemeTextColor
+    }
+
+    private var titleColor: Color {
+        usesThemeText ? Color(hexString: preferences.labelHex) : .primary
+    }
+
+    private var secondaryColor: Color {
+        usesThemeText ? Color(hexString: preferences.labelHex).opacity(0.65) : .secondary
+    }
+
+    private var tertiaryColor: Color {
+        usesThemeText ? Color(hexString: preferences.labelHex).opacity(0.45)
+                      : Color(nsColor: .tertiaryLabelColor)
+    }
+
+    /// The configured highlight, or the system accent when the hex can't
+    /// parse (defensive — `Preferences` validates on load).
+    private var themeHighlight: NSColor {
+        NSColor(hex: preferences.highlightHex) ?? .controlAccentColor
+    }
+
+    /// The selection fill for a row: the icon's dominant color when adaptive
+    /// accent is on and the row has a bitmap icon, else the theme highlight.
+    private func selectionFill(for row: ResultRow) -> NSColor {
+        if preferences.adaptiveAccent, let accent = AdaptiveAccent.color(for: row.icon) {
+            return accent
+        }
+        return themeHighlight
+    }
+
+    /// Text for the selected row, picked by the *composited* fill's luminance:
+    /// at 25% opacity the card's own color dominates, so the highlight's raw
+    /// luminance alone would often choose the wrong shade.
+    private func selectedForeground(fill: NSColor) -> Color {
+        Color.readableForeground(
+            on: fill.composited(alpha: preferences.highlightOpacity,
+                                over: selectionBaseColor))
+    }
+
+    /// What the selection fill blends over when computing text contrast: the
+    /// card's own color for `solid`/`gradient`, a stand-in for the system
+    /// material under glass (the real composite is unknown, but the material
+    /// tracks the system appearance closely enough for the luminance choice).
+    private var selectionBaseColor: NSColor {
+        switch preferences.panelMaterial {
+        case .solid:
+            return NSColor(hex: preferences.tintHex) ?? .black
+        case .gradient:
+            return (NSColor(hex: preferences.tintHex) ?? .black)
+                .composited(alpha: 0.5, over: NSColor(hex: preferences.gradientHex) ?? .black)
+        case .liquidGlass, .glassClear, .glassTinted:
+            return colorScheme == .dark
+                ? (NSColor(hex: "#1C1C1E") ?? .black)
+                : (NSColor(hex: "#F2F2F7") ?? .white)
+        }
     }
 
     // MARK: Sections
@@ -54,9 +200,12 @@ struct PanelView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .font(.title2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
             SearchField(
                 text: $model.query,
+                textColor: usesThemeText
+                    ? (NSColor(hex: preferences.labelHex) ?? .labelColor)
+                    : .labelColor,
                 onUp: { model.moveSelection(by: -1) },
                 onDown: { model.moveSelection(by: 1) },
                 onReturn: { model.submit(commandModifier: $0) }
@@ -78,13 +227,25 @@ struct PanelView: View {
                              ? "Search apps, commands, or the web"
                              : "No results")
                             .font(.callout)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(tertiaryColor)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 24)
                     } else {
                         ForEach(model.results) { row in
+                            let isSelected = model.selectedRow?.id == row.id
+                            // The accent sample (CIAreaAverage on the icon) is
+                            // only worth paying for the row that shows it.
+                            let fill = isSelected ? selectionFill(for: row) : themeHighlight
                             ResultRowView(row: row,
-                                          isSelected: model.selectedRow?.id == row.id)
+                                          isSelected: isSelected,
+                                          fill: fill,
+                                          fillOpacity: preferences.highlightOpacity,
+                                          cornerRadius: preferences.highlightCornerRadius,
+                                          titleColor: isSelected ? selectedForeground(fill: fill) : titleColor,
+                                          subtitleColor: isSelected
+                                              ? selectedForeground(fill: fill).opacity(0.75)
+                                              : secondaryColor,
+                                          glows: isSelected && preferences.adaptiveAccent)
                                 .id(row.id)
                                 .onTapGesture {
                                     model.select(row)
@@ -100,6 +261,11 @@ struct PanelView: View {
                 .padding(.horizontal, Metrics.edgePadding)
                 .padding(.vertical, 8)
             }
+            // The selection fill/glow eases between rows — suppressed
+            // entirely under Reduce Motion.
+            .animation(AccessibilityDisplaySettings.effectiveAnimation(
+                .easeOut(duration: 0.1), reduceMotion: a11y.reduceMotion),
+                       value: model.selectedRow?.id)
             // Arrow-key selection must keep the highlighted row visible.
             // `.task(id:)` instead of `.onChange`: the non-deprecated
             // onChange signature requires macOS 14 and we target 13. The key
@@ -120,7 +286,7 @@ struct PanelView: View {
              ? "⏎ generate/save · esc dismiss"
              : "↑↓ navigate · ⏎ open · esc dismiss")
             .font(.caption)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(tertiaryColor)
             .frame(maxWidth: .infinity)
     }
 }
@@ -131,6 +297,8 @@ struct PanelView: View {
 private struct PermissionRequestCard: View {
 
     let request: CommandPermissionRequest
+    let titleColor: Color
+    let secondaryColor: Color
     let onAllow: () -> Void
     let onDecline: () -> Void
 
@@ -139,25 +307,27 @@ private struct PermissionRequestCard: View {
             HStack(spacing: 10) {
                 Image(systemName: "lock.shield")
                     .font(.title3)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondaryColor)
                 VStack(alignment: .leading, spacing: 2) {
                     // The title is command-authored and could pose as a
                     // system prompt — the trusted attribution leads, the
                     // untrusted title follows it.
                     Text("Invoque command · \(request.command.name)")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(secondaryColor)
                     Text(request.command.manifest.title)
                         .font(.headline)
+                        .foregroundStyle(titleColor)
                     Text("wants to:")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(secondaryColor)
                 }
             }
             ForEach(request.permissions, id: \.rawValue) { permission in
                 Label(CommandPermissionGrants.consentLine(for: permission),
                       systemImage: "exclamationmark.triangle")
                     .font(.callout)
+                    .foregroundStyle(titleColor)
                     .padding(.leading, 4)
             }
             HStack(spacing: 10) {
@@ -178,8 +348,6 @@ private struct PermissionRequestCard: View {
 /// Layout constants for the card and its rows.
 private enum Metrics {
     static let cardInset: CGFloat = 12
-    static let cornerRadius: CGFloat = 16
-    static let rowCornerRadius: CGFloat = 8
     static let edgePadding: CGFloat = 10
     static let fieldPadding: CGFloat = 20
 }
@@ -187,10 +355,22 @@ private enum Metrics {
 // MARK: -
 
 /// One result line: icon, title, subtitle, with the selected row highlighted.
+/// All colors arrive resolved from `PanelView` — the row owns layout, not
+/// theme decisions.
 private struct ResultRowView: View {
 
     let row: ResultRow
     let isSelected: Bool
+    /// The selection fill — the theme highlight or, under adaptive accent,
+    /// the icon's dominant color.
+    let fill: NSColor
+    let fillOpacity: Double
+    let cornerRadius: Double
+    let titleColor: Color
+    let subtitleColor: Color
+    /// Whether the selection fill bleeds a soft glow past the row (the
+    /// adaptive-accent bloom).
+    let glows: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -198,10 +378,11 @@ private struct ResultRowView: View {
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title)
+                    .foregroundStyle(titleColor)
                     .lineLimit(1)
                 Text(row.subtitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(subtitleColor)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -209,10 +390,14 @@ private struct ResultRowView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: Metrics.rowCornerRadius, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(isSelected ? Color(nsColor: fill).opacity(fillOpacity) : Color.clear)
+                .shadow(color: isSelected && glows
+                            ? Color(nsColor: fill).opacity(0.5)
+                            : .clear,
+                        radius: 10)
         )
-        .contentShape(RoundedRectangle(cornerRadius: Metrics.rowCornerRadius,
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius,
                                        style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
@@ -226,7 +411,7 @@ private struct ResultRowView: View {
         case .symbol(let name):
             Image(systemName: name)
                 .font(.title3)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isSelected ? titleColor : subtitleColor)
         case .fileURL(let url):
             Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
                 .resizable()
@@ -248,6 +433,9 @@ private struct ResultRowView: View {
 private struct SearchField: NSViewRepresentable {
 
     @Binding var text: String
+    /// The theme's label color on materials that own the background, else the
+    /// adaptive `.labelColor`.
+    var textColor: NSColor
     var onUp: () -> Void
     var onDown: () -> Void
     /// `true` when ⌘ was held — consent cards need ⌘⏎ so a habitual
@@ -262,7 +450,7 @@ private struct SearchField: NSViewRepresentable {
         let field = SearchTextField()
         field.placeholderString = "Search"
         field.font = NSFont.systemFont(ofSize: 22)
-        field.textColor = .labelColor
+        field.textColor = textColor
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -275,6 +463,9 @@ private struct SearchField: NSViewRepresentable {
         // Sync programmatic resets (query cleared on re-show) into the field.
         if field.stringValue != text {
             field.stringValue = text
+        }
+        if field.textColor != textColor {
+            field.textColor = textColor
         }
     }
 

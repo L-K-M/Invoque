@@ -98,6 +98,33 @@ dependencies. Targets macOS 13+ (revisit if Zap has since raised its floor).
   action hints. ⌘K-style action panel per result is a later refinement; v1 has
   ⏎ = default action, ⇧⏎ = secondary.
 
+### Theming
+
+The family's appearance system (Zap/Jetty conventions) drives the card:
+
+- **Material** (`PanelMaterial`): Liquid Glass / Clear / Tinted on macOS 26
+  via `.glassEffect`, `NSVisualEffectView` (`.popover`) fallback below, or the
+  user's own `solid`/`gradient` fill with tint, gradient end, angle
+  (`AngleDial`) and opacity. Reduce Transparency forces fills opaque.
+- **Selection**: highlight color + opacity + corner radius. Selected-row text
+  is luminance-aware (`Color.readableForeground`, TopDrawer's rule) against
+  the fill *composited over* the card's base color — at low opacity the
+  background dominates, so the raw highlight alone would choose wrong.
+- **Adaptive accent**: when on, the selected row's icon supplies the fill —
+  `CIAreaAverage` dominant color, saturation-boosted, cached by icon path
+  (Jetty's `TileAccent` transplanted to the launcher). `.symbol` rows fall
+  back to the theme highlight.
+- **Text**: `labelHex` applies only where the theme owns the background
+  (`solid`/`gradient` — `PanelMaterial.usesThemeTextColor`); glass defers to
+  the system, which adapts `.primary` to the appearance.
+- **Retro flourishes**: corner `PanelDecoration` (ZX stripes, boing ball) +
+  `CRTScreenOverlay`, copied from Zap.
+- **Presets** (`AppearancePreset`): Codable snapshot + built-ins (Classic,
+  Summon — the signature violet cockpit — Graphite, ZX Night, Vaporwave,
+  Amiga) + JSON import/export. The decoder sniffs keys and accepts **Jetty**
+  and **Zap** theme files too; Invoque's own field names match Jetty's where
+  they coincide, so exports import into Jetty.
+
 ### Search model
 - `ItemSource` protocol: `func items(for query: String) -> [Item]` (sync,
   cached sources) and async `reload()` for dynamic ones.
@@ -305,14 +332,17 @@ make command to format clipboard json
 SwiftUI window from the menu-bar item (Zap's pattern):
 
 1. **General** — hotkey recorder (default ⌥Space), launch at login, panel
-   position/appearance basics.
-2. **Commands** — list of loaded commands (title, mode, permissions, origin),
+   position basics.
+2. **Appearance** — the theming controls from §3 (material, colors, selection,
+   adaptive accent, layout, decoration, CRT, presets with import/export) plus
+   a live preview of the real `PanelView` fed by an inert sample `PanelModel`.
+3. **Commands** — list of loaded commands (title, mode, permissions, origin),
    commands directories (add/remove, reveal in Finder), per-command
    enable/disable.
-3. **AI** — provider, base URL, model, API key, test-connection.
-4. **Permissions** — Accessibility status (needed only for `paste` commands) +
+4. **AI** — provider, base URL, model, API key, test-connection.
+5. **Permissions** — Accessibility status (needed only for `paste` commands) +
    System Settings deep links.
-5. **About/Updates** — GitHub-release updater ported from Zap `Updates/`:
+6. **About/Updates** — GitHub-release updater ported from Zap `Updates/`:
    `UpdateChecker` checks `L-K-M/Invoque` releases on launch + daily (24 h
    throttle, state in UserDefaults under `UpdateChecker.L-K-M.Invoque.*`),
    and its alert offers Download (asset → `~/Downloads`, revealed in
@@ -366,7 +396,9 @@ Invoque/
 │   │   ├── LauncherPanel.swift          # NSPanel .nonactivatingPanel
 │   │   ├── PanelController.swift        # show/hide/toggle, cursor-screen
 │   │   ├── PanelView.swift              # SwiftUI card: field + list + footer
-│   │   └── ResultRowView.swift
+│   │   ├── PanelBackground.swift        # material: Liquid Glass/blur/fill/gradient
+│   │   ├── AdaptiveAccent.swift         # icon-dominant-color selection tint
+│   │   └── PanelDecoration/CRT/BoingBall # retro flourishes (from Zap)
 │   ├── Search/
 │   │   ├── ItemSource.swift             # protocol + Item model
 │   │   ├── FuzzyMatcher.swift           # pure, unit-tested
@@ -390,9 +422,14 @@ Invoque/
 │   │   ├── GeneratedCommandValidator.swift  # manifest+JS+permission checks
 │   │   ├── CommandWriter.swift          # save + history/ snapshots
 │   │   └── SystemPrompt.swift           # invoque.d.ts + schema + rules
-│   ├── Settings/                        # same pattern as Zap
+│   ├── Settings/                        # same pattern as Zap (+ AngleDial)
 │   ├── Updates/                         # copied from Zap (GitHub releases)
-│   ├── Model/Preferences.swift
+│   ├── Model/                           # Preferences + theming value types:
+│   │   ├── Preferences.swift            #   UserDefaults, validated on load
+│   │   ├── AppearancePreset.swift       #   shareable themes + Zap/Jetty import
+│   │   ├── PanelMaterial.swift          #   background material enum
+│   │   ├── RGBA8.swift · ColorHex.swift #   #RRGGBB[AA] storage + color bridge
+│   │   └── DecorationStyle/Position · AccessibilityDisplaySettings  # (Zap)
 │   └── Resources/Assets.xcassets
 ├── InvoqueTests/                        # matcher, manifest, parser, runtime
 ├── scripts/{build.sh,release.sh}        # lkm-build/lkm-release stubs

@@ -26,13 +26,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let hosting = NSHostingController(rootView: SettingsView(preferences: preferences,
                                                                      updateChecker: updateChecker))
             // Only let the SwiftUI content drive the window's *minimum* size; the
-            // user is free to make it larger.
-            hosting.sizingOptions = [.minSize]
+            // user is free to make it larger. `sizingOptions` is only guaranteed
+            // on macOS 14+ — guard it so a macOS-13 run doesn't crash (Jetty's
+            // SettingsWindowController does the same).
+            if #available(macOS 14.0, *) { hosting.sizingOptions = [.minSize] }
 
             let window = NSWindow(contentViewController: hosting)
             window.title = "Invoque Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 520, height: 460))
+            window.setContentSize(NSSize(width: 560, height: 580))
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()

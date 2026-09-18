@@ -25,6 +25,17 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        TabView {
+            generalTab
+                .tabItem { Label("General", systemImage: "gearshape") }
+            AppearanceView(preferences: preferences)
+                .tabItem { Label("Appearance", systemImage: "paintpalette") }
+        }
+    }
+
+    /// Launch behavior, updates, the Maker's LLM settings, and the version —
+    /// the original single-form settings, now the General pane.
+    private var generalTab: some View {
         Form {
             Section {
                 Toggle("Launch at login", isOn: $preferences.launchAtLogin)
