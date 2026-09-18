@@ -15,14 +15,23 @@ enum AccessibilityAuthorizer {
     /// only appears on the first call — later calls are silently denied, so
     /// a caller can read this *before* prompting to know whether the user
     /// will see a dialog or whether opening Settings itself is the only
-    /// prompt they'll get.
-    private(set) static var hasPrompted = false
+    /// prompt they'll get. Lock-guarded: today's reader/writer pair is the
+    /// JS queue, but a main-thread call site would otherwise race it.
+    static var hasPrompted: Bool {
+        hasPromptedLock.lock()
+        defer { hasPromptedLock.unlock() }
+        return _hasPrompted
+    }
+    private static let hasPromptedLock = NSLock()
+    private static var _hasPrompted = false
 
     /// Prompts the user to grant Accessibility access (shows the system dialog
     /// the first time). Returns the current trust state.
     @discardableResult
     static func prompt() -> Bool {
-        hasPrompted = true
+        hasPromptedLock.lock()
+        _hasPrompted = true
+        hasPromptedLock.unlock()
         // Value of `kAXTrustedCheckOptionPrompt`; used as a literal to avoid
         // cross-SDK differences in how that symbol is imported into Swift.
         let promptKey = "AXTrustedCheckOptionPrompt"
