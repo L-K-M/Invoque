@@ -110,16 +110,18 @@ final class Preferences: ObservableObject {
     /// the tint wash for `glassTinted`.
     @Published var tintHex: String {
         didSet {
-            tintHex = Self.validColor(tintHex, default: Default.tintHex)
-            defaults.set(tintHex, forKey: Key.tintHex)
+            let v = Self.validColor(tintHex, default: Default.tintHex)
+            if v != tintHex { tintHex = v }
+            defaults.set(v, forKey: Key.tintHex)
         }
     }
 
     /// The end color of the card gradient when `panelMaterial == .gradient`.
     @Published var gradientHex: String {
         didSet {
-            gradientHex = Self.validColor(gradientHex, default: Default.gradientHex)
-            defaults.set(gradientHex, forKey: Key.gradientHex)
+            let v = Self.validColor(gradientHex, default: Default.gradientHex)
+            if v != gradientHex { gradientHex = v }
+            defaults.set(v, forKey: Key.gradientHex)
         }
     }
 
@@ -128,17 +130,19 @@ final class Preferences: ObservableObject {
     /// left→right. Matches `AngleDial` and `PanelBackground`.
     @Published var gradientAngle: Double {
         didSet {
-            gradientAngle = Self.normalizedAngle(gradientAngle)
-            defaults.set(gradientAngle, forKey: Key.gradientAngle)
+            let v = Self.normalizedAngle(gradientAngle)
+            if v != gradientAngle { gradientAngle = v }
+            defaults.set(v, forKey: Key.gradientAngle)
         }
     }
 
     /// Opacity of the tint/gradient (and the glass-tint wash).
     @Published var backgroundOpacity: Double {
         didSet {
-            backgroundOpacity = Self.clamp(backgroundOpacity, in: Limit.unitInterval,
-                                           fallback: Default.backgroundOpacity)
-            defaults.set(backgroundOpacity, forKey: Key.backgroundOpacity)
+            let v = Self.clamp(backgroundOpacity, in: Limit.unitInterval,
+                               fallback: Default.backgroundOpacity)
+            if v != backgroundOpacity { backgroundOpacity = v }
+            defaults.set(v, forKey: Key.backgroundOpacity)
         }
     }
 
@@ -146,17 +150,19 @@ final class Preferences: ObservableObject {
     /// and the selected row's icon supplies one.
     @Published var highlightHex: String {
         didSet {
-            highlightHex = Self.validColor(highlightHex, default: Default.highlightHex)
-            defaults.set(highlightHex, forKey: Key.highlightHex)
+            let v = Self.validColor(highlightHex, default: Default.highlightHex)
+            if v != highlightHex { highlightHex = v }
+            defaults.set(v, forKey: Key.highlightHex)
         }
     }
 
     /// Opacity of the selection fill.
     @Published var highlightOpacity: Double {
         didSet {
-            highlightOpacity = Self.clamp(highlightOpacity, in: Limit.unitInterval,
-                                          fallback: Default.highlightOpacity)
-            defaults.set(highlightOpacity, forKey: Key.highlightOpacity)
+            let v = Self.clamp(highlightOpacity, in: Limit.unitInterval,
+                               fallback: Default.highlightOpacity)
+            if v != highlightOpacity { highlightOpacity = v }
+            defaults.set(v, forKey: Key.highlightOpacity)
         }
     }
 
@@ -165,26 +171,29 @@ final class Preferences: ObservableObject {
     /// background — see `PanelMaterial.usesThemeTextColor`.
     @Published var labelHex: String {
         didSet {
-            labelHex = Self.validColor(labelHex, default: Default.labelHex)
-            defaults.set(labelHex, forKey: Key.labelHex)
+            let v = Self.validColor(labelHex, default: Default.labelHex)
+            if v != labelHex { labelHex = v }
+            defaults.set(v, forKey: Key.labelHex)
         }
     }
 
     /// The card's corner radius.
     @Published var panelCornerRadius: Double {
         didSet {
-            panelCornerRadius = Self.clamp(panelCornerRadius, in: Limit.radius,
-                                           fallback: Default.panelCornerRadius)
-            defaults.set(panelCornerRadius, forKey: Key.panelCornerRadius)
+            let v = Self.clamp(panelCornerRadius, in: Limit.radius,
+                               fallback: Default.panelCornerRadius)
+            if v != panelCornerRadius { panelCornerRadius = v }
+            defaults.set(v, forKey: Key.panelCornerRadius)
         }
     }
 
     /// The selection highlight's corner radius.
     @Published var highlightCornerRadius: Double {
         didSet {
-            highlightCornerRadius = Self.clamp(highlightCornerRadius, in: Limit.radius,
-                                               fallback: Default.highlightCornerRadius)
-            defaults.set(highlightCornerRadius, forKey: Key.highlightCornerRadius)
+            let v = Self.clamp(highlightCornerRadius, in: Limit.radius,
+                               fallback: Default.highlightCornerRadius)
+            if v != highlightCornerRadius { highlightCornerRadius = v }
+            defaults.set(v, forKey: Key.highlightCornerRadius)
         }
     }
 
@@ -207,18 +216,20 @@ final class Preferences: ObservableObject {
     /// Opacity of the corner decoration.
     @Published var decorationOpacity: Double {
         didSet {
-            decorationOpacity = Self.clamp(decorationOpacity, in: Limit.unitInterval,
-                                           fallback: Default.decorationOpacity)
-            defaults.set(decorationOpacity, forKey: Key.decorationOpacity)
+            let v = Self.clamp(decorationOpacity, in: Limit.unitInterval,
+                               fallback: Default.decorationOpacity)
+            if v != decorationOpacity { decorationOpacity = v }
+            defaults.set(v, forKey: Key.decorationOpacity)
         }
     }
 
     /// Thickness of the corner decoration's stripes / the boing ball's diameter.
     @Published var decorationSize: Double {
         didSet {
-            decorationSize = Self.clamp(decorationSize, in: Limit.decorationSize,
-                                        fallback: Default.decorationSize)
-            defaults.set(decorationSize, forKey: Key.decorationSize)
+            let v = Self.clamp(decorationSize, in: Limit.decorationSize,
+                               fallback: Default.decorationSize)
+            if v != decorationSize { decorationSize = v }
+            defaults.set(v, forKey: Key.decorationSize)
         }
     }
 
@@ -230,9 +241,10 @@ final class Preferences: ObservableObject {
     /// Strength of the CRT overlay, 0...1.
     @Published var crtIntensity: Double {
         didSet {
-            crtIntensity = Self.clamp(crtIntensity, in: Limit.unitInterval,
-                                      fallback: Default.crtIntensity)
-            defaults.set(crtIntensity, forKey: Key.crtIntensity)
+            let v = Self.clamp(crtIntensity, in: Limit.unitInterval,
+                               fallback: Default.crtIntensity)
+            if v != crtIntensity { crtIntensity = v }
+            defaults.set(v, forKey: Key.crtIntensity)
         }
     }
 
