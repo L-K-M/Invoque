@@ -225,8 +225,10 @@ final class MakerModelTests: XCTestCase {
         await model.save()
         var phase = await model.phase
         XCTAssertEqual(phase, .readyToSave)
-        XCTAssertNotNil(await model.lastError)
-        XCTAssertNotNil(await model.draft)
+        let lastError = await model.lastError
+        XCTAssertNotNil(lastError)
+        let draft = await model.draft
+        XCTAssertNotNil(draft)
 
         try FileManager.default.removeItem(at: blocker)
         await model.save()
