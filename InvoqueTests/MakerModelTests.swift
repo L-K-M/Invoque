@@ -226,12 +226,14 @@ final class MakerModelTests: XCTestCase {
 
         await model.start(prompt: "x")
         await model.test()
-        XCTAssertNotNil(await model.permissionRequest)
+        let paused = await model.permissionRequest
+        XCTAssertNotNil(paused)
 
         await model.confirmPermissionRequest()
         let result = await model.testResult
         XCTAssertEqual(result?.title, "hi")
-        XCTAssertNil(await model.permissionRequest)
+        let cleared = await model.permissionRequest
+        XCTAssertNil(cleared)
     }
 
     func testDismissPermissionRequestLeavesDraftUntested() async {
@@ -243,8 +245,10 @@ final class MakerModelTests: XCTestCase {
         await model.start(prompt: "x")
         await model.test()
         await model.dismissPermissionRequest()
-        XCTAssertNil(await model.permissionRequest)
-        XCTAssertNil(await model.testResult)
+        let request = await model.permissionRequest
+        XCTAssertNil(request)
+        let result = await model.testResult
+        XCTAssertNil(result)
     }
 
     // MARK: Save
