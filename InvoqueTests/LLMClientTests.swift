@@ -290,9 +290,7 @@ final class LLMClientTests: XCTestCase {
             httpResponse(status: 200)))
         let client = makeClient(transport: transport)
 
-        _ = try await client.complete(messages: [
-            LLMMessage(role: .user, content: "hi"),
-        ])
+        _ = try await client.complete(messages: [LLMMessage(.user, "hi")])
         XCTAssertEqual(transport.request?.timeoutInterval,
                        LLMClient.generationBudget)
     }
