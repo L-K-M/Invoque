@@ -66,12 +66,28 @@ struct GitHubRelease: Decodable {
     /// running architecture — multi-arch releases are a common GitHub layout.
     var preferredAsset: Asset? {
         let preference = ["dmg", "zip", "pkg"]
+        // arch() is compile-time; an x86_64 build translated by Rosetta 2
+        // runs on Apple Silicon hardware where arm64 is what's actually
+        // native — detect translation at runtime and pick hints for the
+        // machine, not the binary.
+        let runningOnAppleSilicon: Bool
+        let nativeHints: [String]
+        let foreignHints: [String]
         #if arch(arm64)
-        let nativeHints = ["arm64", "aarch64", "universal"]
-        let foreignHints = ["x86_64", "x64", "intel"]
+        runningOnAppleSilicon = true
+        nativeHints = ["arm64", "aarch64", "universal"]
+        foreignHints = ["x86_64", "x64", "intel"]
         #else
-        let nativeHints = ["x86_64", "x64", "intel", "universal"]
-        let foreignHints = ["arm64", "aarch64"]
+        var procTranslated: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        _ = sysctlbyname("sysctl.proc_translated", &procTranslated, &size, nil, 0)
+        runningOnAppleSilicon = (procTranslated == 1)
+        // A translated build runs on Apple Silicon: arm64 is native there
+        // and x86_64 is what runs translated — flip the hint sets.
+        nativeHints = runningOnAppleSilicon ? ["arm64", "aarch64", "universal"]
+                                            : ["x86_64", "x64", "intel", "universal"]
+        foreignHints = runningOnAppleSilicon ? ["x86_64", "x64", "intel"]
+                                             : ["arm64", "aarch64"]
         #endif
         func rank(_ asset: Asset) -> Int {
             let ext = (asset.name as NSString).pathExtension.lowercased()
@@ -86,7 +102,7 @@ struct GitHubRelease: Decodable {
             else { archRank = 1 }
             return extRank * 3 + archRank   // extension dominates the tie-break
         }
-        // Architecture dominates the container format: never choose a
+        // Runnability dominates the container format: never choose a
         // build this machine can't run when a runnable asset exists — a
         // foreign-arch dmg beats a universal zip on rank but is useless
         // (there is no Rosetta for arm64 on Intel).
@@ -94,17 +110,16 @@ struct GitHubRelease: Decodable {
             let name = asset.name.lowercased()
             return !foreignHints.contains { name.contains($0) }
         }
-        #if arch(arm64)
-        // Foreign x86_64 assets still run under Rosetta 2 on Apple
-        // Silicon, so falling back to the best-ranked asset is safe.
-        return runnable.min { rank($0) < rank($1) }
-            ?? assets.min { rank($0) < rank($1) }
-        #else
+        if runningOnAppleSilicon {
+            // Foreign-arch assets still run — x86_64 via Rosetta 2 — so
+            // falling back to the best-ranked asset is safe.
+            return runnable.min { rank($0) < rank($1) }
+                ?? assets.min { rank($0) < rank($1) }
+        }
         // No Rosetta for arm64 on Intel: an all-foreign asset list has
         // nothing this machine can run — offer nothing (the caller opens
         // the release page) rather than an unusable download.
         return runnable.min { rank($0) < rank($1) }
-        #endif
     }
 
     /// A trimmed, length-capped form of the release body, suitable for an alert's

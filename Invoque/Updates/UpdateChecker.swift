@@ -167,7 +167,14 @@ final class UpdateChecker: ObservableObject {
         isChecking = true
         Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.isChecking = false }
+            defer {
+                // A checkNow() landing while a result alert is on screen
+                // (runModal spins a nested run loop) arrives after the flag
+                // was consumed — clear it so a later automatic check isn't
+                // treated as user-initiated and can't steal focus.
+                self.pendingUserInitiatedCheck = false
+                self.isChecking = false
+            }
             do {
                 let release = try await self.client.latestRelease(
                     includePrereleases: self.configuration.allowPrereleases)
