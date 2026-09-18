@@ -127,6 +127,10 @@ final class PanelModel: ObservableObject {
     /// tests wait out the debounce deterministically instead of sleeping.
     /// Counts completions whether or not the rows were kept.
     private(set) var filterRunCompletions = 0
+    /// Filter runs actually submitted to the runner — tests await this to
+    /// know a debounced run is genuinely in flight before mutating the
+    /// query, where a fixed sleep could lose to a slow scheduler.
+    private(set) var filterRunsStarted = 0
     /// The trigger word owning the list right now, so entering/leaving a
     /// filter session can clear rows that don't belong to it. Keyed by the
     /// keyword, not the command name — two commands can share a display
@@ -176,6 +180,7 @@ final class PanelModel: ObservableObject {
         filterTask = Task {
             try? await Task.sleep(nanoseconds: Self.filterDebounceNanoseconds)
             guard !Task.isCancelled else { return }
+            await MainActor.run { filterRunsStarted += 1 }
             let rows = await Self.filterRows(command: command, text: text,
                                              runner: commandRunner)
             await MainActor.run {

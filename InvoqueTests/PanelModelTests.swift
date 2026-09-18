@@ -178,6 +178,21 @@ final class PanelModelTests: XCTestCase {
                                     file: file, line: line)
     }
 
+    /// Polls `filterRunsStarted` until `atLeast` debounced runs have been
+    /// submitted to the runner — i.e. the run is genuinely in flight, not
+    /// merely scheduled behind the debounce timer.
+    private func awaitStarts(_ model: PanelModel, atLeast count: Int,
+                             file: StaticString = #filePath,
+                             line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(7)
+        while model.filterRunsStarted < count, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(model.filterRunsStarted, count,
+                                    "filter run never started",
+                                    file: file, line: line)
+    }
+
     func testEnterFilterActionExpandsQuery() throws {
         let item = Item(id: "cmd:json", title: "JSON Tools", subtitle: "",
                         icon: .symbol("terminal"),
@@ -272,8 +287,10 @@ final class PanelModelTests: XCTestCase {
         model.filterLookup = { $0 == "jf" ? command : nil }
         model.commandRunner = CommandRunner()
         model.query = "jf a"
-        // Past the 80 ms debounce: the slow "a" run is in flight.
-        try await Task.sleep(nanoseconds: 150_000_000)
+        // Wait until the debounced "a" run is actually in flight — a fixed
+        // sleep can lose to a delayed debounce, leaving only one run and a
+        // completion target of two that never arrives.
+        await awaitStarts(model, atLeast: 1)
         model.query = "jf ab"
 
         // Both completions must land — the stale "a" is dropped by the
@@ -334,7 +351,9 @@ final class PanelModelTests: XCTestCase {
         model.filterLookup = { $0 == "jf" ? command : nil }
         model.commandRunner = CommandRunner()
         model.query = "jf a"
-        try await Task.sleep(nanoseconds: 150_000_000) // run is in flight
+        // The run must be in flight — not merely scheduled — before the
+        // exit, or the stale landing this test waits for never happens.
+        await awaitStarts(model, atLeast: 1)
 
         // Snapshot before exiting filter mode — the in-flight run can land
         // at any point after the query change, which would inflate the
