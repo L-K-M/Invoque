@@ -37,12 +37,16 @@ final class AppCatalogTests: XCTestCase {
         ]
     }
 
-    /// A real on-disk `.app` directory — `resolve` takes a path target
-    /// literally only when the bundle actually exists.
-    private func makeBundle(named name: String) throws -> URL {
-        let url = tempDir.appendingPathComponent("\(name).app", isDirectory: true)
+    /// A real on-disk `.app` directory plus the catalog entry that admits it
+    /// — `resolve` confines path targets to catalog members, and standardizes
+    /// the input (resolving `/var` → `/private/var`), so the fixture entry's
+    /// path must be the resolved form too. No `isDirectory:` on the URL: the
+    /// trailing slash it adds would leak into `realPath`.
+    private func makeBundle(named name: String) throws -> (url: URL, entry: AppEntry) {
+        let url = tempDir.appendingPathComponent("\(name).app")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
+        let realPath = url.resolvingSymlinksInPath().path
+        return (url, entry(path: realPath))
     }
 
     // MARK: Name / bundle-id matching
@@ -105,33 +109,65 @@ final class AppCatalogTests: XCTestCase {
 
     func testResolveByExistingPath() throws {
         let bundle = try makeBundle(named: "DiskBound")
-        XCTAssertEqual(AppCatalog.resolve(bundle.path, in: []), bundle)
+        XCTAssertEqual(AppCatalog.resolve(bundle.url.path, in: [bundle.entry])?.path,
+                       bundle.entry.path)
     }
 
     func testResolveByFileURL() throws {
         let bundle = try makeBundle(named: "URLBound")
-        XCTAssertEqual(AppCatalog.resolve(bundle.absoluteString, in: [])?.path,
-                       bundle.path)
+        XCTAssertEqual(AppCatalog.resolve(bundle.url.absoluteString, in: [bundle.entry])?.path,
+                       bundle.entry.path)
+        // A directory file:// URL carries a trailing slash — still resolves.
+        XCTAssertEqual(AppCatalog.resolve(bundle.url.absoluteString + "/", in: [bundle.entry])?.path,
+                       bundle.entry.path)
+    }
+
+    func testResolveByFileURLWithRawSpaces() throws {
+        // URL(string:) refuses unencoded spaces, which app paths routinely
+        // contain — the fallback treats the remainder as a plain path.
+        let bundle = try makeBundle(named: "Spaced Name")
+        let rawURL = "file://\(bundle.url.path)"
+        XCTAssertEqual(AppCatalog.resolve(rawURL, in: [bundle.entry])?.path,
+                       bundle.entry.path)
     }
 
     func testResolveByPathRequiresAppExtension() throws {
         let notApp = tempDir.appendingPathComponent("Folder", isDirectory: true)
         try FileManager.default.createDirectory(at: notApp, withIntermediateDirectories: true)
-        XCTAssertNil(AppCatalog.resolve(notApp.path, in: []))
+        let realPath = notApp.resolvingSymlinksInPath().path
+        XCTAssertNil(AppCatalog.resolve(notApp.path, in: [entry(path: realPath)]))
     }
 
     func testResolveByPathRequiresExistence() {
-        XCTAssertNil(AppCatalog.resolve("/Applications/Ghost.app", in: []))
+        XCTAssertNil(AppCatalog.resolve("/Applications/Ghost.app",
+                                        in: [entry(path: "/Applications/Ghost.app")]))
+    }
+
+    func testResolveRejectsPathOutsideCatalog() throws {
+        // The `apps` permission scopes launches to the apps the launcher
+        // itself searches — an existing .app outside the catalog (a
+        // quarantined download, a mounted DMG) must not resolve.
+        let bundle = try makeBundle(named: "OffCatalog")
+        XCTAssertNil(AppCatalog.resolve(bundle.url.path, in: catalog))
+    }
+
+    // MARK: Strictness
+
+    func testResolveNeverMatchesEmptyBundleID() {
+        // A malformed bundle with "" as its id must not answer a bundle-id
+        // query — and the query itself can never be "" (guarded above).
+        XCTAssertNil(AppCatalog.resolve("com.test.app", in: [entry(bundleID: "")]))
     }
 
     // MARK: Precedence
 
     func testResolvePrefersPathOverName() throws {
-        // A target that looks like a path is taken literally — it never
-        // falls through to a name that happens to contain slashes.
+        // The decoy's *name* is the literal path target — if name matching
+        // ever ran first it would win, resolving to the wrong bundle.
         let bundle = try makeBundle(named: "Real")
-        let decoy = entry(name: "Decoy", path: bundle.path,
+        let decoy = entry(name: bundle.url.path, path: "/Applications/Decoy.app",
                           bundleID: "com.decoy", fileName: "Decoy")
-        XCTAssertEqual(AppCatalog.resolve(bundle.path, in: [decoy]), bundle)
+        XCTAssertEqual(AppCatalog.resolve(bundle.url.path, in: [bundle.entry, decoy])?.path,
+                       bundle.entry.path)
     }
 }

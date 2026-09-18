@@ -65,13 +65,30 @@ enum AppCatalog {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
 
-        // A path-ish target is taken literally — bundle existence decides.
+        // A path-ish target is taken literally — but confined to the catalog:
+        // the `apps` permission covers the apps the launcher itself searches,
+        // not arbitrary `.app` bundles elsewhere on disk (a quarantined
+        // download must not be launchable through it).
         if trimmed.contains("/") || trimmed.hasPrefix("file://") {
-            let url = trimmed.hasPrefix("file://")
-                ? URL(string: trimmed) : URL(fileURLWithPath: trimmed)
-            guard let url, url.pathExtension.lowercased() == "app",
-                  FileManager.default.fileExists(atPath: url.path) else { return nil }
-            return url
+            // URL(string:) fails on unencoded spaces, which app paths
+            // routinely contain — fall back to treating the remainder as a
+            // plain path.
+            let path = trimmed.hasPrefix("file://")
+                ? URL(string: trimmed)?.path ?? String(trimmed.dropFirst("file://".count))
+                : trimmed
+            var standardized = URL(fileURLWithPath: path)
+                .standardizedFileURL.resolvingSymlinksInPath().path
+            // A file:// URL built for a directory carries a trailing slash
+            // ("…/Foo.app/") — drop it or the .app check can never pass.
+            while standardized.count > 1 && standardized.hasSuffix("/") {
+                standardized.removeLast()
+            }
+            guard standardized.lowercased().hasSuffix(".app"),
+                  FileManager.default.fileExists(atPath: standardized),
+                  apps.contains(where: {
+                      $0.path.caseInsensitiveCompare(standardized) == .orderedSame
+                  }) else { return nil }
+            return URL(fileURLWithPath: standardized)
         }
 
         let lowered = trimmed.lowercased()
@@ -138,14 +155,19 @@ enum AppCatalog {
             name = fileName
         }
         let bundleID = (bundle?.bundleIdentifier).flatMap { $0.isEmpty ? nil : $0 }
-        return AppEntry(name: name, path: bundleURL.path,
+        // The real path, not the possibly-symlinked enumerator spelling —
+        // `resolve` standardizes its path targets the same way, so the
+        // confinement check compares like with like.
+        return AppEntry(name: name, path: bundleURL.resolvingSymlinksInPath().path,
                         bundleID: bundleID, fileName: fileName)
     }
 
     /// The dedupe identity: the bundle id, or the path when it's missing —
     /// an empty `CFBundleIdentifier` (malformed/ad-hoc bundles) would
     /// collide across apps, so it falls back to the path like a missing key.
+    /// `entry(for:)` already normalizes `""` to `nil`; the flatMap here keeps
+    /// the invariant if a non-scan path ever constructs an `AppEntry`.
     private static func identifier(for entry: AppEntry) -> String {
-        entry.bundleID ?? entry.path
+        entry.bundleID.flatMap { $0.isEmpty ? nil : $0 } ?? entry.path
     }
 }

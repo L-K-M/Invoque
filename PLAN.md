@@ -181,8 +181,8 @@ post-v1.
   | `clipboard` | `clipboard.read` / `clipboard.write` | NSPasteboard |
   | `fetch` | `network` | URLSession wrapper, returns text/JSON |
   | `fs` | `files` | scoped to `data/` + user-granted paths |
-  | `apps` | `apps` | `list()` → `{name, path, bundleID}` (AppCatalog scan, shared with AppSource); `launch(name \| bundleID \| path)` — exact match, `NSWorkspace.open` |
-  | `paste` | `paste` | `text(t)` — clipboard write, re-activate frontmost app, simulate ⌘V; needs the app-level AX grant (lazy `AXIsProcessTrustedWithOptions` prompt on first call) |
+  | `apps` | `apps` | `list()` → `{name, path, bundleID}` (AppCatalog scan, shared with AppSource); `launch(name \| bundleID \| path)` — exact match, `NSWorkspace.open`; path targets confined to catalog members. Withheld in filter mode |
+  | `paste` | `paste` | `text(t)` — clipboard write, re-activate frontmost app, simulate ⌘V; needs the app-level AX grant (lazy `AXIsProcessTrustedWithOptions` prompt on first call). Withheld in filter mode |
   | `shell` | `shell` | `/bin/sh -c`; first-run confirmation sheet |
 
   Migration: commands written before `open` was gated must add `"open"` to

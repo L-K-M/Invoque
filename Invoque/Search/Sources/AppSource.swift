@@ -58,7 +58,11 @@ final class AppSource: ItemSource {
     }
 
     /// Rescans the app folders. Cheap enough for launch and for a watcher
-    /// nudge; never called per keystroke.
+    /// nudge; never called per keystroke. `AppCatalog.installedApps()` owns
+    /// the invariants this cache relied on: first-directory-wins dedup by
+    /// bundle id (`~/Applications` shadows `/Applications`), path-sorted URLs
+    /// before dedup so the survivor never flips between reloads, and output
+    /// sorted by localized name.
     func reload() {
         let sorted = AppCatalog.installedApps().map(Self.item)
         lock.lock()
@@ -72,10 +76,13 @@ final class AppSource: ItemSource {
 
     /// Maps a catalog entry onto a searchable item. The secondary `fileName`
     /// match surface keeps `Firefox.app` findable by its filename even when
-    /// the display name localizes to something else.
+    /// the display name localizes to something else. The empty-bundleID
+    /// flatMap is belt-and-suspenders: `AppCatalog` already normalizes `""`
+    /// to nil, and two malformed apps producing `app.` + `""` would collide
+    /// on this id.
     private static func item(for entry: AppEntry) -> Item {
         Item(
-            id: Item.appIDPrefix + (entry.bundleID ?? entry.path),
+            id: Item.appIDPrefix + (entry.bundleID.flatMap { $0.isEmpty ? nil : $0 } ?? entry.path),
             title: entry.name,
             subtitle: "Application",
             icon: .appIcon(entry.path),

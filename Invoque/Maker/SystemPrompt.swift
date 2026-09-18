@@ -59,8 +59,8 @@ enum SystemPrompt {
 
     Filter mode: the command re-runs per keystroke (~80 ms debounce) with
     args[0] = the text after the keyword, and must return { items }. Keep it
-    fast and side-effect free: `shell` and `paste` are withheld in filter
-    mode even when declared.
+    fast and side-effect free: `shell`, `paste` and `apps` are withheld in
+    filter mode even when declared.
 
     ## invoque.* API
 
@@ -91,7 +91,8 @@ enum SystemPrompt {
                           // ⌘V — needs Accessibility; never in filter mode
       "apps"            → invoque.apps.list(): [{name, path, bundleID}],
                           invoque.apps.launch(name | bundleID | path): boolean
-                          // exact match only — throws when nothing matches
+                          // exact match only; path must be a list() result —
+                          // throws when nothing matches; never in filter mode
       "notification"    → documentation marker only; invoque.notify is
                           always available anyway
 

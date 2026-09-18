@@ -22,10 +22,13 @@ enum AccessibilityAuthorizer {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Opens the Accessibility pane in System Settings.
+    /// Opens the Accessibility pane in System Settings. The
+    /// `PrivacySecurity.extension` anchor is the canonical Ventura+ target —
+    /// the pre-Ventura `com.apple.preference.security` URL only survives via
+    /// a compatibility redirect.
     static func openSystemSettings() {
         guard let url = URL(string:
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility") else { return }
         NSWorkspace.shared.open(url)
     }
 }

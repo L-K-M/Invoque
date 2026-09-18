@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 import Foundation
 import JavaScriptCore
@@ -420,6 +421,10 @@ enum InvoqueBridge {
 
         let text: @convention(block) (String) -> Bool = { contents in
             guard AccessibilityAuthorizer.isTrusted || AccessibilityAuthorizer.prompt() else {
+                // The AX prompt offers its own Settings button, but when it
+                // was already shown once the system suppresses it — opening
+                // the pane directly keeps the failure actionable.
+                AccessibilityAuthorizer.openSystemSettings()
                 throwError("invoque.paste.text: Accessibility access required — grant Invoque in System Settings → Privacy & Security → Accessibility")
                 return false
             }
@@ -432,14 +437,13 @@ enum InvoqueBridge {
             // the user was working in; activating it gives it a real key
             // window — and resigns our panel, which hides it — before the
             // synthetic ⌘V posts. Without this the keystroke could land in
-            // the launcher's own search field.
+            // the launcher's own search field. The pid compare is the
+            // documented-safe identity check for NSRunningApplication.
             let frontmost = NSWorkspace.shared.frontmostApplication
-            if let frontmost, frontmost != NSRunningApplication.current {
+            if let frontmost,
+               frontmost.processIdentifier != NSRunningApplication.current.processIdentifier {
                 frontmost.activate()
-                // Give the window server a beat to finish the activation —
-                // a keystroke posted mid-switch still lands on the resigning
-                // panel.
-                Thread.sleep(forTimeInterval: 0.1)
+                Self.waitForFocus(on: frontmost.processIdentifier)
             }
 
             // kVK_ANSI_V. Posting down and up as a spread pair — some apps
@@ -487,7 +491,9 @@ enum InvoqueBridge {
         // Resolution is strict — path, then bundle id, then exact display
         // name (AppCatalog.resolve) — because launching is a side effect:
         // a fuzzy guess that opens the wrong app is worse than an error the
-        // script can report.
+        // script can report. Path targets are additionally confined to the
+        // catalog itself: `apps` covers installed apps, not arbitrary .app
+        // bundles elsewhere on disk.
         let launch: @convention(block) (String) -> Bool = { target in
             guard let url = AppCatalog.resolve(target, in: AppCatalog.installedApps()) else {
                 throwError("invoque.apps.launch: no app matching '\(target)'")
@@ -502,6 +508,31 @@ enum InvoqueBridge {
     }
 
     // MARK: Helpers
+
+    /// Bounded wait until `pid` owns the system-wide AX focus — the same
+    /// truth the synthesized keystroke obeys. `frontmostApplication` can't
+    /// signal this (the nonactivating panel means it already equals the
+    /// target before `activate()`), but the AX focus does move — and this
+    /// module already holds AX trust, so the query is available. Bounded at
+    /// 500 ms: a stuck activation degrades to the old fixed-sleep behavior,
+    /// never a hang.
+    private static func waitForFocus(on pid: pid_t) {
+        let systemWide = AXUIElementCreateSystemWide()
+        let deadline = Date().addingTimeInterval(0.5)
+        while Date() < deadline {
+            var focused: CFTypeRef?
+            if AXUIElementCopyAttributeValue(
+                systemWide, kAXFocusedApplicationAttribute as CFString, &focused) == .success,
+               let application = focused {
+                // Safe: the focused-application attribute always yields an
+                // AXUIElement (same idiom as Zap's WindowEnumerator).
+                var focusedPID: pid_t = 0
+                AXUIElementGetPid((application as! AXUIElement), &focusedPID)
+                if focusedPID == pid { return }
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+    }
 
     /// Throws `message` as a JS exception from inside a native callback:
     /// assigning `context.exception` makes JSC raise it when the call returns

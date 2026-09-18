@@ -217,8 +217,8 @@ enum GeneratedCommandValidator {
         // even when declared — a filter that needs them can never work.
         if manifest.mode == .filter {
             // Keep this list in sync with the modules JSRuntime strips in
-            // its filter-mode branch (currently shell + paste).
-            for permission: CommandManifest.Permission in [.shell, .paste]
+            // its filter-mode branch (currently shell + paste + apps).
+            for permission: CommandManifest.Permission in [.shell, .paste, .apps]
             where required.contains(permission) || declared.contains(permission) {
                 issues.append(
                     "filter-mode commands can't use \"\(permission.rawValue)\" — "

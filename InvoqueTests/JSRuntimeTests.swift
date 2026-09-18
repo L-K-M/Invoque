@@ -243,6 +243,16 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertEqual(result.title, "undefined")
     }
 
+    func testAppsAbsentInFilterMode() async throws {
+        // apps.launch per keystroke is the same footgun class as shell/paste.
+        let command = try makeCommand(mode: "filter", permissions: ["apps"], source: """
+            async function run() { return { title: typeof invoque.apps }; }
+            """)
+        let result = await runtime.run(command: command)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.title, "undefined")
+    }
+
     func testAppsAbsentWithoutPermission() async throws {
         let command = try makeCommand(source: """
             async function run() { return { title: typeof invoque.apps }; }
