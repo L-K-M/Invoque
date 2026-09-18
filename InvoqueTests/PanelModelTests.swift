@@ -489,7 +489,10 @@ final class PanelModelTests: XCTestCase {
             """
         return MakerModel(client: { client },
                           runner: CommandRunner(),
-                          writer: CommandWriter(rootURL: commandDirectory))
+                          writer: CommandWriter(rootURL: commandDirectory),
+                          permissionGrants: CommandPermissionGrants(
+                              defaults: UserDefaults(
+                                  suiteName: "PanelModelTests-\(UUID().uuidString)")!))
     }
 
     func testMakeKeywordActivatesMaker() {

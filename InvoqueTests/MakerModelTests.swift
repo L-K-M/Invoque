@@ -302,7 +302,10 @@ final class MakerModelTests: XCTestCase {
         let model = MakerModel(client: { client },
                                runner: CommandRunner(),
                                writer: CommandWriter(rootURL: blocker),
-                               store: nil)
+                               store: nil,
+                               permissionGrants: CommandPermissionGrants(
+                                   defaults: UserDefaults(
+                                       suiteName: "MakerModelTests-\(UUID().uuidString)")!))
 
         await model.start(prompt: "demo")
         await model.save()
