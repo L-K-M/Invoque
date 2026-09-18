@@ -109,7 +109,7 @@ enum GeneratedCommandValidator {
         let masked = maskedSource(source)
         let found = masked.firstMatch(of: #/\bexport\s+default\b/#) != nil
             || masked.firstMatch(of: #/\bfunction\s+run\b/#) != nil
-            || masked.firstMatch(of: #/\brun\s*=#/) != nil
+            || masked.range(of: "\\brun\\s*=", options: .regularExpression) != nil
         if !found {
             issues.append(
                 "\(name) defines no entry point — the runtime needs "
