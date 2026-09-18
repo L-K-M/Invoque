@@ -37,6 +37,24 @@ struct GitHubRelease: Decodable {
         case assets
     }
 
+    /// Self-contained decode: `published_at` arrives as an ISO 8601 string,
+    /// which the default `.deferredToDate` strategy would reject — and the
+    /// key being present means a thrown `typeMismatch`, not a nil. Parsing
+    /// the string here keeps the type correct under any decoder configuration,
+    /// which a "reusable" type can't outsource to its call sites.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tagName = try c.decode(String.self, forKey: .tagName)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        body = try c.decodeIfPresent(String.self, forKey: .body)
+        htmlURL = try c.decode(URL.self, forKey: .htmlURL)
+        prerelease = try c.decode(Bool.self, forKey: .prerelease)
+        draft = try c.decode(Bool.self, forKey: .draft)
+        publishedAt = try c.decodeIfPresent(String.self, forKey: .publishedAt)
+            .flatMap { ISO8601DateFormatter().date(from: $0) }
+        assets = try c.decode([Asset].self, forKey: .assets)
+    }
+
     /// The best asset to download: a disk image, then a zip, then a pkg, else the
     /// first uploaded asset. `nil` if the release has no assets. (GitHub's
     /// auto-generated "Source code" archives aren't in `assets`, so they're never

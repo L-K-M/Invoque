@@ -29,13 +29,25 @@ struct GitHubReleaseClient {
     func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease {
         if includePrereleases {
             let releases = try await fetch([GitHubRelease].self, path: "releases?per_page=30")
-            let newest = releases
-                .filter { !$0.draft }
-                .max { (SemanticVersion($0.tagName) ?? .zero) < (SemanticVersion($1.tagName) ?? .zero) }
-            guard let newest else { throw ClientError.noReleases }
+            guard let newest = Self.newestParseableRelease(releases) else {
+                throw ClientError.noReleases
+            }
             return newest
         }
         return try await fetch(GitHubRelease.self, path: "releases/latest")
+    }
+
+    /// The highest-versioned non-draft release whose tag parses. Unparsable
+    /// tags ("nightly", "build-42") are excluded rather than ranked as 0.0.0 —
+    /// an all-unparsable page returns nil so the caller throws `noReleases`
+    /// instead of surfacing an arbitrary release.
+    static func newestParseableRelease(_ releases: [GitHubRelease]) -> GitHubRelease? {
+        releases
+            .filter { !$0.draft }
+            .compactMap { release -> (GitHubRelease, SemanticVersion)? in
+                SemanticVersion(release.tagName).map { (release, $0) }
+            }
+            .max { $0.1 < $1.1 }?.0
     }
 
     private func fetch<T: Decodable>(_ type: T.Type, path: String) async throws -> T {
@@ -54,13 +66,17 @@ struct GitHubReleaseClient {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ClientError.badResponse(-1) }
-        // 404 from the latest endpoint means the repo has no published (non-draft,
-        // non-prerelease) release yet — report that rather than a raw HTTP code.
-        if http.statusCode == 404 { throw ClientError.noReleases }
+        // 404 means "no published release yet" only on the latest endpoint —
+        // the list endpoint answers 200 [] for that. A 404 there means the
+        // repo is missing, private, or misconfigured: report it as such.
+        if http.statusCode == 404 {
+            if path.hasSuffix("releases/latest") { throw ClientError.noReleases }
+            throw ClientError.badResponse(404)
+        }
         guard (200..<300).contains(http.statusCode) else { throw ClientError.badResponse(http.statusCode) }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(T.self, from: data)
+        // GitHubRelease decodes published_at itself, so no date strategy
+        // is needed here — the model can't be broken by decoder config.
+        return try JSONDecoder().decode(T.self, from: data)
     }
 }

@@ -3,10 +3,11 @@ import XCTest
 
 final class GitHubReleaseTests: XCTestCase {
 
+    /// A default-configured decoder on purpose — GitHubRelease parses
+    /// `published_at` itself, so correctness can't depend on decoder
+    /// configuration at the call site.
     private func decode(_ json: String) throws -> GitHubRelease {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(GitHubRelease.self, from: Data(json.utf8))
+        try JSONDecoder().decode(GitHubRelease.self, from: Data(json.utf8))
     }
 
     func testDecodesLatestReleasePayload() throws {
