@@ -153,7 +153,7 @@ final class UpdateCheckerTests: XCTestCase {
         init(release: GitHubRelease) { self.release = release }
         func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease {
             lock.lock(); storage += 1; lock.unlock()
-            await withCheckedContinuation { c in
+            return await withCheckedContinuation { c in
                 lock.lock()
                 if released { lock.unlock(); c.resume(returning: release) }
                 else { continuation = c; lock.unlock() }
