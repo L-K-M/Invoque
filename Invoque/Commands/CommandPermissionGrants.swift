@@ -53,7 +53,13 @@ final class CommandPermissionGrants {
         let key = grantKey(for: command)
         let prefix = "\(command.name)@"
         // Collect first — mutating a dictionary while iterating it traps.
-        let superseded = store.keys.filter { $0.hasPrefix(prefix) && $0 != key }
+        // The remainder must contain no "@": digests are hex-only, so a key
+        // like "a@b@<hash>" belongs to a *different* command named "a@b" and
+        // must not be superseded by "a".
+        let superseded = store.keys.filter { storedKey in
+            storedKey != key && storedKey.hasPrefix(prefix)
+                && !storedKey.dropFirst(prefix.count).contains("@")
+        }
         superseded.forEach { store.removeValue(forKey: $0) }
         var granted = Set(store[key] ?? [])
         granted.formUnion(permissions.map(\.rawValue))

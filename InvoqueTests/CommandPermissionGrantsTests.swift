@@ -109,6 +109,22 @@ final class CommandPermissionGrantsTests: XCTestCase {
         XCTAssertTrue(grants.ungranted(for: two).isEmpty)
     }
 
+    /// Grant keys are `name@hash`, so the supersede prefix "a@" also matches
+    /// a *different* command named "a@b" (key "a@b@<hash>"). Granting "a"
+    /// must not revoke "a@b"'s consent — digests are hex-only, so the
+    /// remainder after the prefix can never contain "@".
+    func testGrantDoesNotSupersedeAtScopedCommandNames() throws {
+        let scoped = try makeCommandOnDisk(name: "a@b", entry: "return 1;",
+                                           directoryName: "scoped")
+        let plain = try makeCommandOnDisk(name: "a", entry: "return 2;",
+                                          directoryName: "plain")
+        grants.grant([.shell], for: scoped)
+        grants.grant([.shell], for: plain)
+        XCTAssertTrue(grants.ungranted(for: scoped).isEmpty,
+                      "granting \"a\" must not revoke \"a@b\"'s consent")
+        XCTAssertTrue(grants.ungranted(for: plain).isEmpty)
+    }
+
     func testConsentLineCoversEveryRiskyPermission() {
         for permission in CommandPermissionGrants.risky {
             XCTAssertFalse(CommandPermissionGrants.consentLine(for: permission).isEmpty)
