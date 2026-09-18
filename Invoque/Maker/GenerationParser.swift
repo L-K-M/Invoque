@@ -173,6 +173,8 @@ enum GenerationParser {
               !name.contains("\\"),
               !name.hasPrefix("/"),
               !name.hasPrefix("."),
+              !name.hasSuffix("/"),
+              !name.contains("//"),
               !name.contains("/."),
               !name.components(separatedBy: "/").contains("..") else {
             return false
@@ -243,7 +245,10 @@ enum GenerationParser {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if !inFence {
                 guard trimmed.hasPrefix("```") else { continue }
-                let info = String(trimmed.dropFirst(3))
+                // Four-plus-backtick fences are a common model habit —
+                // strip however many open the line.
+                let info = String(trimmed.dropFirst(
+                    trimmed.prefix(while: { $0 == "`" }).count))
                     .trimmingCharacters(in: .whitespaces)
                 // A fence that closes on the same line (```main.js``` …) is
                 // an inline code span in prose, not a block opener.
@@ -251,7 +256,7 @@ enum GenerationParser {
                 inFence = true
                 currentName = try fileName(forInfo: info)
                 currentLines = []
-            } else if trimmed == "```" {
+            } else if trimmed.allSatisfy({ $0 == "`" }), trimmed.count >= 3 {
                 flush()
                 inFence = false
                 currentName = nil

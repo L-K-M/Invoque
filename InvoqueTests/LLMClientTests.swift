@@ -125,7 +125,11 @@ final class LLMClientTests: XCTestCase {
 
     func testMissingAPIKeyThrowsBeforeNetwork() async {
         let transport = StubTransport()
-        let client = makeClient(transport: transport, apiKey: "")
+        // Anthropic always requires a key — openAICompatible doesn't
+        // (keyless local servers like Ollama).
+        let client = makeClient(provider: .anthropic,
+                                baseURL: "https://api.anthropic.com",
+                                transport: transport, apiKey: "")
 
         do {
             _ = try await client.complete(messages: [LLMMessage(.user, "hi")])
@@ -134,6 +138,79 @@ final class LLMClientTests: XCTestCase {
             XCTAssertEqual(error as? LLMError, .missingAPIKey)
         }
         XCTAssertNil(transport.request)  // never hit the wire
+    }
+
+    /// Keyless local servers (Ollama, LM Studio) must work without a key —
+    /// no Authorization header, no missingAPIKey error.
+    func testKeylessOpenAIProviderSendsNoAuthHeader() async throws {
+        let transport = StubTransport()
+        transport.response = .success((
+            jsonData(["choices": [["message": ["content": "hi"],
+                                   "finish_reason": "stop"]]]),
+            httpResponse(status: 200)))
+        let client = makeClient(provider: .openAICompatible,
+                                baseURL: "http://localhost:11434/v1",
+                                transport: transport, apiKey: "")
+
+        _ = try await client.complete(messages: [LLMMessage(.user, "hi")])
+        XCTAssertNil(transport.request?
+            .value(forHTTPHeaderField: "Authorization"))
+    }
+
+    /// finish_reason "length" on a 200 is truncated output, not success —
+    /// the text ends mid-file and must surface as a typed error.
+    func testFinishReasonLengthThrowsTruncated() async {
+        let transport = StubTransport()
+        transport.response = .success((
+            jsonData(["choices": [["message": ["content": "--- command.json"],
+                                   "finish_reason": "length"]]]),
+            httpResponse(status: 200)))
+        let client = makeClient(transport: transport)
+
+        do {
+            _ = try await client.complete(messages: [LLMMessage(.user, "hi")])
+            XCTFail("expected throw")
+        } catch LLMError.truncatedOutput {
+            // expected
+        } catch {
+            XCTFail("expected truncatedOutput, got \(error)")
+        }
+    }
+
+    /// Anthropic's equivalent: stop_reason "max_tokens" on a 200.
+    func testAnthropicMaxTokensThrowsTruncated() async {
+        let transport = StubTransport()
+        transport.response = .success((
+            jsonData(["content": [["text": "partial"]],
+                      "stop_reason": "max_tokens"]),
+            httpResponse(status: 200)))
+        let client = makeClient(provider: .anthropic,
+                                baseURL: "https://api.anthropic.com",
+                                transport: transport)
+
+        do {
+            _ = try await client.complete(messages: [LLMMessage(.user, "hi")])
+            XCTFail("expected throw")
+        } catch LLMError.truncatedOutput(let limit) {
+            XCTAssertEqual(limit, 4096)
+        } catch {
+            XCTFail("expected truncatedOutput, got \(error)")
+        }
+    }
+
+    /// An Anthropic base URL that already ends in /v1 must not double it.
+    func testAnthropicBaseWithV1DoesNotDoublePath() async throws {
+        let transport = StubTransport()
+        transport.response = .success((
+            jsonData(["content": [["text": "hi"]], "stop_reason": "end_turn"]),
+            httpResponse(status: 200)))
+        let client = makeClient(provider: .anthropic,
+                                baseURL: "https://api.anthropic.com/v1",
+                                transport: transport)
+
+        _ = try await client.complete(messages: [LLMMessage(.user, "hi")])
+        XCTAssertEqual(transport.request?.url?.absoluteString,
+                       "https://api.anthropic.com/v1/messages")
     }
 
     func testMalformedResponseThrows() async {

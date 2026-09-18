@@ -47,9 +47,19 @@ enum GeneratedCommandValidator {
             ?? generation.entrySource
         validateJavaScript(entrySource, name: entryName, issues: &issues)
         validateEntryPoint(entrySource, name: entryName, issues: &issues)
-        // Extra .js files get the same syntax gate — the runtime only loads
-        // `manifest.entry`, so a broken helper is dead weight the model
-        // should fix or drop before saving.
+        // Extra .js files get the same syntax gate — but the runtime only
+        // evaluates `manifest.entry`, so a helper file is never loaded: an
+        // entry that calls into it fails with ReferenceError on first run
+        // despite a clean validation. Flag their existence outright.
+        let unloadedJS = generation.files.keys
+            .filter { $0.hasSuffix(".js") && $0 != entryName }
+            .sorted()
+        if !unloadedJS.isEmpty {
+            issues.append(
+                "only '\(entryName)' is executed at runtime — "
+                + "\(unloadedJS.joined(separator: ", ")) is never loaded; "
+                + "inline what the entry needs or drop the file")
+        }
         for (name, contents) in generation.files
         where name.hasSuffix(".js") && name != entryName {
             validateJavaScript(contents, name: name, issues: &issues)
@@ -173,6 +183,7 @@ enum GeneratedCommandValidator {
         var required = Set<CommandManifest.Permission>()
         var usedModules = Set<String>()
 
+        warnIfAliased(source, issues: &issues)
         for module in moduleTokens(in: source).sorted() {
             if alwaysAvailable.contains(module) {
                 usedModules.insert(module)
@@ -248,14 +259,37 @@ enum GeneratedCommandValidator {
         return masked
     }
 
+    /// Module detection keys on the literal `invoque.`/`ctx.` prefixes —
+    /// `const inv = invoque`, `const { fetch } = invoque`, or `return ctx`
+    /// slip past it. Rather than silently missing required permissions,
+    /// surface the pattern so the model rewrites it in the detectable form.
+    private static func warnIfAliased(_ source: String, issues: inout [String]) {
+        // `=` without an `=`/`!` before it (not ==, !=, <=, >=) or a
+        // `return` — either moves the whole bridge object off its name.
+        let aliased = source.range(
+            of: "(?<![=!<>])=\\s*(?:invoque|ctx)\\b",
+            options: .regularExpression) != nil
+            || source.range(
+                of: "\\breturn\\s+(?:invoque|ctx)\\b",
+                options: .regularExpression) != nil
+        let destructured = source.range(
+            of: "\\b(?:const|let|var)\\s*\\{[^}]*\\}\\s*=\\s*(?:invoque|ctx)\\b",
+            options: .regularExpression) != nil
+        if aliased || destructured {
+            issues.append(
+                "the script aliases or destructures invoque/ctx — call modules "
+                + "directly as `invoque.<module>` so the permission check sees them")
+        }
+    }
+
     /// Distinct `invoque.<token>`/`ctx.<token>` module names referenced by
     /// the script — `run(args, ctx)` receives the same object, so both names
     /// are the API surface.
     ///
-    /// Limitation: aliasing (`const inv = invoque`) and destructuring
-    /// (`const { fetch } = invoque`) aren't detected — the system prompt
-    /// steers away from both, and JSRuntime's runtime gating is the actual
-    /// permission enforcement regardless.
+    /// Aliasing (`const inv = invoque`) and destructuring
+    /// (`const { fetch } = invoque`) evade the token scan — `warnIfAliased`
+    /// flags them so the model rewrites in the direct-call form. JSRuntime's
+    /// runtime gating remains the actual permission boundary regardless.
     private static func moduleTokens(in source: String) -> Set<String> {
         var tokens = Set<String>()
         for match in source.matches(

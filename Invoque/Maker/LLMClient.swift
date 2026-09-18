@@ -13,6 +13,11 @@ enum LLMProvider: String, CaseIterable {
         case .anthropic: return "Anthropic"
         }
     }
+
+    /// Whether an API key is mandatory. Local OpenAI-compatible servers
+    /// (Ollama, LM Studio) accept unauthenticated requests — the key is
+    /// optional there; Anthropic always requires one.
+    var requiresAPIKey: Bool { self == .anthropic }
 }
 
 /// One turn of the conversation sent to the model. The Maker's feedback loop
@@ -59,6 +64,8 @@ enum LLMError: Error, Equatable, LocalizedError {
     case transport(String)
     /// A 2xx response whose body didn't match the expected shape.
     case malformedResponse
+    /// 2xx, but the model hit its output-token cap — the text is truncated.
+    case truncatedOutput(limit: Int)
 
     var errorDescription: String? {
         switch self {
@@ -72,6 +79,10 @@ enum LLMError: Error, Equatable, LocalizedError {
             return message
         case .malformedResponse:
             return "the provider returned a response in an unexpected shape"
+        case .truncatedOutput(let limit):
+            let cap = limit > 0 ? "the \(limit)-token output cap"
+                                : "the provider's output-token cap"
+            return "generation stopped at \(cap) — the result was truncated"
         }
     }
 }
@@ -97,9 +108,11 @@ final class LLMClient: LLMClientServing {
     private let configuration: Configuration
     private let transport: LLMTransport
 
-    /// How long one generation request may take. Long generations on a slow
-    /// local model can exceed URLSession's 60 s default, so resource timeout
-    /// gets headroom while the per-request timeout stays the contract.
+    /// The floor for one generation's total budget. The client is
+    /// non-streaming: nothing arrives until the model finishes, so
+    /// URLSession's idle timer (`timeoutIntervalForRequest`) is the
+    /// effective cap — `defaultTransport` gives it the full budget rather
+    /// than the 60 s default, for long generations on slow local models.
     static let requestTimeout: TimeInterval = 60
 
     init(configuration: Configuration, transport: LLMTransport = LLMClient.defaultTransport()) {
@@ -107,12 +120,15 @@ final class LLMClient: LLMClientServing {
         self.transport = transport
     }
 
-    /// Ephemeral session with the 60 s request timeout — not `.shared`: the
-    /// shared session would pin the timeout for every other caller.
+    /// Ephemeral session — not `.shared`, which would pin the timeout for
+    /// every other caller. Both timers get the full budget: in a
+    /// non-streaming request the idle timer only fires while the provider
+    /// is still working, and that's exactly the wait we're allowing.
     private static func defaultTransport() -> LLMTransport {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = requestTimeout
-        config.timeoutIntervalForResource = max(requestTimeout * 2, 300)
+        let budget = max(requestTimeout * 2, 300)
+        config.timeoutIntervalForRequest = budget
+        config.timeoutIntervalForResource = budget
         return URLSession(configuration: config)
     }
 
@@ -130,13 +146,14 @@ final class LLMClient: LLMClientServing {
 
     // MARK: Connection test
 
-    /// Cheap authenticated probe used by Settings' "Test connection" button:
+    /// Cheap probe used by Settings' "Test connection" button:
     /// `GET {base}/models` for OpenAI-compatible APIs, `GET {base}/v1/models`
     /// for Anthropic. Returns a short human-readable status on success.
     func testConnection() async throws -> String {
-        guard !configuration.apiKey.isEmpty else { throw LLMError.missingAPIKey }
-        let url = try endpoint(configuration.provider == .anthropic
-                               ? "v1/models" : "models")
+        if configuration.provider.requiresAPIKey,
+           configuration.apiKey.isEmpty { throw LLMError.missingAPIKey }
+        let url = configuration.provider == .anthropic
+            ? try anthropicEndpoint("models") : try endpoint("models")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         applyAuth(to: &request)
@@ -155,7 +172,8 @@ final class LLMClient: LLMClientServing {
     /// directly onto `messages` (system stays a message here, unlike
     /// Anthropic which wants it top-level).
     private func completeOpenAI(messages: [LLMMessage]) async throws -> String {
-        guard !configuration.apiKey.isEmpty else { throw LLMError.missingAPIKey }
+        // No key guard here: Ollama/LM Studio and friends are keyless —
+        // the Authorization header is simply skipped when none is set.
         let body: [String: Any] = [
             "model": configuration.model,
             "messages": messages.map { ["role": $0.role.rawValue, "content": $0.content] },
@@ -166,6 +184,11 @@ final class LLMClient: LLMClientServing {
               let message = choices.first?["message"] as? [String: Any],
               let content = message["content"] as? String else {
             throw LLMError.malformedResponse
+        }
+        // Same truncation trap as Anthropic: finish_reason "length" means
+        // the model hit its output cap and the text is incomplete.
+        if (choices.first?["finish_reason"] as? String) == "length" {
+            throw LLMError.truncatedOutput(limit: 0)
         }
         return content
     }
@@ -191,17 +214,32 @@ final class LLMClient: LLMClientServing {
             "messages": turns,
         ]
         if !system.isEmpty { body["system"] = system }
-        let (data, _) = try await post(body, to: endpoint("v1/messages"))
+        let (data, _) = try await post(body, to: anthropicEndpoint("messages"))
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let content = object["content"] as? [[String: Any]] else {
             throw LLMError.malformedResponse
         }
         let text = content.compactMap { $0["text"] as? String }.joined()
         guard !text.isEmpty else { throw LLMError.malformedResponse }
+        // A 200 is not success when the cap cut the output: the text ends
+        // mid-file and fails far downstream as a confusing parse error.
+        if (object["stop_reason"] as? String) == "max_tokens" {
+            throw LLMError.truncatedOutput(limit: 4096)
+        }
         return text
     }
 
     // MARK: Plumbing
+
+    /// Anthropic paths carry the API version (`v1/messages`). A base URL
+    /// that already ends in `/v1` — common when users copy the OpenAI
+    /// shape — must not produce `/v1/v1/messages`.
+    private func anthropicEndpoint(_ resource: String) throws -> URL {
+        let trimmed = configuration.baseURL
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let versioned = trimmed.hasSuffix("/v1") || trimmed.hasSuffix("/v1/")
+        return try endpoint(versioned ? resource : "v1/\(resource)")
+    }
 
     /// `baseURL` (trailing slashes stripped) + "/" + `path`, as a URL.
     /// Requires an http(s) scheme — a schemeless or `file://` base is a
@@ -222,8 +260,11 @@ final class LLMClient: LLMClientServing {
     private func applyAuth(to request: inout URLRequest) {
         switch configuration.provider {
         case .openAICompatible:
-            request.setValue("Bearer \(configuration.apiKey)",
-                             forHTTPHeaderField: "Authorization")
+            // Keyless local servers (Ollama, LM Studio) send no header.
+            if !configuration.apiKey.isEmpty {
+                request.setValue("Bearer \(configuration.apiKey)",
+                                 forHTTPHeaderField: "Authorization")
+            }
         case .anthropic:
             request.setValue(configuration.apiKey, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")

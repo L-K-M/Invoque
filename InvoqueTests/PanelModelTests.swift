@@ -479,8 +479,10 @@ final class PanelModelTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
         let phase = await maker.phase
-        XCTAssertNotEqual(phase, .readyToSave)
-        XCTAssertNotEqual(phase, .saved)
+        // The stub returned unparseable prose — the exact terminal state
+        // is .failed, which the negative assertions alone can't pin down
+        // (a broken routing would leave .idle and still "pass").
+        XCTAssertEqual(phase, .failed)
     }
 
     // MARK: Helpers

@@ -52,11 +52,11 @@ final class CommandWriterTests: XCTestCase {
     // MARK: Create
 
     func testSaveCreatesCommandDirectory() throws {
-        let (generation, manifest) = try generation(
+        let (generation, _) = try generation(
             source: "async function run() { return { title: \"x\" }; }",
             extraFiles: ["lib/util.js": "function h() {}"])
         let directory = try CommandWriter(rootURL: root)
-            .save(generation, manifest: manifest, prompt: "make a demo", model: "m1")
+            .save(generation, prompt: "make a demo", model: "m1")
 
         XCTAssertEqual(directory.lastPathComponent, "demo")
         // The saved command must load through the normal path — this is the
@@ -75,9 +75,9 @@ final class CommandWriterTests: XCTestCase {
     }
 
     func testManifestIsNormalizedSortedKeys() throws {
-        let (generation, manifest) = try generation()
+        let (generation, _) = try generation()
         let directory = try CommandWriter(rootURL: root)
-            .save(generation, manifest: manifest, prompt: "p", model: "m")
+            .save(generation, prompt: "p", model: "m")
         let written = fileContents(directory, "command.json") ?? ""
         // Sorted keys: name < permissions < runtime < schemaVersion < title.
         guard let nameIndex = written.range(of: "\"name\""),
@@ -98,18 +98,21 @@ final class CommandWriterTests: XCTestCase {
     func testUpdateSnapshotsHistoryAndBumpsRevision() throws {
         let writer = CommandWriter(rootURL: root)
         let (v1, m1) = try generation(source: "async function run() { return { title: \"v1\" }; }")
-        try writer.save(v1, manifest: m1, prompt: "first", model: "m1")
+        try writer.save(v1, prompt: "first", model: "m1")
 
         let (v2, m2) = try generation(source: "async function run() { return { title: \"v2\" }; }")
-        let directory = try writer.save(v2, manifest: m2, prompt: "second", model: "m2")
+        let directory = try writer.save(v2, prompt: "second", model: "m2")
 
         let history = directory.appendingPathComponent("history")
         let snapshots = try FileManager.default.contentsOfDirectory(atPath: history.path)
         XCTAssertEqual(snapshots.count, 1)
         let snapshot = history.appendingPathComponent(snapshots[0])
-        // Snapshot holds the previous command.json + main.js.
-        XCTAssertTrue(fileContents(snapshot, "command.json")?.contains("\"revision\" : 1") == true
-                      || fileContents(snapshot, "command.json")?.contains("\"revision\": 1") == true)
+        // Snapshot holds the previous command.json + main.js — decode it
+        // rather than string-matching encoder whitespace.
+        let snapshotManifest = try JSONDecoder().decode(
+            CommandManifest.self,
+            from: Data((fileContents(snapshot, "command.json") ?? "").utf8))
+        XCTAssertEqual(snapshotManifest.generated?.revision, 1)
         XCTAssertTrue(fileContents(snapshot, "main.js")?.contains("v1") == true)
 
         // And the live files carry revision 2 + the new code.
@@ -131,9 +134,9 @@ final class CommandWriterTests: XCTestCase {
             to: directory.appendingPathComponent("main.js"),
             atomically: true, encoding: .utf8)
 
-        let (generation, manifest) = try generation(source: "async function run() {}")
+        let (generation, _) = try generation(source: "async function run() {}")
         try CommandWriter(rootURL: root)
-            .save(generation, manifest: manifest, prompt: "p", model: "m")
+            .save(generation, prompt: "p", model: "m")
 
         let reloaded = try Command(directory: directory)
         XCTAssertEqual(reloaded.manifest.generated?.revision, 1)
@@ -154,9 +157,9 @@ final class CommandWriterTests: XCTestCase {
         while (true) {}
         async function run() {}
         """
-        let (generation, manifest) = try generation(source: source)
+        let (generation, _) = try generation(source: source)
         let directory = try CommandWriter(rootURL: root)
-            .save(generation, manifest: manifest, prompt: "p", model: "m")
+            .save(generation, prompt: "p", model: "m")
         let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         XCTAssertEqual(Set(contents), ["command.json", "main.js", "data"])
     }
@@ -164,9 +167,9 @@ final class CommandWriterTests: XCTestCase {
     /// The full loop: after a save, `CommandStore.scan()` picks the command
     /// up — the same path the app takes after the Maker writes.
     func testSavedCommandAppearsInStoreScan() throws {
-        let (generation, manifest) = try generation(name: "fresh-cmd")
+        let (generation, _) = try generation(name: "fresh-cmd")
         try CommandWriter(rootURL: root)
-            .save(generation, manifest: manifest, prompt: "p", model: "m")
+            .save(generation, prompt: "p", model: "m")
         let store = CommandStore(rootPaths: [root.path])
         store.scan()
         XCTAssertEqual(store.commands.map(\.name), ["fresh-cmd"])
@@ -178,11 +181,11 @@ final class CommandWriterTests: XCTestCase {
     /// An unsafe name on a later file must abort the save before anything
     /// lands — no manifest, no snapshot, no directory.
     func testUnsafeExtraFileNameWritesNothing() throws {
-        let (generation, manifest) = try generation(
+        let (generation, _) = try generation(
             extraFiles: ["../escape.txt": "x"])
         XCTAssertThrowsError(
             try CommandWriter(rootURL: root)
-                .save(generation, manifest: manifest, prompt: "p", model: "m")
+                .save(generation, prompt: "p", model: "m")
         ) { error in
             XCTAssertEqual(error as? CommandWriter.SaveError,
                            .unsafeFileName("../escape.txt"))
@@ -193,11 +196,11 @@ final class CommandWriterTests: XCTestCase {
 
     /// Reserved command-owned names can't arrive as generated files either.
     func testReservedFileNameWritesNothing() throws {
-        let (generation, manifest) = try generation(
+        let (generation, _) = try generation(
             extraFiles: ["data/seed.json": "{}"])
         XCTAssertThrowsError(
             try CommandWriter(rootURL: root)
-                .save(generation, manifest: manifest, prompt: "p", model: "m")
+                .save(generation, prompt: "p", model: "m")
         ) { error in
             XCTAssertEqual(error as? CommandWriter.SaveError,
                            .unsafeFileName("data/seed.json"))
@@ -210,11 +213,11 @@ final class CommandWriterTests: XCTestCase {
     /// overwrite the normalized manifest — it's rejected like any other
     /// unsafe name, before anything lands.
     func testCaseVariantOfCommandJSONIsRejected() throws {
-        let (generation, manifest) = try generation(
+        let (generation, _) = try generation(
             extraFiles: ["Command.JSON": "{\"evil\": true}"])
         XCTAssertThrowsError(
             try CommandWriter(rootURL: root)
-                .save(generation, manifest: manifest, prompt: "p", model: "m")
+                .save(generation, prompt: "p", model: "m")
         ) { error in
             XCTAssertEqual(error as? CommandWriter.SaveError,
                            .unsafeFileName("Command.JSON"))
@@ -228,14 +231,12 @@ final class CommandWriterTests: XCTestCase {
     func testMissingEntryWritesNothing() throws {
         let json = manifestJSON().replacingOccurrences(of: "\"main.js\"",
                                                        with: "\"index.js\"")
-        let manifest = try JSONDecoder().decode(
-            CommandManifest.self, from: Data(json.utf8))
         let generation = GeneratedCommand(
             manifestJSON: json, entryName: "main.js",
             entrySource: "async function run() {}", extraFiles: [:])
         XCTAssertThrowsError(
             try CommandWriter(rootURL: root)
-                .save(generation, manifest: manifest, prompt: "p", model: "m")
+                .save(generation, prompt: "p", model: "m")
         ) { error in
             XCTAssertEqual(error as? CommandWriter.SaveError,
                            .entryNotPresent("index.js"))

@@ -38,6 +38,9 @@ final class GenerationParserTests: XCTestCase {
         // newlines only, so the text stays; the file content still parses.
         let parsed = try GenerationParser.parse(output)
         XCTAssertTrue(parsed.entrySource.hasPrefix(mainJS))
+        // Retained prose is intentional: the validator's JS syntax gate is
+        // what rejects it — the parser stays lossless.
+        XCTAssertTrue(parsed.entrySource.contains("Let me know"))
     }
 
     func testDelimiterFormatWithExtraFiles() throws {
@@ -312,6 +315,40 @@ final class GenerationParserTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? GenerationParser.Failure,
                            .missingEntryFile)
+        }
+    }
+
+    /// Four-backtick fences are a common model habit — they must parse,
+    /// with both the opener and the all-backtick closer accepted.
+    func testFourBacktickFences() throws {
+        let output = """
+        ````json
+        \(manifestJSON)
+        ````
+        ````javascript
+        \(mainJS)
+        ````
+        """
+        let parsed = try GenerationParser.parse(output)
+        XCTAssertEqual(parsed.entrySource, mainJS)
+        XCTAssertTrue(parsed.extraFiles.isEmpty)
+    }
+
+    /// Pathological names can't ride in on a fence tag or a delimiter.
+    func testUnsafeNamesAreRejectedOrIgnored() throws {
+        // An explicit `lang:path` tag is a deliberate file claim — a bad
+        // one is an error, not silence.
+        let output = """
+        ```json
+        \(manifestJSON)
+        ```
+        ```js:lib/
+        \(mainJS)
+        ```
+        """
+        XCTAssertThrowsError(try GenerationParser.parse(output)) { error in
+            XCTAssertEqual(error as? GenerationParser.Failure,
+                           .invalidFileName("lib/"))
         }
     }
 

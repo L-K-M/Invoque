@@ -139,13 +139,15 @@ final class MakerModel: ObservableObject {
     }
 
     /// Feedback loop: appends the model's last output and the user's
-    /// correction to the transcript, then regenerates. Works from `draft`,
+    /// correction to the transcript, then regenerates. Only from `draft`,
     /// `readyToSave`, and `failed` — a malformed response is exactly what
-    /// feedback is for.
+    /// feedback is for; `saved`/`idle` sessions are done, and an in-flight
+    /// `generating`/`testing` phase must not be interrupted mid-flight.
     func sendFeedback(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !transcript.isEmpty,
-              phase != .generating, phase != .testing else { return }
+              phase == .draft || phase == .readyToSave || phase == .failed
+        else { return }
         if let lastRawOutput {
             transcript.append(LLMMessage(.assistant, lastRawOutput))
             // Consumed — a failed regeneration must not re-append the same
@@ -188,6 +190,11 @@ final class MakerModel: ObservableObject {
             // discard() owns the phase; a cancelled in-flight generation
             // must not clobber the idle state it just set.
         } catch {
+            // Cancellation surfaces differently per client — URLSession
+            // throws URLError(.cancelled), not CancellationError. A task
+            // discard() cancelled must never publish a phantom failure
+            // over the state reset() just wrote.
+            guard !Task.isCancelled else { return }
             lastError = error.localizedDescription
             phase = .failed
         }
@@ -235,7 +242,9 @@ final class MakerModel: ObservableObject {
             // gate because stage() is also what feeds the code to the
             // runner.
             guard CommandWriter.isSafeRelativePath(name) else {
-                throw CocoaError(.fileWriteInvalidFileName)
+                throw CocoaError(.fileWriteInvalidFileName,
+                                 userInfo: [NSLocalizedDescriptionKey:
+                                            "rejected unsafe file path: \(name)"])
             }
             let url = directory.appendingPathComponent(name)
             try FileManager.default.createDirectory(
@@ -252,11 +261,13 @@ final class MakerModel: ObservableObject {
     /// Only possible on a clean draft — `readyToSave` implies `isValid`,
     /// which implies a decoded manifest.
     func save() {
-        guard let draft, phase == .readyToSave, let manifest = draft.manifest else {
+        guard let draft, phase == .readyToSave, draft.manifest != nil else {
             return
         }
         do {
-            try writer.save(draft.generation, manifest: manifest,
+            // The writer re-decodes `generation.manifestJSON` itself — the
+            // bytes it persists are the bytes it validates.
+            try writer.save(draft.generation,
                             prompt: prompt, model: lastUsedModel ?? "")
         } catch {
             // The draft is still valid — a transient write error must not

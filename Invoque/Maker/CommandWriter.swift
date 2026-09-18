@@ -24,8 +24,8 @@ struct CommandWriter {
         case unsafeFileName(String)
         /// The manifest text being persisted failed to decode or validate —
         /// distinct from `manifestNotObject` (a re-serialization failure):
-        /// a caller's `manifest` argument can drift from
-        /// `generation.manifestJSON`, so the persisted text is what counts.
+        /// `generation.manifestJSON` is decoded and checked here so the
+        /// bytes on disk are the bytes that were validated.
         case manifestInvalid(String)
         /// The manifest's `entry` isn't among the generated files — checked
         /// pre-flight so nothing is written at all in this state.
@@ -66,23 +66,28 @@ struct CommandWriter {
     /// makes the new command visible immediately.
     @discardableResult
     func save(_ generation: GeneratedCommand,
-              manifest: CommandManifest,
               prompt: String,
               model: String,
               fileManager: FileManager = .default) throws -> URL {
         // Last-line defense: validate the manifest text that will actually
-        // be persisted — the `manifest` argument is a second source that
-        // can drift from `generation.manifestJSON`. The slug rule means
-        // `name` cannot traverse.
+        // be persisted — decoding `generation.manifestJSON` here means the
+        // bytes on disk are the bytes that were checked. The slug rule
+        // means `name` cannot traverse.
         let persisted: CommandManifest
         do {
             persisted = try JSONDecoder().decode(
                 CommandManifest.self, from: Data(generation.manifestJSON.utf8))
             try persisted.validateStructure()
-        } catch let saveError as SaveError {
-            throw saveError
         } catch {
-            throw SaveError.manifestInvalid(error.localizedDescription)
+            // DecodingError's localizedDescription is just "The data
+            // couldn't be read…" — describe the error so it's debuggable.
+            throw SaveError.manifestInvalid(String(describing: error))
+        }
+        // The name selects the directory — the writer doesn't trust
+        // upstream validation alone for the one value that picks a path.
+        guard !persisted.name.isEmpty, !persisted.name.contains("/"),
+              persisted.name != ".", persisted.name != ".." else {
+            throw SaveError.unsafeFileName(persisted.name)
         }
         let directory = rootURL.appendingPathComponent(persisted.name, isDirectory: true)
         let manifestURL = directory.appendingPathComponent("command.json")
@@ -104,8 +109,11 @@ struct CommandWriter {
             }
         }
         // The manifest's entry must be among the generated files — without
-        // it the saved command fails to load at scan time.
-        guard generation.files[persisted.entry] != nil else {
+        // it the saved command fails to load at scan time. `command.json`
+        // itself is never a valid entry: it exists in `files` (as the
+        // manifest text), but "running" it would evaluate JSON.
+        guard generation.files[persisted.entry] != nil,
+              persisted.entry.lowercased() != "command.json" else {
             throw SaveError.entryNotPresent(persisted.entry)
         }
 
@@ -116,7 +124,6 @@ struct CommandWriter {
                                                   prompt: prompt, model: model)
 
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try manifestData.write(to: manifestURL, options: .atomic)
         for (name, contents) in generation.files
         where name.lowercased() != "command.json" {
             guard Self.isSafeRelativePath(name) else {
@@ -132,6 +139,10 @@ struct CommandWriter {
         try fileManager.createDirectory(
             at: directory.appendingPathComponent("data", isDirectory: true),
             withIntermediateDirectories: true)
+        // The manifest is the commit point: written last, a failure above
+        // leaves the previous command.json describing a complete command —
+        // a mid-save rescan sees old manifest + new files, still loadable.
+        try manifestData.write(to: manifestURL, options: .atomic)
         return directory
     }
 
@@ -178,6 +189,8 @@ struct CommandWriter {
         !name.isEmpty
             && !name.hasPrefix("/")
             && !name.hasPrefix(".")
+            && !name.hasSuffix("/")
+            && !name.contains("//")
             && !name.contains("\\")
             && !name.contains("/.")
             && !name.components(separatedBy: "/").contains("..")

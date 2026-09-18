@@ -65,7 +65,15 @@ struct Keychain {
             insert[kSecAttrAccessible as String] =
                 kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             let addStatus = SecItemAdd(insert as CFDictionary, nil)
-            if addStatus != errSecSuccess {
+            if addStatus == errSecDuplicateItem {
+                // The item raced in between the update miss and the add —
+                // retry the update rather than report a failure.
+                let retry = SecItemUpdate(query as CFDictionary,
+                                          [kSecValueData as String: data] as CFDictionary)
+                if retry != errSecSuccess {
+                    NSLog("Invoque: Keychain update-after-duplicate failed (\(retry)) for account \(account)")
+                }
+            } else if addStatus != errSecSuccess {
                 NSLog("Invoque: Keychain add failed (\(addStatus)) for account \(account)")
             }
         } else if status != errSecSuccess {

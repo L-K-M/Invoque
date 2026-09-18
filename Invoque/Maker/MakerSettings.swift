@@ -41,16 +41,15 @@ final class MakerSettings: ObservableObject {
     @Published var provider: Provider {
         didSet {
             defaults.set(provider.rawValue, forKey: Key.provider)
-            // Swap a stock base URL for the other provider's — a URL the
-            // user customized is left alone. The model gets the same
-            // treatment: a stock model id sent to the other provider is a
+            // Swap a stock base URL / model for the other provider's
+            // defaults — independently: a user-customized URL is left alone,
+            // but a stock model id sent to the other provider is still a
             // guaranteed 400 (e.g. "gpt-4o-mini" at api.anthropic.com).
-            if provider == .anthropic && baseURL == Default.baseURL {
-                baseURL = Default.anthropicBaseURL
+            if provider == .anthropic {
+                if baseURL == Default.baseURL { baseURL = Default.anthropicBaseURL }
                 if model == Default.model { model = Default.anthropicModel }
-            } else if provider == .openAICompatible
-                        && baseURL == Default.anthropicBaseURL {
-                baseURL = Default.baseURL
+            } else if provider == .openAICompatible {
+                if baseURL == Default.anthropicBaseURL { baseURL = Default.baseURL }
                 if model == Default.anthropicModel { model = Default.model }
             }
         }
@@ -95,11 +94,13 @@ final class MakerSettings: ObservableObject {
 
     /// A client snapshotting the current configuration. The Maker builds a
     /// fresh one per generation so Settings edits apply without a restart.
-    func makeClient() -> LLMClient {
+    /// `keyOverride` exercises an unsaved draft — "Test connection" uses it
+    /// so testing a typed key can't clobber the stored one.
+    func makeClient(keyOverride: String? = nil) -> LLMClient {
         LLMClient(configuration: LLMClient.Configuration(
             provider: provider,
             baseURL: baseURL,
             model: model,
-            apiKey: apiKey))
+            apiKey: keyOverride ?? apiKey))
     }
 }

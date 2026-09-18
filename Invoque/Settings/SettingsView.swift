@@ -96,12 +96,13 @@ struct SettingsView: View {
     }
 
     private func testConnection() {
-        // The field is the truth: an unsaved draft is saved first so the
-        // test exercises exactly the key the user sees.
-        saveAPIKeyDraft()
+        // Test the draft when one's typed — but never persist it here: a
+        // failed experiment must not clobber the stored working key, and
+        // the field keeps its text so the user can fix and retry.
+        let keyOverride = apiKeyDraft.isEmpty ? nil : apiKeyDraft
         connectionTestRunning = true
         connectionTestResult = nil
-        let client = makerSettings.makeClient()
+        let client = makerSettings.makeClient(keyOverride: keyOverride)
         Task { @MainActor in
             do {
                 let status = try await client.testConnection()

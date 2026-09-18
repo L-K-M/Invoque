@@ -239,7 +239,7 @@ make command to format clipboard json
                                         (no dir needed) · JS compiles via
                                         `new Function` — parsed, never run ·
                                         invoque.*↔permissions cross-check on
-                                        comment/string-masked source
+                                        comment/string/template-masked source
   → Maker view                          draft summary (title, mode,
                                         permissions, files) + issues; Test
                                         button runs the draft in a temp
@@ -260,8 +260,8 @@ make command to format clipboard json
   `InvoqueBridge` — `paste`/`apps` are listed as not-yet-implemented.
 - Provider settings: base URL (OpenAI-compatible → OpenAI/OpenRouter/Ollama/
   LM Studio), model, API key (Keychain), Anthropic mode toggle — implemented
-  (`/v1/messages` + `x-api-key`). Test button in Settings hits `/models`
-  (`/v1/models` for Anthropic).
+  (`/v1/messages` + `x-api-key` + `anthropic-version`). Test button in
+  Settings hits `/models` (`/v1/models` for Anthropic).
 - Provenance: `generated.prompt`/`model`/`revision` in the manifest; every
   accepted revision snapshots the old files into `history/<timestamp>/` —
   rollback is a file copy the user can do by hand, and the Maker can offer
@@ -329,7 +329,7 @@ Invoque/
 │   │   ├── InvoqueBridge.swift          # invoque.* assembly per permissions
 │   │   └── Modules/                     # Clipboard, Fetch, FS, Shell, …
 │   ├── Maker/
-│   │   ├── MakerModel.swift             # idle→generating→draft→testing→
+│   │   ├── MakerModel.swift             # idle→generating→draft→(testing)?→
 │   │   │                                #   readyToSave→saved state machine
 │   │   ├── MakerView.swift              # in-panel SwiftUI (inline swap)
 │   │   ├── MakerSettings.swift          # provider/baseURL/model (UserDefaults)

@@ -132,7 +132,9 @@ struct MakerView: View {
             draftSummary(draft)
             if !draft.issues.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(draft.issues, id: \.self) { issue in
+                    // Offset identity, not string identity — two identical
+                    // issue strings would collapse under `\.self`.
+                    ForEach(Array(draft.issues.enumerated()), id: \.offset) { _, issue in
                         Text("· \(issue)")
                             .font(.caption)
                             .foregroundStyle(.red)
@@ -165,7 +167,9 @@ struct MakerView: View {
                 HStack(spacing: 8) {
                     Text(manifest.name)
                     badge(manifest.mode.rawValue)
-                    ForEach(manifest.permissions, id: \.self) { permission in
+                    // Offset identity — duplicate permission strings in
+                    // generated output must not collapse into one badge.
+                    ForEach(Array(manifest.permissions.enumerated()), id: \.offset) { _, permission in
                         badge(permission)
                     }
                 }
@@ -268,7 +272,7 @@ struct MakerView: View {
     }
 
     private func runTest() {
-        let args = testArgs.split(whereSeparator: { $0 == " " }).map(String.init)
+        let args = testArgs.split(whereSeparator: \.isWhitespace).map(String.init)
         Task { await model.test(args: args) }
     }
 

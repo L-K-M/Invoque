@@ -68,7 +68,7 @@ final class PanelModel: ObservableObject {
     /// The Maker's state machine — injected at wiring time; `nil` in tests
     /// that don't exercise `make`. While `makerPrompt` is non-nil the maker
     /// owns the panel (the view swaps the results list for `MakerView`).
-    var maker: MakerModel? {
+    @Published var maker: MakerModel? {
         didSet { refreshResults() }
     }
 

@@ -47,7 +47,8 @@ final class GeneratedCommandValidatorTests: XCTestCase {
             entry: "async function run() {}"))
         XCTAssertNil(outcome.manifest)
         XCTAssertEqual(outcome.issues.count, 1)
-        XCTAssertTrue(outcome.issues[0].contains("command.json"))
+        XCTAssertTrue(outcome.issues.first?.contains("command.json") == true,
+                      "\(outcome.issues)")
     }
 
     func testStructurallyInvalidManifestIsAnIssue() {
@@ -84,6 +85,22 @@ final class GeneratedCommandValidatorTests: XCTestCase {
             $0.contains("index.js") && $0.contains("entry point") })
     }
 
+    /// Non-entry files get the same syntax gate — a broken helper must be
+    /// flagged even though the runtime starts at the entry file. It also
+    /// earns the never-loaded warning: the runtime only evaluates the
+    /// entry, so shipping a second .js at all is the issue.
+    func testBrokenExtraFileIsAnIssue() {
+        let outcome = GeneratedCommandValidator.validate(GeneratedCommand(
+            manifestJSON: manifestJSON(),
+            entryName: "main.js",
+            entrySource: "async function run() {}",
+            extraFiles: ["lib/helper.js": "const broken ="]))
+        XCTAssertTrue(outcome.issues.contains {
+            $0.contains("lib/helper.js") && $0.contains("doesn't parse") })
+        XCTAssertTrue(outcome.issues.contains {
+            $0.contains("lib/helper.js") && $0.contains("never loaded") })
+    }
+
     // MARK: JavaScript
 
     func testJSSyntaxErrorIsAnIssue() {
@@ -94,19 +111,25 @@ final class GeneratedCommandValidatorTests: XCTestCase {
     }
 
     /// Compilation must not *run* the code — a top-level side effect (or
-    /// infinite loop) can't hang or fire during validation.
+    /// infinite loop) can't hang or fire during validation. Time-bounded:
+    /// if validation ever *does* run the script, the wait fails instead of
+    /// hanging the test process on the loop.
     func testJSIsCompiledNotRun() {
-        let outcome = GeneratedCommandValidator.validate(generation(
-            manifest: manifestJSON(),
-            entry: """
-            while (true) {}
-            async function run() {}
-            """))
-        // If this test returns at all, nothing executed. The compile itself
-        // is fine, so no parse issue — but also no entry-point issue (run
-        // exists).
-        XCTAssertFalse(outcome.issues.contains { $0.contains("doesn't parse") })
-        XCTAssertFalse(outcome.issues.contains { $0.contains("no entry point") })
+        let finished = expectation(description: "validate returned")
+        DispatchQueue.global().async {
+            let outcome = GeneratedCommandValidator.validate(self.generation(
+                manifest: self.manifestJSON(),
+                entry: """
+                while (true) {}
+                async function run() {}
+                """))
+            // The compile itself is clean: no parse issue, and `run`
+            // exists so no entry-point issue either.
+            XCTAssertFalse(outcome.issues.contains { $0.contains("doesn't parse") })
+            XCTAssertFalse(outcome.issues.contains { $0.contains("no entry point") })
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 10)
     }
 
     func testMissingEntryPointIsAnIssue() {
