@@ -24,7 +24,7 @@ final class GenerationParserTests: XCTestCase {
         XCTAssertTrue(parsed.extraFiles.isEmpty)
     }
 
-    func testDelimiterFormatIgnoresPreambleAndTrailingProse() throws {
+    func testDelimiterFormatToleratesPreambleAndRetainsTrailingProse() throws {
         let output = """
         Sure! Here's your command:
         --- command.json ---
