@@ -21,6 +21,17 @@ final class UpdateDownloaderTests: XCTestCase {
         XCTAssertEqual(third.lastPathComponent, "Invoque-2.dmg")
     }
 
+    /// Remote asset names are untrusted: traversal and subdirectories must be
+    /// stripped to a single component inside Downloads.
+    func testSafeFileNameStripsTraversal() {
+        XCTAssertEqual(UpdateDownloader.safeFileName("../../evil.sh"), "evil.sh")
+        XCTAssertEqual(UpdateDownloader.safeFileName("sub/dir/App.dmg"), "App.dmg")
+        XCTAssertEqual(UpdateDownloader.safeFileName(".."), "download")
+        XCTAssertEqual(UpdateDownloader.safeFileName("."), "download")
+        XCTAssertEqual(UpdateDownloader.safeFileName(""), "download")
+        XCTAssertEqual(UpdateDownloader.safeFileName("App.dmg"), "App.dmg")
+    }
+
     func testUniqueDestinationHandlesNameWithoutExtension() throws {
         let fm = FileManager.default
         let dir = fm.temporaryDirectory.appendingPathComponent("UpdateDownloaderTests-\(UUID().uuidString)")

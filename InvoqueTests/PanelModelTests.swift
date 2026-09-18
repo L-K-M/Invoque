@@ -132,15 +132,15 @@ final class PanelModelTests: XCTestCase {
     private func makePermissionRequest(grants: CommandPermissionGrants,
                                        permissions: [String] = ["shell"],
                                        args: [String] = ["a"]) throws -> CommandPermissionRequest {
-        let permissionList = permissions
-            .map { "\"\($0)\"" }.joined(separator: ", ")
-        let json = """
-            {"schemaVersion": 1, "name": "risky-demo", "title": "Risky",
-             "runtime": "js", "entry": "main.js", "mode": "action",
-             "permissions": [\(permissionList)]}
-            """
-        let manifest = try JSONDecoder().decode(CommandManifest.self,
-                                                from: Data(json.utf8))
+        // JSONSerialization, not interpolation — a permission string needing
+        // escaping must not corrupt the fixture.
+        let payload: [String: Any] = ["schemaVersion": 1, "name": "risky-demo",
+                                      "title": "Risky", "runtime": "js",
+                                      "entry": "main.js", "mode": "action",
+                                      "permissions": permissions]
+        let manifest = try JSONDecoder().decode(
+            CommandManifest.self,
+            from: try JSONSerialization.data(withJSONObject: payload))
         let command = Command(manifest: manifest,
                               directory: URL(fileURLWithPath: "/tmp/risky-demo"))
         // The request's permission set comes from the production
