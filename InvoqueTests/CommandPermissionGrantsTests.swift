@@ -109,20 +109,25 @@ final class CommandPermissionGrantsTests: XCTestCase {
         XCTAssertTrue(grants.ungranted(for: two).isEmpty)
     }
 
-    /// Grant keys are `name@hash`, so the supersede prefix "a@" also matches
-    /// a *different* command named "a@b" (key "a@b@<hash>"). Granting "a"
-    /// must not revoke "a@b"'s consent — digests are hex-only, so the
-    /// remainder after the prefix can never contain "@".
-    func testGrantDoesNotSupersedeAtScopedCommandNames() throws {
-        let scoped = try makeCommandOnDisk(name: "a@b", entry: "return 1;",
-                                           directoryName: "scoped")
-        let plain = try makeCommandOnDisk(name: "a", entry: "return 2;",
-                                          directoryName: "plain")
-        grants.grant([.shell], for: scoped)
-        grants.grant([.shell], for: plain)
-        XCTAssertTrue(grants.ungranted(for: scoped).isEmpty,
-                      "granting \"a\" must not revoke \"a@b\"'s consent")
-        XCTAssertTrue(grants.ungranted(for: plain).isEmpty)
+    /// The supersede prefix "a@" can never collide with another command's
+    /// keys: names are slug-validated, so "a@b" is rejected as a command name
+    /// before it can run — pinning the invariant the supersede relies on.
+    func testAtSignInCommandNameIsRejected() throws {
+        let directory = tempRoot.appendingPathComponent("bad-name")
+        try FileManager.default.createDirectory(at: directory,
+                                                withIntermediateDirectories: true)
+        let json = """
+            {"schemaVersion": 1, "name": "a@b", "title": "Demo",
+             "runtime": "js", "entry": "main.js", "mode": "action",
+             "permissions": ["shell"]}
+            """
+        try Data(json.utf8).write(to: directory.appendingPathComponent("command.json"))
+        try "return 1;".write(to: directory.appendingPathComponent("main.js"),
+                             atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try Command(directory: directory)) { error in
+            XCTAssertEqual(error as? CommandManifest.ValidationError,
+                           .invalidName("a@b"))
+        }
     }
 
     func testConsentLineCoversEveryRiskyPermission() {
