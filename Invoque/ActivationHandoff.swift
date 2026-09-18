@@ -132,7 +132,14 @@ final class ActivationHandoff {
     }
 
     private static func record(_ app: NSRunningApplication?) {
-        guard let app, app.processIdentifier != ownPID else { return }
+        guard let app else { return }
+        if app.processIdentifier == ownPID {
+            // Invoque was deliberately (re-)activated — a pending
+            // post-restore resignation must not deactivate the app (or
+            // close an open menu) out from under the user.
+            generation &+= 1
+            return
+        }
         target = app
     }
 }
