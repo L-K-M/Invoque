@@ -77,6 +77,23 @@ final class CommandPermissionGrantsTests: XCTestCase {
                        "changed code must not inherit the old code's grant")
     }
 
+    /// Consenting to new bytes retires the old bytes' grant — one entry per
+    /// name, not a growing pile of stale hashes. Reverting to the old code
+    /// re-asks, which is the safe direction.
+    func testNewHashSupersedesOldGrantUnderSameName() throws {
+        let v1 = try makeCommandOnDisk(name: "demo",
+                                       entry: "return { title: \"v1\" };",
+                                       directoryName: "v1")
+        let v2 = try makeCommandOnDisk(name: "demo",
+                                       entry: "return { title: \"v2\" };",
+                                       directoryName: "v2")
+        grants.grant([.shell], for: v1)
+        grants.grant([.shell], for: v2)
+        XCTAssertEqual(grants.ungranted(for: v1), [.shell],
+                       "the superseded hash's grant must be gone")
+        XCTAssertTrue(grants.ungranted(for: v2).isEmpty)
+    }
+
     /// Identical code under the same name keeps its grant — reinstalls and
     /// the Maker's stage-then-save path don't re-prompt.
     func testIdenticalEntryKeepsGrantAcrossDirectories() throws {

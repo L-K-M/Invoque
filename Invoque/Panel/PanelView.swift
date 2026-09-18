@@ -127,7 +127,7 @@ struct PanelView: View {
 
 /// The first-run consent card for a command's risky permissions (PLAN
 /// §4.3): what the command wants, spelled out per permission, then
-/// Allow / Don't Run. ⏎ reaches Allow via `PanelModel.submit`.
+/// Allow / Don't Run. ⌘⏎ (or the Allow button) grants; plain ⏎ is neutral.
 private struct PermissionRequestCard: View {
 
     let request: CommandPermissionRequest

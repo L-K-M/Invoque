@@ -41,11 +41,20 @@ final class CommandPermissionGrants {
     }
 
     /// Records consent for `permissions`; already-granted ones are kept.
+    /// Older content hashes under the same name are dropped — a grant for
+    /// new bytes supersedes them, keeping the store to one entry per name
+    /// instead of accumulating every hash ever consented to. Reverting to
+    /// the old bytes just re-asks, which is the safe direction.
     func grant(_ permissions: [CommandManifest.Permission], for command: Command) {
         var store = loadStore()
-        var granted = Set(store[grantKey(for: command)] ?? [])
+        let key = grantKey(for: command)
+        let prefix = "\(command.name)@"
+        // Collect first — mutating a dictionary while iterating it traps.
+        let superseded = store.keys.filter { $0.hasPrefix(prefix) && $0 != key }
+        superseded.forEach { store.removeValue(forKey: $0) }
+        var granted = Set(store[key] ?? [])
         granted.formUnion(permissions.map(\.rawValue))
-        store[grantKey(for: command)] = granted.sorted()
+        store[key] = granted.sorted()
         defaults.set(store, forKey: Self.defaultsKey)
     }
 
