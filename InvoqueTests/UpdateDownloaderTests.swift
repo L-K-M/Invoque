@@ -28,6 +28,8 @@ final class UpdateDownloaderTests: XCTestCase {
         XCTAssertEqual(UpdateDownloader.safeFileName("sub/dir/App.dmg"), "App.dmg")
         XCTAssertEqual(UpdateDownloader.safeFileName(".."), "download")
         XCTAssertEqual(UpdateDownloader.safeFileName("."), "download")
+        XCTAssertEqual(UpdateDownloader.safeFileName("/"), "download")
+        XCTAssertEqual(UpdateDownloader.safeFileName("//"), "download")
         XCTAssertEqual(UpdateDownloader.safeFileName(""), "download")
         XCTAssertEqual(UpdateDownloader.safeFileName("App.dmg"), "App.dmg")
     }

@@ -19,7 +19,14 @@ struct UpdateDownloader {
                                             appropriateFor: nil, create: true)
         let destination = Self.uniqueDestination(
             in: downloads, fileName: Self.safeFileName(asset.name), fileManager: fileManager)
-        try fileManager.moveItem(at: tempURL, to: destination)
+        do {
+            try fileManager.moveItem(at: tempURL, to: destination)
+        } catch {
+            // Don't strand a full-size temp file when the move fails
+            // (disk-full on another volume, permissions, TOCTOU collision).
+            try? fileManager.removeItem(at: tempURL)
+            throw error
+        }
         return destination
     }
 
@@ -29,7 +36,9 @@ struct UpdateDownloader {
     /// too — ".." appended to Downloads would resolve to its parent.
     static func safeFileName(_ assetName: String) -> String {
         let raw = (assetName as NSString).lastPathComponent
-        return raw.isEmpty || raw == "." || raw == ".." ? "download" : raw
+        // lastPathComponent also passes "/" through for separator-only input —
+        // appending that would collapse the destination to Downloads itself.
+        return raw.isEmpty || raw == "." || raw == ".." || raw == "/" ? "download" : raw
     }
 
     /// A non-colliding URL in `directory` for `fileName` (`Foo.dmg`, then `Foo-1.dmg`,
