@@ -17,7 +17,7 @@ struct GitHubReleaseClient {
         var errorDescription: String? {
             switch self {
             case .badResponse(let code): return "GitHub returned HTTP \(code)."
-            case .noReleases: return "No published releases were found."
+            case .noReleases: return "No published releases were found (or the repository is unavailable)."
             }
         }
     }

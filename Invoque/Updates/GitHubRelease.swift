@@ -40,12 +40,21 @@ struct GitHubRelease: Decodable {
     /// The best asset to download: a disk image, then a zip, then a pkg, else the
     /// first uploaded asset. `nil` if the release has no assets. (GitHub's
     /// auto-generated "Source code" archives aren't in `assets`, so they're never
-    /// picked.)
+    /// picked.) Among same-extension assets, prefer one whose name hints at the
+    /// running architecture — multi-arch releases are a common GitHub layout.
     var preferredAsset: Asset? {
         let preference = ["dmg", "zip", "pkg"]
+        #if arch(arm64)
+        let archHints = ["arm64", "aarch64", "universal"]
+        #else
+        let archHints = ["x86_64", "x64", "intel", "universal"]
+        #endif
         func rank(_ asset: Asset) -> Int {
             let ext = (asset.name as NSString).pathExtension.lowercased()
-            return preference.firstIndex(of: ext) ?? preference.count
+            let extRank = preference.firstIndex(of: ext) ?? preference.count
+            let name = asset.name.lowercased()
+            let archRank = archHints.contains { name.contains($0) } ? 0 : 1
+            return extRank * 2 + archRank   // extension dominates the tie-break
         }
         return assets.min { rank($0) < rank($1) }
     }

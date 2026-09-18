@@ -82,6 +82,42 @@ final class GitHubReleaseTests: XCTestCase {
         XCTAssertEqual(release.preferredAsset?.name, "notes.txt")
     }
 
+    /// Multi-arch releases are a common GitHub layout — among same-extension
+    /// assets the one hinting at the running architecture must win.
+    func testPreferredAssetPrefersMatchingArchitecture() throws {
+        let release = try decode("""
+        {
+          "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false,
+          "assets": [
+            {"name":"App-x64.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/x64.dmg"},
+            {"name":"App-arm64.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/arm64.dmg"}
+          ]
+        }
+        """)
+        #if arch(arm64)
+        XCTAssertEqual(release.preferredAsset?.name, "App-arm64.dmg")
+        #else
+        XCTAssertEqual(release.preferredAsset?.name, "App-x64.dmg")
+        #endif
+    }
+
+    /// Extension preference still dominates the architecture tie-break — a
+    /// foreign-arch dmg beats a native-arch zip on every architecture.
+    func testPreferredAssetExtensionDominatesArch() throws {
+        let release = try decode("""
+        {
+          "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false,
+          "assets": [
+            {"name":"App-arm64.zip","content_type":"application/zip","size":1,"browser_download_url":"https://e.com/arm64.zip"},
+            {"name":"App-x64.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/x64.dmg"}
+          ]
+        }
+        """)
+        // On arm64 the x64 dmg is foreign-arch but still wins — ext first.
+        // On x86_64 it wins on both criteria.
+        XCTAssertEqual(release.preferredAsset?.name, "App-x64.dmg")
+    }
+
     func testPreferredAssetNilWhenNoAssets() throws {
         let release = try decode("""
         { "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false, "assets": [] }
