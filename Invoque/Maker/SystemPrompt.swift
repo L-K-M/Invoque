@@ -24,7 +24,10 @@ enum SystemPrompt {
     --- main.js ---
     <the script>
 
-    Extra files may follow under their own `--- path/name ---` headers.
+    Extra files may follow under their own `--- path/name ---` headers, but
+    they are inert data — nothing can import them (no `require`), so keep all
+    logic in the entry file. Paths are relative to the command directory and
+    must not contain `..` or begin with `/`.
 
     ## Manifest (command.json)
 
@@ -36,7 +39,6 @@ enum SystemPrompt {
       "runtime": "js",
       "entry": "main.js",
       "mode": "action" | "filter",     // default "action"
-      "arguments": [{"name": "q", "type": "text", "optional": true}],
       "keywords": ["word"],            // search words; keywords[0] is the
                                        // trigger word in filter mode
       "icon": "sf.symbol.name",
@@ -98,6 +100,11 @@ enum SystemPrompt {
     - Prefer "action" mode unless the result is a list to pick from.
     - JavaScriptCore only: no Node builtins, no fetch outside invoque.fetch,
       no setTimeout — use async/await on the promise invoque.fetch returns.
+    - Shell safety: read, transform, print — nothing destructive. Never
+      generate irreversible commands (rm -rf, dd, mkfs, chmod/chown -R,
+      `curl | sh`, sudo), never interpolate untrusted text into a shell
+      string without quoting, and never move local data to a remote host
+      via shell.
 
     ## Example
 

@@ -282,8 +282,29 @@ struct MakerView: View {
     }
 
     private func runTest() {
-        let args = testArgs.split(whereSeparator: \.isWhitespace).map(String.init)
-        Task { await model.test(args: args) }
+        Task { await model.test(args: Self.parseArgs(testArgs)) }
+    }
+
+    /// Whitespace splitting that honors single/double quotes, so
+    /// `--text "two words"` arrives as one argument. An unmatched quote
+    /// swallows the rest of the field — the user's intent is unambiguous.
+    static func parseArgs(_ raw: String) -> [String] {
+        var args: [String] = []
+        var current = ""
+        var quote: Character?
+        for ch in raw {
+            if let q = quote {
+                if ch == q { quote = nil } else { current.append(ch) }
+            } else if ch == "\"" || ch == "'" {
+                quote = ch
+            } else if ch.isWhitespace {
+                if !current.isEmpty { args.append(current); current = "" }
+            } else {
+                current.append(ch)
+            }
+        }
+        if !current.isEmpty { args.append(current) }
+        return args
     }
 
     private func sendFeedback() {

@@ -130,8 +130,12 @@ final class GeneratedCommandValidatorTests: XCTestCase {
             finished.fulfill()
         }
         wait(for: [finished], timeout: 10)
-        XCTAssertFalse(outcome?.issues.contains { $0.contains("doesn't parse") } ?? true)
-        XCTAssertFalse(outcome?.issues.contains { $0.contains("no entry point") } ?? true)
+        guard let outcome else {
+            XCTFail("validate() did not return within the timeout — the script may have been executed")
+            return
+        }
+        XCTAssertFalse(outcome.issues.contains { $0.contains("doesn't parse") })
+        XCTAssertFalse(outcome.issues.contains { $0.contains("no entry point") })
     }
 
     func testMissingEntryPointIsAnIssue() {
