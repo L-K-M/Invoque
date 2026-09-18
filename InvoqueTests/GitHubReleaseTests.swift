@@ -146,6 +146,48 @@ final class GitHubReleaseTests: XCTestCase {
         #endif
     }
 
+    /// When every asset is foreign-hinted: Apple Silicon still picks the
+    /// best-ranked one (Rosetta runs x86_64), but Intel returns nil —
+    /// nothing runnable exists, and the caller falls back to the release
+    /// page rather than an unusable download.
+    func testPreferredAssetAllForeign() throws {
+        let release = try decode("""
+        {
+          "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false,
+          "assets": [
+            {"name":"App-arm64.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/arm64.dmg"},
+            {"name":"App-x64.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/x64.dmg"}
+          ]
+        }
+        """)
+        #if arch(arm64)
+        // All-x86_64 is foreign but Rosetta-runnable — best rank wins.
+        let x64Only = try decode("""
+        {
+          "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false,
+          "assets": [
+            {"name":"App-x64.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/x64.dmg"}
+          ]
+        }
+        """)
+        XCTAssertEqual(release.preferredAsset?.name, "App-arm64.dmg")
+        XCTAssertEqual(x64Only.preferredAsset?.name, "App-x64.dmg")
+        #else
+        // On Intel the arm64 asset is filtered; the x64 one stays native.
+        XCTAssertEqual(release.preferredAsset?.name, "App-x64.dmg")
+        // An all-arm64 release has nothing an Intel Mac can run — nil.
+        let arm64Only = try decode("""
+        {
+          "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false,
+          "assets": [
+            {"name":"App-arm64.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/arm64.dmg"}
+          ]
+        }
+        """)
+        XCTAssertNil(arm64Only.preferredAsset)
+        #endif
+    }
+
     func testPreferredAssetNilWhenNoAssets() throws {
         let release = try decode("""
         { "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false, "assets": [] }

@@ -94,8 +94,17 @@ struct GitHubRelease: Decodable {
             let name = asset.name.lowercased()
             return !foreignHints.contains { name.contains($0) }
         }
+        #if arch(arm64)
+        // Foreign x86_64 assets still run under Rosetta 2 on Apple
+        // Silicon, so falling back to the best-ranked asset is safe.
         return runnable.min { rank($0) < rank($1) }
             ?? assets.min { rank($0) < rank($1) }
+        #else
+        // No Rosetta for arm64 on Intel: an all-foreign asset list has
+        // nothing this machine can run — offer nothing (the caller opens
+        // the release page) rather than an unusable download.
+        return runnable.min { rank($0) < rank($1) }
+        #endif
     }
 
     /// A trimmed, length-capped form of the release body, suitable for an alert's
