@@ -18,7 +18,7 @@ struct UpdateDownloader {
         let downloads = try fileManager.url(for: .downloadsDirectory, in: .userDomainMask,
                                             appropriateFor: nil, create: true)
         let destination = Self.uniqueDestination(
-            in: downloads, fileName: safeFileName(asset.name), fileManager: fileManager)
+            in: downloads, fileName: Self.safeFileName(asset.name), fileManager: fileManager)
         try fileManager.moveItem(at: tempURL, to: destination)
         return destination
     }
