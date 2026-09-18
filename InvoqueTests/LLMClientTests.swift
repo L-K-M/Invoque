@@ -22,8 +22,10 @@ final class LLMClientTests: XCTestCase {
                         statusCode: status, httpVersion: nil, headerFields: nil)!
     }
 
+    /// A fixture that can't serialize should fail loudly here, not leak
+    /// an empty body into the stub and misattribute the failure.
     private func jsonData(_ object: [String: Any]) -> Data {
-        (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+        try! JSONSerialization.data(withJSONObject: object)
     }
 
     private func makeClient(provider: LLMProvider = .openAICompatible,
@@ -56,6 +58,7 @@ final class LLMClientTests: XCTestCase {
         let request = transport.request
         XCTAssertEqual(request?.url?.absoluteString,
                        "https://api.test/v1/chat/completions")
+        XCTAssertEqual(request?.httpMethod, "POST")
         XCTAssertEqual(request?.value(forHTTPHeaderField: "Authorization"),
                        "Bearer sk-test")
         let body = request?.httpBody.flatMap {
@@ -87,6 +90,7 @@ final class LLMClientTests: XCTestCase {
         let request = transport.request
         XCTAssertEqual(request?.url?.absoluteString,
                        "https://api.anthropic.com/v1/messages")
+        XCTAssertEqual(request?.httpMethod, "POST")
         XCTAssertEqual(request?.value(forHTTPHeaderField: "x-api-key"), "sk-test")
         XCTAssertEqual(request?.value(forHTTPHeaderField: "anthropic-version"),
                        "2023-06-01")

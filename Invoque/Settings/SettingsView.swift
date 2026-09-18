@@ -124,12 +124,22 @@ struct SettingsView: View {
             }
             // Evaluated at completion: a Save/Remove that landed while
             // the request was in flight retires the result.
-            if makerSettings.apiKey == testedKey
-                || apiKeyDraft == testedKey {
+            if Self.shouldPublishTestResult(testedKey: testedKey,
+                                            storedKey: makerSettings.apiKey,
+                                            draft: apiKeyDraft) {
                 connectionTestResult = result
             }
             connectionTestRunning = false
         }
+    }
+
+    /// A late connection-test completion publishes only while the key it
+    /// describes is still the stored key or the current draft — a Save or
+    /// Remove mid-flight retires it.
+    static func shouldPublishTestResult(testedKey: String,
+                                        storedKey: String,
+                                        draft: String) -> Bool {
+        storedKey == testedKey || draft == testedKey
     }
 
     private static var versionString: String {
