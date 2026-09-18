@@ -73,6 +73,19 @@ final class SemanticVersionTests: XCTestCase {
         XCTAssertTrue(SemanticVersion("1.0.0-a.10000000000000000000")! < huge)
     }
 
+    /// Leading-zero digit strings parse as small Ints yet can out-length an
+    /// overflowing peer — ordering by raw length inverts them and re-forms a
+    /// cycle through a parseable pivot ("0…09" < "10" < "30…0" < "0…09").
+    /// Magnitude must be compared on trimmed digits.
+    func testPrereleaseLeadingZeroNumericsKeepOrdering() {
+        let padded9 = SemanticVersion("1.0.0-a.00000000000000000000000000000009")!
+        let huge3e21 = SemanticVersion("1.0.0-a.3000000000000000000000")!
+        let ten = SemanticVersion("1.0.0-a.10")!
+        XCTAssertTrue(padded9 < huge3e21)   // 9 < 3e21 despite 32 vs 22 chars
+        XCTAssertTrue(padded9 < ten)        // 9 < 10
+        XCTAssertTrue(ten < huge3e21)       // no cycle through the pivot
+    }
+
     func testNewerThanCurrentDetection() {
         let current = SemanticVersion("1.0")!
         XCTAssertTrue(SemanticVersion("1.0.1")! > current)

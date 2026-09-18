@@ -67,11 +67,14 @@ struct SemanticVersion: Comparable, Equatable, CustomStringConvertible {
                 r.split(separator: ".")) { a, b in
                     if isNumeric(a) && isNumeric(b) {
                         if let x = Int(a), let y = Int(b) { return x < y }
-                        // Digit strings too long for Int: longer is larger;
-                        // equal length orders lexically. A plain lexical
-                        // fallback re-opens a cycle ("3" < "19" < "20…0" < "3").
-                        if a.count != b.count { return a.count < b.count }
-                        return a < b
+                        // Digit strings too long for Int: compare magnitudes —
+                        // trim leading zeros first (a long "0…09" parses as a
+                        // small Int yet out-lengths an overflowing peer, which
+                        // would invert the order and re-open the cycle).
+                        let lt = a.drop(while: { $0 == "0" })
+                        let rt = b.drop(while: { $0 == "0" })
+                        if lt.count != rt.count { return lt.count < rt.count }
+                        return lt < rt
                     }
                     switch (isNumeric(a), isNumeric(b)) {
                     case (true, false): return true    // numeric < alphanumeric
