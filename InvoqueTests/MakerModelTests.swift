@@ -219,7 +219,12 @@ final class MakerModelTests: XCTestCase {
 
     /// Allow records the grant and runs the paused test with the same args.
     func testConfirmPermissionRequestRunsTest() async throws {
-        let grants = makeFreshGrants()
+        // This test needs the suite name for the reload assertion below, so
+        // it builds its own suite rather than using makeFreshGrants().
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],
                                                       usesShell: true))]
@@ -242,7 +247,11 @@ final class MakerModelTests: XCTestCase {
         await model.save()
         let installed = try Command(
             directory: root.appendingPathComponent("gen-demo"))
-        XCTAssertTrue(grants.ungranted(for: installed).isEmpty)
+        // Read through a fresh instance over the same suite — the grant
+        // must reach UserDefaults, not just an in-memory cache.
+        let reloaded = CommandPermissionGrants(
+            defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
+        XCTAssertTrue(reloaded.ungranted(for: installed).isEmpty)
     }
 
     /// A second Test tap while the consent card is up must not silently
@@ -262,6 +271,9 @@ final class MakerModelTests: XCTestCase {
 
         await model.test()   // double-tap — must be a no-op
         let after = await model.permissionRequest
+        // stage() uses a fresh UUID dir per run, so a replaced request
+        // would point at a different entryURL — this equality is the
+        // detection, not a tautology.
         XCTAssertEqual(after?.command.entryURL, paused?.command.entryURL)
         let result = await model.testResult
         XCTAssertNil(result, "the second test must not execute either")

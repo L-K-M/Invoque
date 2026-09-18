@@ -173,8 +173,13 @@ final class GitHubReleaseTests: XCTestCase {
         XCTAssertEqual(release.preferredAsset?.name, "App-arm64.dmg")
         XCTAssertEqual(x64Only.preferredAsset?.name, "App-x64.dmg")
         #else
-        // x86_64 slice — assumes a non-translated test run (CI runs
-        // native); under Rosetta arm64 becomes the native hints instead.
+        // x86_64 slice — these assertions hold only for a non-translated
+        // run; under Rosetta the runtime flip prefers arm64 assets.
+        var procTranslated: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        _ = sysctlbyname("sysctl.proc_translated", &procTranslated, &size, nil, 0)
+        try XCTSkipIf(procTranslated == 1,
+                      "x86_64 test slice is running under Rosetta")
         XCTAssertEqual(release.preferredAsset?.name, "App-x64.dmg")
         // An all-arm64 release has nothing an Intel Mac can run — nil.
         let arm64Only = try decode("""

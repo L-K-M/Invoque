@@ -169,11 +169,15 @@ final class UpdateChecker: ObservableObject {
             guard let self else { return }
             defer {
                 // A checkNow() landing while a result alert is on screen
-                // (runModal spins a nested run loop) arrives after the flag
-                // was consumed — clear it so a later automatic check isn't
-                // treated as user-initiated and can't steal focus.
+                // (runModal spins a nested run loop) arrives after this run
+                // consumed its flag. It must neither leak into a future
+                // automatic check (a stale flag would make it report and
+                // steal focus) nor be dropped — run it as its own
+                // user-initiated check once this one finishes.
+                let queued = self.pendingUserInitiatedCheck
                 self.pendingUserInitiatedCheck = false
                 self.isChecking = false
+                if queued { self.performCheck(userInitiated: true) }
             }
             do {
                 let release = try await self.client.latestRelease(

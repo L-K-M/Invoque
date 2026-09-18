@@ -220,6 +220,15 @@ post-v1.
   actually executes".
 - The Maker never silently grants: generated manifests suggest the minimum set;
   elevating requires the user to tick it (or edit the JSON).
+- **Why `clipboard.read` isn't gated:** the consent gate is for ambient
+  capabilities where declaration isn't enough (`shell`, `paste`); a
+  clipboard read is a declared capability the permission badge already
+  surfaces. The known gap is the *pairing*: `clipboard.read` + `network`
+  (`invoque.fetch`) is an ungated exfiltration path — the same class of
+  hole as the `open` ambient-egress fix, but for a declared module. Whether
+  `network`, `clipboard.read`, or the pair should join `risky` is a
+  manifest-schema decision deferred to a follow-up rather than grown into
+  the consent PR.
 
 ---
 
