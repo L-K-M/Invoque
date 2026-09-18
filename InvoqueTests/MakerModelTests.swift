@@ -246,6 +246,62 @@ final class MakerModelTests: XCTestCase {
         XCTAssertTrue(grants.ungranted(for: installed).isEmpty)
     }
 
+    /// A second Test tap while the consent card is up must not silently
+    /// replace the paused request — the paused snapshot and args stand until
+    /// the user answers.
+    func testSecondTestWhileConsentPendingKeepsPausedRequest() async throws {
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+        let paused = await model.permissionRequest
+        XCTAssertNotNil(paused)
+
+        await model.test()   // double-tap — must be a no-op
+        let after = await model.permissionRequest
+        XCTAssertEqual(after?.command.entryURL, paused?.command.entryURL)
+        let result = await model.testResult
+        XCTAssertNil(result, "the second test must not execute either")
+    }
+
+    /// Confirm must not grant when the draft can no longer run — a save()
+    /// between pause and confirm flips phase to .saved; granting anyway would
+    /// persist consent for code that never executed.
+    func testConfirmAfterSaveRecordsNoGrant() async throws {
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+        let paused = await model.permissionRequest
+        XCTAssertNotNil(paused)
+
+        await model.save()   // phase → .saved, request left behind
+        await model.confirmPermissionRequest()
+
+        let cleared = await model.permissionRequest
+        XCTAssertNil(cleared)
+        let installed = try Command(
+            directory: root.appendingPathComponent("gen-demo"))
+        XCTAssertEqual(grants.ungranted(for: installed), [.shell],
+                       "no grant may persist for a run that never happened")
+        let result = await model.testResult
+        XCTAssertNil(result)
+    }
+
     func testDismissPermissionRequestLeavesDraftUntested() async {
         let suiteName = "MakerModelTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

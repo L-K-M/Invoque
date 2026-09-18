@@ -28,7 +28,24 @@ final class ActivationHandoff {
     }
 
     deinit {
-        finish(shouldRestore: false)
+        // deinit runs wherever the last reference is released — which Swift
+        // does not guarantee is the main thread — while finish() mutates
+        // main-thread-confined statics. Keep the count consistent without
+        // racing them; an owner dropping its reference off-main is a
+        // lifecycle bug this fallback covers rather than fixes.
+        guard isTracking else { return }
+        if Thread.isMainThread {
+            finish(shouldRestore: false)
+        } else {
+            isTracking = false
+            DispatchQueue.main.async { Self.dropDroppedPresentation() }
+        }
+    }
+
+    /// Counts down a presentation whose owner released it off the main thread.
+    /// The decrement is delayed, so the count can transiently overstate.
+    private static func dropDroppedPresentation() {
+        presentationCount = max(presentationCount - 1, 0)
     }
 
     /// Ends this presentation. Nested Invoque UI shares the same handoff, so only

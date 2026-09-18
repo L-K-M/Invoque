@@ -213,8 +213,12 @@ final class MakerModel: ObservableObject {
     /// commands root, so the store can't pick up a draft mid-test and the
     /// script's `data/` writes stay throwaway. Always user-triggered.
     func test(args: [String] = []) async {
+        // A pending consent request holds phase at .draft/.readyToSave, so the
+        // state guard alone would admit a second test() — silently replacing
+        // the paused snapshot (and orphaning its staging dir).
         guard let draft, draft.manifest != nil,
-              phase == .draft || phase == .readyToSave else { return }
+              phase == .draft || phase == .readyToSave,
+              permissionRequest == nil else { return }
         let epoch = self.epoch
         let result: JSResult
         do {
@@ -243,11 +247,15 @@ final class MakerModel: ObservableObject {
     }
 
     /// Consent granted for the paused test — records the grant and re-runs
-    /// the same args (the check passes this time).
+    /// the same args (the check passes this time). The grant is recorded only
+    /// when the draft can still run — a stale request must not persist a grant
+    /// for code that never executes.
     func confirmPermissionRequest() async {
         guard let request = permissionRequest else { return }
-        permissionGrants.grant(request.permissions, for: request.command)
         permissionRequest = nil
+        guard phase == .draft || phase == .readyToSave,
+              draft?.manifest != nil else { return }
+        permissionGrants.grant(request.permissions, for: request.command)
         await test(args: request.args)
     }
 
