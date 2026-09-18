@@ -163,6 +163,21 @@ final class PanelModelTests: XCTestCase {
                       "Timed out waiting for results", file: file, line: line)
     }
 
+    /// Polls `filterRunCompletions` until `atLeast` filter runs have reached
+    /// their completion point — the deterministic way to await debounced
+    /// runs whose rows may be dropped (stale) or deduplicated (identical).
+    private func awaitCompletions(_ model: PanelModel, atLeast count: Int,
+                                  file: StaticString = #filePath,
+                                  line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(7)
+        while model.filterRunCompletions < count, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(model.filterRunCompletions, count,
+                                    "filter run never completed",
+                                    file: file, line: line)
+    }
+
     func testEnterFilterActionExpandsQuery() throws {
         let item = Item(id: "cmd:json", title: "JSON Tools", subtitle: "",
                         icon: .symbol("terminal"),
@@ -261,11 +276,9 @@ final class PanelModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 150_000_000)
         model.query = "jf ab"
 
-        await awaitResults(model) { $0.count == 1 }
-        XCTAssertEqual(model.results.map(\.title), ["got ab"])
-        // Give the stale "a" completion time to land — it must be dropped,
-        // not stamped over the fresh rows.
-        try await Task.sleep(nanoseconds: 400_000_000)
+        // Both completions must land — the stale "a" is dropped by the
+        // generation guard, the fresh "ab" populates the list.
+        await awaitCompletions(model, atLeast: 2)
         XCTAssertEqual(model.results.map(\.title), ["got ab"])
     }
 
@@ -288,9 +301,9 @@ final class PanelModelTests: XCTestCase {
         // A rescan firing while a filter session is active re-runs the
         // command — identical output must not yank the selection. The
         // count predicate is already satisfied by the first run's rows,
-        // so just wait out the debounce plus the JS run.
+        // so wait on the completion counter instead.
         model.refreshResults()
-        try await Task.sleep(nanoseconds: 500_000_000)
+        await awaitCompletions(model, atLeast: 2)
         XCTAssertEqual(model.selection, 1)
     }
 
@@ -325,7 +338,9 @@ final class PanelModelTests: XCTestCase {
 
         model.query = "jf" // back to bare keyword → normal search
         XCTAssertEqual(model.results.map(\.id), ["app:jf"])
-        try await Task.sleep(nanoseconds: 400_000_000) // stale lands
+        // Wait for the in-flight run's completion to actually land — it
+        // must be dropped by the generation bump on mode exit.
+        await awaitCompletions(model, atLeast: 1)
         XCTAssertEqual(model.results.map(\.id), ["app:jf"])
     }
 

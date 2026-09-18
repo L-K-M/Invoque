@@ -153,7 +153,10 @@ Modes:
   discarded); returns `{items:[{title,subtitle,icon,arg,actions}]}` — Alfred's
   shape. Routing: `<keyword> <rest>` switches the panel into the command's
   live list (first `keywords` entry is the trigger; the command name is the
-  fallback). Picking a row uses `arg`: an `http(s)` URL opens, anything else
+  fallback; when a command's name collides with another command's trigger
+  keyword, the named command wins, and a picked `.enterFilter` row pins the
+  session to that command regardless). Picking a row uses `arg`: an
+  `http(s)` URL opens, anything else
   copies to the clipboard, and no `arg` copies the title.
 - `view` — **deferred.** Decision recorded: if added, declare UI as data
   (list/detail spec the app renders natively) rather than embedding a React

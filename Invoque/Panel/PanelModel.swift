@@ -123,6 +123,10 @@ final class PanelModel: ObservableObject {
     private var filterTask: Task<Void, Never>?
     /// Stale-drop: a result arriving for an older keystroke is discarded.
     private var filterGeneration = 0
+    /// Filter runs that reached the main-actor completion point — lets
+    /// tests wait out the debounce deterministically instead of sleeping.
+    /// Counts completions whether or not the rows were kept.
+    private(set) var filterRunCompletions = 0
     /// The trigger word owning the list right now, so entering/leaving a
     /// filter session can clear rows that don't belong to it. Keyed by the
     /// keyword, not the command name — two commands can share a display
@@ -175,6 +179,9 @@ final class PanelModel: ObservableObject {
             let rows = await Self.filterRows(command: command, text: text,
                                              runner: commandRunner)
             await MainActor.run {
+                // Count every arrival — dropped ones too — so tests can
+                // await "the run happened" separately from "rows changed".
+                filterRunCompletions += 1
                 // Identical rows must not re-assign: results' didSet resets
                 // the selection, so a no-op refresh would yank it to the top.
                 guard generation == filterGeneration, rows != results else { return }
