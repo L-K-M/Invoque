@@ -11,18 +11,18 @@ final class UpdateDownloaderTests: XCTestCase {
 
         let first = UpdateDownloader.uniqueDestination(in: dir, fileName: "Invoque.dmg", fileManager: fm)
         XCTAssertEqual(first.lastPathComponent, "Invoque.dmg")
-        XCTAssertEqual(first.deletingLastPathComponent(), dir,
+        XCTAssertEqual(first.deletingLastPathComponent().path, dir.path,
                        "the destination must resolve inside the target directory")
         XCTAssertTrue(fm.createFile(atPath: first.path, contents: Data()))
 
         let second = UpdateDownloader.uniqueDestination(in: dir, fileName: "Invoque.dmg", fileManager: fm)
         XCTAssertEqual(second.lastPathComponent, "Invoque-1.dmg")
-        XCTAssertEqual(second.deletingLastPathComponent(), dir)
+        XCTAssertEqual(second.deletingLastPathComponent().path, dir.path)
         XCTAssertTrue(fm.createFile(atPath: second.path, contents: Data()))
 
         let third = UpdateDownloader.uniqueDestination(in: dir, fileName: "Invoque.dmg", fileManager: fm)
         XCTAssertEqual(third.lastPathComponent, "Invoque-2.dmg")
-        XCTAssertEqual(third.deletingLastPathComponent(), dir)
+        XCTAssertEqual(third.deletingLastPathComponent().path, dir.path)
     }
 
     /// Remote asset names are untrusted: traversal and subdirectories must be
@@ -46,12 +46,12 @@ final class UpdateDownloaderTests: XCTestCase {
 
         let first = UpdateDownloader.uniqueDestination(in: dir, fileName: "Invoque", fileManager: fm)
         XCTAssertEqual(first.lastPathComponent, "Invoque")
-        XCTAssertEqual(first.deletingLastPathComponent(), dir)
+        XCTAssertEqual(first.deletingLastPathComponent().path, dir.path)
         XCTAssertTrue(fm.createFile(atPath: first.path, contents: Data()))
 
         let second = UpdateDownloader.uniqueDestination(in: dir, fileName: "Invoque", fileManager: fm)
         XCTAssertEqual(second.lastPathComponent, "Invoque-1")
-        XCTAssertEqual(second.deletingLastPathComponent(), dir)
+        XCTAssertEqual(second.deletingLastPathComponent().path, dir.path)
     }
 
     /// The production path composes the two helpers — a sanitized traversal
@@ -65,7 +65,7 @@ final class UpdateDownloaderTests: XCTestCase {
         let dest = UpdateDownloader.uniqueDestination(
             in: dir, fileName: UpdateDownloader.safeFileName("../../evil.sh"),
             fileManager: fm)
-        XCTAssertEqual(dest.deletingLastPathComponent(), dir)
+        XCTAssertEqual(dest.deletingLastPathComponent().path, dir.path)
         XCTAssertEqual(dest.lastPathComponent, "evil.sh")
     }
 }
