@@ -210,7 +210,14 @@ post-v1.
   key to hash auxiliary files is a follow-up once commands actually ship
   executable siblings — today nothing can `require` them, though a
   `shell`-permitted entry could `exec` one.) The Maker's Test button
-  applies the same gate to generated drafts.
+  applies the same gate to generated drafts. **Trust boundary:** the
+  defaults domain is writable by any user-context process — including a
+  previously-consented `shell` command — so grant records are forgeable
+  and the store is a UX consent ledger, not a tamper-proof security
+  boundary. Making records tamper-evident (HMAC over name + hash +
+  permission set, key in an app-owned Keychain item) is a follow-up
+  alongside auxiliary-file hashing; both bind "consent" to "what
+  actually executes".
 - The Maker never silently grants: generated manifests suggest the minimum set;
   elevating requires the user to tick it (or edit the JSON).
 
