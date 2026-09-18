@@ -59,6 +59,14 @@ final class CommandStore {
     /// The most recent scan's commands, sorted by title.
     var commands: [Command] { stateQueue.sync { _commands } }
 
+    /// The first configured root — where the Maker writes new commands, so
+    /// a save is immediately picked up by the store's own scan.
+    var primaryRootURL: URL {
+        roots.first ?? URL(fileURLWithPath:
+            (CommandStore.defaultRootPath as NSString).expandingTildeInPath,
+            isDirectory: true)
+    }
+
     /// Directories that failed to load in the most recent scan.
     var scanErrors: [ScanError] { stateQueue.sync { _errors } }
 

@@ -64,6 +64,9 @@ enum InvoqueBridge {
         if permissions.contains(.files) {
             installFileSystem(on: invoque, context: context, dataDirectory: command.dataDirectory)
         }
+        if permissions.contains(.open) {
+            installOpen(on: invoque)
+        }
         if permissions.contains(.shell) {
             installShell(on: invoque, context: context)
         }
@@ -85,7 +88,9 @@ enum InvoqueBridge {
 
     // MARK: Always-on modules
 
-    /// `args`, `log`, `notify`, `open` — no permission required.
+    /// `args`, `log`, `notify` — no permission required. (`args` is set by
+    /// the caller; `open` moved to the gated section — ambient http(s)
+    /// open is an egress channel, not a utility.)
     private static func installUtilities(on invoque: JSValue, logs: CommandLog) {
         let log: @convention(block) () -> Void = {
             logs.append("[log] \(joinedArguments())")
@@ -98,10 +103,15 @@ enum InvoqueBridge {
             logs.append("[notify] \(joinedArguments())")
         }
         invoque.setValue(notify, forProperty: "notify")
+    }
 
-        // Deliberately web-only: an always-on, permission-free open must not
-        // turn every generated command into an app launcher. Local files and
-        // apps get a dedicated `apps` capability (currently a stub).
+    /// `invoque.open(url)` — gated on the `open` permission, not free:
+    /// arbitrary http(s) URLs are a network-egress channel (query strings
+    /// can carry read clipboard contents to a remote host), so it must be
+    /// a declared capability like `network`, not an ambient one.
+    /// Deliberately web-only — local files and apps get a dedicated `apps`
+    /// capability (currently a stub).
+    private static func installOpen(on invoque: JSValue) {
         let open: @convention(block) (String) -> Bool = { target in
             guard let url = URL(string: target),
                   let scheme = url.scheme?.lowercased(),
