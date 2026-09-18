@@ -156,7 +156,7 @@ struct CommandWriter {
         }
         if snapshot.wasGenerated {
             pruneStaleFiles(in: directory, generation: generation,
-                            fileManager: fileManager)
+                            snapshotURL: snapshot.url, fileManager: fileManager)
         }
         return directory
     }
@@ -219,8 +219,11 @@ struct CommandWriter {
     /// A failed save restores the snapshotted manifest and entry — without
     /// it the directory holds old manifest + new files, a mixed-revision
     /// state where the runtime applies permissions the new code was never
-    /// checked against. A fresh command's partial writes are just removed.
-    /// New files the failed generation introduced stay behind as inert
+    /// checked against. A fresh command's partial writes are removed —
+    /// created directories (`data/`, the command dir itself) may remain,
+    /// since a user-created `data/` without a manifest is possible and
+    /// must not be deleted. New files the failed generation introduced
+    /// stay behind as inert
     /// extras the old manifest doesn't reference (a later generated save
     /// prunes them); byte-for-byte rollback of every file is the deferred
     /// snapshot-all-files work.
@@ -230,11 +233,15 @@ struct CommandWriter {
                           fileManager: FileManager) {
         if let snapshotURL = snapshot.url {
             for name in snapshot.fileNames {
-                let destination = directory.appendingPathComponent(name)
-                try? fileManager.removeItem(at: destination)
-                try? fileManager.copyItem(
-                    at: snapshotURL.appendingPathComponent(name),
-                    to: destination)
+                // Atomic in-place restore — a delete-then-copy window would
+                // leave no manifest at all when the restore itself fails
+                // (a full/read-only volume being the likely cause).
+                if let restored = try? Data(
+                    contentsOf: snapshotURL.appendingPathComponent(name)) {
+                    try? restored.write(
+                        to: directory.appendingPathComponent(name),
+                        options: .atomic)
+                }
             }
         } else {
             for name in names where Self.isSafeRelativePath(name) {
@@ -246,25 +253,64 @@ struct CommandWriter {
 
     /// An update should leave the directory matching the generation —
     /// files a new revision dropped (a renamed entry, a removed helper)
-    /// are deleted. `data/` and `history/` are runtime state and always
-    /// stay, and only maker-generated commands are pruned: a hand-authored
-    /// command may carry files the generation never knew about.
+    /// are moved into the fresh history snapshot rather than deleted:
+    /// recoverable beats gone, and a user-dropped notes.md or .env
+    /// survives a regeneration. `data/` and `history/` are runtime state
+    /// and always stay, and only maker-generated commands are pruned —
+    /// a hand-authored command may carry files the generation never knew
+    /// about. Runs after the manifest commit, so everything here is
+    /// best-effort: a failed move must not fail an already-committed save.
     private func pruneStaleFiles(in directory: URL,
                                  generation: GeneratedCommand,
+                                 snapshotURL: URL?,
                                  fileManager: FileManager) {
-        var keep: Set<String> = ["command.json", "data", "history"]
-        for name in generation.files.keys {
-            if let first = name.components(separatedBy: "/").first {
-                keep.insert(first.lowercased())
+        // Every case-folded relative path this generation produced, plus
+        // the directories that contain them (a prefix stays; its stale
+        // children are still pruned — "dropped lib/util.js" matters as
+        // much as a dropped top-level file).
+        let generatedPaths = Set(generation.files.keys
+            .map { $0.lowercased() }).union(["command.json"])
+        var prefixes = Set<String>()
+        for path in generatedPaths {
+            let components = path.components(separatedBy: "/")
+            for end in 1..<components.count {
+                prefixes.insert(components[0..<end].joined(separator: "/"))
             }
         }
-        guard let items = try? fileManager.contentsOfDirectory(
-            atPath: directory.path) else { return }
-        // Runs after the manifest commit: a prune hiccup must not fail an
-        // already-committed save, so removals are best-effort.
-        for item in items where !keep.contains(item.lowercased()) {
-            try? fileManager.removeItem(
-                at: directory.appendingPathComponent(item))
+        guard let enumerator = fileManager.enumerator(
+            at: directory, includingPropertiesForKeys: nil) else { return }
+        // resolveSymlinks on both sides: temp dirs live under /var but
+        // enumerate as /private/var — mixing forms miscomputes rel paths.
+        let base = directory.resolvingSymlinksInPath().path
+        var stale: [String] = []
+        for case let url as URL in enumerator {
+            let resolved = url.resolvingSymlinksInPath().path
+            guard resolved.count > base.count + 1 else { continue }
+            let rel = String(resolved.dropFirst(base.count + 1)).lowercased()
+            if rel == "data" || rel.hasPrefix("data/")
+                || rel == "history" || rel.hasPrefix("history/") {
+                enumerator.skipDescendants()
+                continue
+            }
+            if generatedPaths.contains(rel) || prefixes.contains(rel) {
+                continue
+            }
+            stale.append(rel)
+            // A stale directory's contents move with it — no per-child
+            // re-report needed.
+            enumerator.skipDescendants()
+        }
+        for rel in stale {
+            let source = directory.appendingPathComponent(rel)
+            if let snapshotURL {
+                let destination = snapshotURL.appendingPathComponent(rel)
+                try? fileManager.createDirectory(
+                    at: destination.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try? fileManager.moveItem(at: source, to: destination)
+            } else {
+                try? fileManager.removeItem(at: source)
+            }
         }
     }
 

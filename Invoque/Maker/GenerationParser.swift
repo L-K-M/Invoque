@@ -106,12 +106,17 @@ enum GenerationParser {
                 switch delimitedError {
                 case .missingManifest, .missingEntryFile:
                     // The header-like line was probably prose — retry as
-                    // fences. If that fails too, the delimited error is the
-                    // better report (a real `--- command.json ---` header
-                    // that lacks an entry stays a missingEntryFile).
+                    // fences. If that fails too, report whichever pass got
+                    // further: a fenced manifest with a delimited entry
+                    // should say "missing entry", not "missing manifest"
+                    // (a real `--- command.json ---` header that lacks an
+                    // entry still surfaces the delimited missingEntryFile).
                     do {
                         return try assemble(try collectFenced(lines))
-                    } catch {
+                    } catch let fencedError as Failure {
+                        if case .missingEntryFile = fencedError {
+                            throw fencedError
+                        }
                         throw delimitedError
                     }
                 default:
@@ -199,8 +204,21 @@ enum GenerationParser {
                 if name == "command.json" { duplicateManifest = true }
                 if name == "main.js" { duplicateEntry = true }
             }
-            files[name] = currentLines.joined(separator: "\n")
+            var content = currentLines.joined(separator: "\n")
                 .trimmingCharacters(in: .newlines)
+            // Models often fence the payload inside a `--- name ---` block;
+            // unwrap a single enclosing fence so the file isn't polluted
+            // with ``` markers (a standalone all-backtick line is never
+            // valid JS or JSON anyway).
+            let block = content.components(separatedBy: "\n")
+            if block.count >= 2,
+               block.first?.trimmingCharacters(in: .whitespaces)
+                   .hasPrefix("```") == true,
+               let last = block.last?.trimmingCharacters(in: .whitespaces),
+               last.count >= 3, last.allSatisfy({ $0 == "`" }) {
+                content = block.dropFirst().dropLast().joined(separator: "\n")
+            }
+            files[name] = content
         }
 
         for line in lines {

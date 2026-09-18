@@ -318,6 +318,41 @@ final class GenerationParserTests: XCTestCase {
         }
     }
 
+    /// A fenced payload inside a `--- name ---` block is unwrapped — the
+    /// fence markers are the model's formatting, not file content.
+    func testDelimitedBlockUnwrapsEnclosingFence() throws {
+        let output = """
+        --- command.json ---
+        ```json
+        \(manifestJSON)
+        ```
+        --- main.js ---
+        ```js
+        \(mainJS)
+        ```
+        """
+        let parsed = try GenerationParser.parse(output)
+        XCTAssertEqual(parsed.entrySource, mainJS)
+        XCTAssertTrue(parsed.manifestJSON.contains("\"name\""))
+    }
+
+    /// A fenced manifest plus a `--- main.js ---` block: the fence pass
+    /// found the manifest and missed the entry — the error must say that,
+    /// not claim the manifest is absent.
+    func testMixedFormatReportsMissingEntryNotMissingManifest() {
+        let output = """
+        ```json
+        \(manifestJSON)
+        ```
+        --- main.js ---
+        \(mainJS)
+        """
+        XCTAssertThrowsError(try GenerationParser.parse(output)) { error in
+            XCTAssertEqual(error as? GenerationParser.Failure,
+                           .missingEntryFile)
+        }
+    }
+
     /// Four-backtick fences are a common model habit — they must parse,
     /// with both the opener and the all-backtick closer accepted.
     func testFourBacktickFences() throws {

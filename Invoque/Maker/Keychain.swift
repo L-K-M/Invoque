@@ -53,23 +53,30 @@ struct Keychain {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        // The update payload carries the accessibility class too — an item
+        // written by an older build without it gets repaired to the
+        // intended ThisDeviceOnly protection rather than keeping the old
+        // (possibly weaker) class.
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String:
+                kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
         // Try update-first so an existing item is replaced in place; on a
         // miss, add the fresh item.
         let status = SecItemUpdate(query as CFDictionary,
-                                   [kSecValueData as String: data] as CFDictionary)
+                                   attributes as CFDictionary)
         if status == errSecItemNotFound {
             var insert = query
-            insert[kSecValueData as String] = data
             // Readable once the device has been unlocked; the key must not
             // silently migrate to other devices via backups.
-            insert[kSecAttrAccessible as String] =
-                kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            insert.merge(attributes) { _, new in new }
             let addStatus = SecItemAdd(insert as CFDictionary, nil)
             if addStatus == errSecDuplicateItem {
                 // The item raced in between the update miss and the add —
                 // retry the update rather than report a failure.
                 let retry = SecItemUpdate(query as CFDictionary,
-                                          [kSecValueData as String: data] as CFDictionary)
+                                          attributes as CFDictionary)
                 if retry != errSecSuccess {
                     NSLog("Invoque: Keychain update-after-duplicate failed (\(retry)) for account \(account)")
                 }

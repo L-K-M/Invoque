@@ -263,8 +263,10 @@ final class CommandWriterTests: XCTestCase {
             .contentsOfDirectory(atPath: root.path), [])
     }
 
-    /// A regeneration that drops a file must delete it — otherwise the
+    /// A regeneration that drops a file must remove it — otherwise the
     /// directory silently diverges from what was reviewed and approved.
+    /// Removal is a move into the revision's history snapshot, not a
+    /// delete: the dropped file stays recoverable.
     func testUpdatePrunesFilesTheNewRevisionDropped() throws {
         let writer = CommandWriter(rootURL: root)
         let (v1, _) = try generation(
@@ -280,6 +282,56 @@ final class CommandWriterTests: XCTestCase {
             .contentsOfDirectory(atPath: directory.path)
         XCTAssertTrue(items.contains("data"))
         XCTAssertTrue(items.contains("history"))
+        // The prune was a move into the revision-2 snapshot — the dropped
+        // file is recoverable, not deleted.
+        let snapshots = try FileManager.default.contentsOfDirectory(
+            atPath: directory.appendingPathComponent("history").path)
+        let moved = snapshots.contains {
+            fileContents(directory.appendingPathComponent("history")
+                .appendingPathComponent($0), "helpers.js") != nil
+        }
+        XCTAssertTrue(moved, "dropped file should live in a snapshot: \(snapshots)")
+    }
+
+    /// Dropped files nested in a kept directory are pruned too — v2 still
+    /// ships lib/, but util.js that only v1 had is stale.
+    func testUpdatePrunesNestedDroppedFiles() throws {
+        let writer = CommandWriter(rootURL: root)
+        let (v1, _) = try generation(extraFiles: [
+            "lib/util.js": "function u() {}",
+            "lib/helper.js": "function h() {}",
+        ])
+        let directory = try writer.save(v1, prompt: "p", model: "m")
+        XCTAssertNotNil(fileContents(directory, "lib/util.js"))
+
+        let (v2, _) = try generation(extraFiles: [
+            "lib/helper.js": "function h() {}",
+        ])
+        try writer.save(v2, prompt: "p2", model: "m2")
+        XCTAssertNil(fileContents(directory, "lib/util.js"))
+        XCTAssertNotNil(fileContents(directory, "lib/helper.js"))
+    }
+
+    /// Files the user dropped in themselves move to the snapshot rather
+    /// than being deleted — a notes.md survives regeneration.
+    func testUpdateMovesUserFilesToSnapshot() throws {
+        let writer = CommandWriter(rootURL: root)
+        let (v1, _) = try generation()
+        let directory = try writer.save(v1, prompt: "p", model: "m")
+        try "keep me".write(to: directory.appendingPathComponent("notes.md"),
+                            atomically: true, encoding: .utf8)
+
+        let (v2, _) = try generation(
+            source: "async function run() { return { title: \"v2\" }; }")
+        try writer.save(v2, prompt: "p2", model: "m2")
+        XCTAssertNil(fileContents(directory, "notes.md"))
+        let snapshots = try FileManager.default.contentsOfDirectory(
+            atPath: directory.appendingPathComponent("history").path)
+        let moved = snapshots.contains {
+            fileContents(directory.appendingPathComponent("history")
+                .appendingPathComponent($0), "notes.md") == "keep me"
+        }
+        XCTAssertTrue(moved, "user file should live in a snapshot: \(snapshots)")
     }
 
     /// A hand-authored command's extra files aren't the generation's to
