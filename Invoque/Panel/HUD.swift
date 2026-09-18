@@ -75,7 +75,9 @@ enum HUD {
         let shown = generation
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(visibleSeconds * 1_000_000_000))
-            if generation == shown { dismiss() }
+            // try? swallows cancellation — a cancelled timer must abandon,
+            // not fall through to an early dismiss.
+            if generation == shown, !Task.isCancelled { dismiss() }
         }
     }
 
