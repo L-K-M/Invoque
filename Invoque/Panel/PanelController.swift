@@ -189,7 +189,8 @@ final class PanelController: NSObject {
     private func makePanel() -> LauncherPanel {
         let panel = LauncherPanel(
             contentRect: NSRect(x: 0, y: 0, width: Size.width, height: Size.height))
-        panel.contentView = NSHostingView(rootView: PanelView(model: model))
+        panel.contentView = NSHostingView(rootView: PanelView(model: model,
+                                                              preferences: preferences))
 
         panel.onCancel = { [weak self] in self?.hide() }
 

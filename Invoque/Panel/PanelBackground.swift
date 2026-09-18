@@ -1,0 +1,83 @@
+import SwiftUI
+import AppKit
+
+/// The launcher card's background material — Invoque's counterpart to Jetty's
+/// `GlassBackground`, sharing its approach.
+///
+/// On **macOS 26 (Tahoe)** the glass variants render genuine **Liquid Glass** via
+/// SwiftUI's public `.glassEffect`, honoring the user's Clear/Tinted and
+/// Reduce-Transparency settings automatically. On macOS 13–15 — or when the
+/// material is `solid`/`gradient`, or Reduce Transparency is on — it falls back
+/// to an `NSVisualEffectView` blur (`.popover`, the closest match to the
+/// `.regularMaterial` the panel used to draw) or a flat fill / gradient.
+struct PanelBackground: View {
+    var material: PanelMaterial
+    var tint: Color
+    var gradientColor: Color
+    var gradientAngle: Double
+    /// The user's configured opacity — Reduce Transparency is applied by the
+    /// caller (`AccessibilityDisplaySettings.effectiveBackgroundOpacity`), so
+    /// solid fills go fully opaque when the user asked for it.
+    var opacity: Double
+    var cornerRadius: CGFloat
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        Group {
+            switch material {
+            case .liquidGlass, .glassClear, .glassTinted:
+                glass(in: shape)
+            case .solid:
+                shape.fill(tint.opacity(opacity))
+            case .gradient:
+                shape.fill(
+                    LinearGradient(
+                        colors: [tint.opacity(opacity), gradientColor.opacity(opacity)],
+                        startPoint: gradientStart,
+                        endPoint: gradientEnd
+                    )
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func glass(in shape: RoundedRectangle) -> some View {
+        if #available(macOS 26.0, *), !reduceTransparency {
+            let glass: Glass = {
+                switch material {
+                case .glassClear: return .clear
+                case .glassTinted: return .regular.tint(tint.opacity(max(0.0, min(opacity, 1.0))))
+                default: return .regular
+                }
+            }()
+            Color.clear.glassEffect(glass, in: shape)
+        } else {
+            // Fallback for macOS 13–15 (or Reduce Transparency): a blurred panel
+            // with a faint tint wash, clipped to the same rounded shape.
+            ZStack {
+                VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
+                if material == .glassTinted {
+                    tint.opacity(min(opacity, 0.5))
+                }
+            }
+            .clipShape(shape)
+        }
+    }
+
+    private var reduceTransparency: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    }
+
+    // 0° = top→bottom, increasing counterclockwise on screen — 90° runs left→right
+    // (matches `AngleDial`; y grows downward so (sin, cos) puts 0° at the bottom).
+    private var gradientStart: UnitPoint {
+        let r = gradientAngle * .pi / 180
+        return UnitPoint(x: 0.5 - sin(r) / 2, y: 0.5 - cos(r) / 2)
+    }
+    private var gradientEnd: UnitPoint {
+        let r = gradientAngle * .pi / 180
+        return UnitPoint(x: 0.5 + sin(r) / 2, y: 0.5 + cos(r) / 2)
+    }
+}

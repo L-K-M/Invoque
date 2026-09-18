@@ -55,4 +55,53 @@ final class PreferencesTests: XCTestCase {
         let preferences = Preferences(defaults: defaults)
         XCTAssertEqual(preferences.summonHotkey, .default)
     }
+
+    // MARK: Appearance
+
+    func testAppearanceDefaultsWhenEmpty() {
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertEqual(preferences.panelMaterial, .liquidGlass)
+        XCTAssertEqual(preferences.highlightHex, "#0A84FF")
+        XCTAssertTrue(preferences.adaptiveAccent)
+        XCTAssertEqual(preferences.panelCornerRadius, 16)
+        XCTAssertEqual(preferences.decorationStyle, .none)
+        XCTAssertFalse(preferences.crtEnabled)
+    }
+
+    func testAppearanceRoundTrips() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.panelMaterial = .gradient
+        preferences.tintHex = "#17122B"
+        preferences.highlightOpacity = 0.6
+        preferences.decorationStyle = .vaporwave
+        preferences.crtEnabled = true
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertEqual(reloaded.panelMaterial, .gradient)
+        XCTAssertEqual(reloaded.tintHex, "#17122B")
+        XCTAssertEqual(reloaded.highlightOpacity, 0.6)
+        XCTAssertEqual(reloaded.decorationStyle, .vaporwave)
+        XCTAssertTrue(reloaded.crtEnabled)
+    }
+
+    func testInvalidStoredAppearanceFallsBack() {
+        defaults.set("bogus", forKey: "panelMaterial")
+        defaults.set("not-a-color", forKey: "highlightHex")
+        defaults.set("also-not-a-color", forKey: "tintHex")
+        defaults.set(4.0, forKey: "highlightOpacity")
+        defaults.set(-20.0, forKey: "panelCornerRadius")
+        defaults.set(730.0, forKey: "gradientAngle")
+        defaults.set("nonsense", forKey: "decorationStyle")
+        defaults.set(Double.nan, forKey: "crtIntensity")
+
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertEqual(preferences.panelMaterial, Preferences.Default.panelMaterial)
+        XCTAssertEqual(preferences.highlightHex, Preferences.Default.highlightHex)
+        XCTAssertEqual(preferences.tintHex, Preferences.Default.tintHex)
+        XCTAssertEqual(preferences.highlightOpacity, 1)
+        XCTAssertEqual(preferences.panelCornerRadius, 0)
+        XCTAssertEqual(preferences.gradientAngle, 10)
+        XCTAssertEqual(preferences.decorationStyle, Preferences.Default.decorationStyle)
+        XCTAssertEqual(preferences.crtIntensity, Preferences.Default.crtIntensity)
+    }
 }

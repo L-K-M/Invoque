@@ -12,6 +12,12 @@ struct MakerView: View {
     @ObservedObject var model: MakerModel
     /// The text after `make `/`mk ` in the query right now.
     let prompt: String
+    /// Themed text colors — the view sits inside the themed card, so on
+    /// `solid`/`gradient` materials the theme's label color must replace the
+    /// system colors or the text would go dark-on-dark. Semantic status
+    /// colors (green/red) stay as-is.
+    var titleColor: Color = .primary
+    var secondaryColor: Color = .secondary
 
     @State private var feedback = ""
     @State private var testArgs = ""
@@ -55,10 +61,10 @@ struct MakerView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "wand.and.stars")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
             Text("make")
                 .font(.system(.body, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
             Text(displayedPrompt)
                 .font(.headline)
                 .lineLimit(2)
@@ -84,7 +90,7 @@ struct MakerView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Describe the command, then press ⏎ to generate it.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
             Button("Generate") {
                 Task { await model.primarySubmit(prompt: prompt) }
             }
@@ -97,7 +103,7 @@ struct MakerView: View {
             ProgressView()
                 .scaleEffect(0.7)
             Text("Generating with \(model.lastUsedModel ?? "the model")…")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
         }
     }
 
@@ -107,7 +113,7 @@ struct MakerView: View {
                 .foregroundStyle(.green)
             Text("The command is live — search for it by name. Esc dismisses; editing the query starts a new session.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
             Button("Make another") { model.discard() }
         }
     }
@@ -119,7 +125,7 @@ struct MakerView: View {
             if let error = model.lastError {
                 Text(error)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondaryColor)
                     .textSelection(.enabled)
             }
             feedbackRow
@@ -191,7 +197,7 @@ struct MakerView: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
             } else {
                 Text("command.json didn't decode")
                     .font(.headline)
@@ -199,7 +205,7 @@ struct MakerView: View {
             }
             Text(fileSummary(draft.generation))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
         }
         .textSelection(.enabled)
     }
@@ -226,7 +232,7 @@ struct MakerView: View {
     private func permissionRow(_ request: CommandPermissionRequest) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "lock.shield")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
             Text("Invoque command · \(request.command.name) wants to: "
                 + request.permissions
                     .map { CommandPermissionGrants.consentLine(for: $0) }
@@ -247,11 +253,11 @@ struct MakerView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(resultSummary(result))
                 .font(.callout)
-                .foregroundStyle(result.error == nil ? Color.primary : Color.red)
+                .foregroundStyle(result.error == nil ? titleColor : Color.red)
             if !result.logs.isEmpty {
                 Text(result.logs.suffix(6).joined(separator: "\n"))
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondaryColor)
                     .textSelection(.enabled)
             }
         }
