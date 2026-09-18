@@ -72,25 +72,20 @@ final class PanelModel: ObservableObject {
         didSet { refreshResults() }
     }
 
-    /// Recorded consent for risky permissions — injected at wiring time so
-    /// the model can persist the user's Allow without knowing the store.
-    var permissionGrants: CommandPermissionGrants?
-
     /// A command run paused on first-run consent (PLAN §4.3). While set,
     /// the panel shows the confirmation card instead of the results list
-    /// and ⏎ means Allow.
+    /// and ⌘⏎ means Allow.
     @Published var permissionRequest: CommandPermissionRequest?
 
     /// Fires after the user allows a `permissionRequest` — the controller
-    /// re-dispatches the run (the grants are already recorded, so it
-    /// proceeds this time).
+    /// records the grant and re-dispatches the run. Granting lives on the
+    /// controller side (where the ungranted check runs), so an unwired or
+    /// divergent store can't make Allow loop on the card forever.
     var onPermissionConfirmed: ((CommandPermissionRequest) -> Void)?
 
-    /// Grants the requested permissions and hands the request back to the
-    /// controller to resume the paused run.
+    /// Releases the paused run to the controller — it grants and resumes.
     func confirmPermissionRequest() {
         guard let request = permissionRequest else { return }
-        permissionGrants?.grant(request.permissions, for: request.command)
         permissionRequest = nil
         onPermissionConfirmed?(request)
     }
@@ -366,11 +361,15 @@ final class PanelModel: ObservableObject {
     /// `onSubmit` — except `.enterFilter`, which stays inside the panel:
     /// the query expands to `"<keyword> "`, entering the command's filter
     /// mode instead of dismissing.
-    func submit() {
-        // A pending consent prompt owns ⏎ — it means Allow, not "run
-        // whatever row is selected underneath the card".
+    ///
+    /// `commandModifier` distinguishes plain ⏎ from ⌘⏎ — only ⌘⏎ grants a
+    /// pending consent request, so a habitual double-⏎ can't silently
+    /// record a permanent `shell` grant.
+    func submit(commandModifier: Bool = false) {
+        // A pending consent prompt swallows ⏎ — neutral, not "run whatever
+        // row is selected underneath the card"; ⌘⏎ means Allow.
         if permissionRequest != nil {
-            confirmPermissionRequest()
+            if commandModifier { confirmPermissionRequest() }
             return
         }
         // While the maker owns the panel ⏎ means "advance the maker flow"

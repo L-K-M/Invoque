@@ -59,9 +59,11 @@ final class PanelController: NSObject {
             self.hide()
             ActionPerformer.perform(row.action)
         }
-        // Consent granted → resume the paused run. The grants are already
-        // recorded, so the re-dispatch passes the check this time.
+        // Consent granted → record the grant here, where the ungranted
+        // check runs, then resume the paused run — a single owner for the
+        // write and the read, so Allow can never re-prompt forever.
         model.onPermissionConfirmed = { [weak self] request in
+            self?.permissionGrants.grant(request.permissions, for: request.command)
             self?.runCommand(named: request.command.name, args: request.args)
         }
         model.searchModel = searchModel

@@ -59,7 +59,7 @@ struct PanelView: View {
                 text: $model.query,
                 onUp: { model.moveSelection(by: -1) },
                 onDown: { model.moveSelection(by: 1) },
-                onReturn: { model.submit() }
+                onReturn: { model.submit(commandModifier: $0) }
             )
             // The representable's intrinsic size hugs the placeholder —
             // claim the row's width so the field doesn't resize per keystroke.
@@ -115,7 +115,7 @@ struct PanelView: View {
 
     private var footer: some View {
         Text(model.permissionRequest != nil
-             ? "⏎ allow · esc dismiss"
+             ? "⌘⏎ allow · esc dismiss"
              : model.makerIsActive
              ? "⏎ generate/save · esc dismiss"
              : "↑↓ navigate · ⏎ open · esc dismiss")
@@ -244,7 +244,9 @@ private struct SearchField: NSViewRepresentable {
     @Binding var text: String
     var onUp: () -> Void
     var onDown: () -> Void
-    var onReturn: () -> Void
+    /// `true` when ⌘ was held — consent cards need ⌘⏎ so a habitual
+    /// double-⏎ can't record a permanent permission grant.
+    var onReturn: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -296,7 +298,8 @@ private struct SearchField: NSViewRepresentable {
                 parent.onDown()
                 return true
             case #selector(NSResponder.insertNewline(_:)):
-                parent.onReturn()
+                parent.onReturn(NSApp.currentEvent?.modifierFlags
+                    .contains(.command) == true)
                 return true
             default:
                 // Everything else — notably `cancelOperation:` (Esc) — stays

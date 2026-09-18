@@ -201,10 +201,13 @@ post-v1.
 - Declared in the manifest, visible on the command's detail line (small lock
   badge). First run of a `shell`/`paste` command pauses at the run boundary
   and shows an in-panel consent card spelling out each risky permission —
-  ⏎ allows (the grant is recorded in UserDefaults under the command name),
-  "Don't Run"/esc declines. A manifest that gains a risky permission
-  re-asks for that one only. The Maker's Test button applies the same gate
-  to generated drafts.
+  ⌘⏎ or the Allow button grants (plain ⏎ is neutral, so a habitual
+  double-⏎ can't record a permanent grant); "Don't Run"/esc declines.
+  Grants persist in UserDefaults keyed by command name plus a hash of the
+  entry file — consent attaches to the code the user saw, so regenerated,
+  replaced, or same-named code re-asks, and a manifest that gains a risky
+  permission re-asks for that one only. The Maker's Test button applies
+  the same gate to generated drafts.
 - The Maker never silently grants: generated manifests suggest the minimum set;
   elevating requires the user to tick it (or edit the JSON).
 

@@ -96,7 +96,7 @@ final class MakerModel: ObservableObject {
                      runner: CommandRunner,
                      writer: CommandWriter,
                      store: CommandStore? = nil,
-                     permissionGrants: CommandPermissionGrants = CommandPermissionGrants()) {
+                     permissionGrants: CommandPermissionGrants) {
         self.clientProvider = client
         self.runner = runner
         self.writer = writer

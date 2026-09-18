@@ -108,7 +108,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // panel's run path and the Maker's test path, so Allow once covers
         // both (PLAN §4.3).
         let permissionGrants = CommandPermissionGrants()
-        model.permissionGrants = permissionGrants
         // The Maker: `make `/`mk ` routes to it. The client is a factory so
         // each generation picks up the current Settings (model/key changes
         // apply without a relaunch).

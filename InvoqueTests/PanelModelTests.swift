@@ -129,7 +129,8 @@ final class PanelModelTests: XCTestCase {
 
     // MARK: Permission requests
 
-    private func makePermissionRequest(permissions: [String] = ["shell"],
+    private func makePermissionRequest(grants: CommandPermissionGrants,
+                                       permissions: [String] = ["shell"],
                                        args: [String] = ["a"]) throws -> CommandPermissionRequest {
         let permissionList = permissions
             .map { "\"\($0)\"" }.joined(separator: ", ")
@@ -142,37 +143,55 @@ final class PanelModelTests: XCTestCase {
                                                 from: Data(json.utf8))
         let command = Command(manifest: manifest,
                               directory: URL(fileURLWithPath: "/tmp/risky-demo"))
+        // The request's permission set comes from the production
+        // derivation — if "risky" ever changes, the fixture can't drift
+        // into requests the run path would never build.
         return CommandPermissionRequest(
             command: command, args: args,
-            permissions: manifest.grantedPermissions
-                .intersection(CommandPermissionGrants.risky)
-                .sorted { $0.rawValue < $1.rawValue })
+            permissions: grants.ungranted(for: command))
     }
 
-    /// ⏎ while a consent card is up means Allow — the grant is recorded
-    /// and the paused run is handed back to the controller.
-    func testSubmitConfirmsPendingPermissionRequest() throws {
+    /// Plain ⏎ is neutral while the consent card is up — a permanent grant
+    /// must take ⌘⏎ or a click, never a habitual double-⏎.
+    func testPlainSubmitIsNeutralOnPendingPermissionRequest() throws {
         let suiteName = "PanelModelTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let grants = CommandPermissionGrants(defaults: defaults)
         let model = makeModel(items: [])
-        model.permissionGrants = grants
-        let request = try makePermissionRequest()
-        model.permissionRequest = request
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+
+        var confirmed = false
+        model.onPermissionConfirmed = { _ in confirmed = true }
+        var submitted = false
+        model.onSubmit = { _ in submitted = true }
+        model.submit()
+
+        XCTAssertFalse(confirmed)
+        XCTAssertFalse(submitted, "⏎ must not reach the row underneath the card")
+        XCTAssertNotNil(model.permissionRequest)
+    }
+
+    /// ⌘⏎ while a consent card is up means Allow — the paused run is handed
+    /// back to the controller (which records the grant before resuming).
+    func testCommandSubmitConfirmsPendingPermissionRequest() throws {
+        let suiteName = "PanelModelTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
+        let model = makeModel(items: [])
+        model.permissionRequest = try makePermissionRequest(grants: grants)
 
         var confirmed: CommandPermissionRequest?
         model.onPermissionConfirmed = { confirmed = $0 }
         var submitted = false
         model.onSubmit = { _ in submitted = true }
-        model.submit()
+        model.submit(commandModifier: true)
 
-        XCTAssertFalse(submitted, "⏎ must not reach the row underneath the card")
+        XCTAssertFalse(submitted)
         XCTAssertEqual(confirmed?.command.name, "risky-demo")
         XCTAssertEqual(confirmed?.args, ["a"])
         XCTAssertNil(model.permissionRequest)
-        // The grant is persisted — a second run of this command skips consent.
-        XCTAssertTrue(grants.ungranted(for: request.command).isEmpty)
     }
 
     func testDismissPermissionRequestClearsWithoutGrant() throws {
@@ -181,8 +200,7 @@ final class PanelModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let grants = CommandPermissionGrants(defaults: defaults)
         let model = makeModel(items: [])
-        model.permissionGrants = grants
-        let request = try makePermissionRequest()
+        let request = try makePermissionRequest(grants: grants)
         model.permissionRequest = request
 
         model.dismissPermissionRequest()
@@ -193,8 +211,12 @@ final class PanelModelTests: XCTestCase {
     /// A pending consent prompt belongs to the summon that produced it —
     /// the next summon starts clean.
     func testResetClearsPermissionRequest() throws {
+        let suiteName = "PanelModelTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
         let model = makeModel(items: [])
-        model.permissionRequest = try makePermissionRequest()
+        model.permissionRequest = try makePermissionRequest(grants: grants)
         model.reset(clearQuery: false)
         XCTAssertNil(model.permissionRequest)
     }

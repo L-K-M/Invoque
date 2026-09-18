@@ -6,6 +6,7 @@ final class CommandPermissionGrantsTests: XCTestCase {
     private var suiteName: String!
     private var defaults: UserDefaults!
     private var grants: CommandPermissionGrants!
+    private var tempRoot: URL!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -14,10 +15,16 @@ final class CommandPermissionGrantsTests: XCTestCase {
         suiteName = "CommandPermissionGrantsTests-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
         grants = CommandPermissionGrants(defaults: defaults)
+        tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-grants-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot,
+                                                withIntermediateDirectories: true)
     }
 
     override func tearDownWithError() throws {
         defaults.removePersistentDomain(forName: suiteName)
+        try? FileManager.default.removeItem(at: tempRoot)
+        tempRoot = nil
         grants = nil
         defaults = nil
         suiteName = nil
@@ -53,6 +60,33 @@ final class CommandPermissionGrantsTests: XCTestCase {
         XCTAssertEqual(grants.ungranted(for: command), [.paste, .shell])
     }
 
+    /// Consent attaches to the code the user saw: the same command name
+    /// with different entry content never inherits a grant — that's what
+    /// stops a regenerated or replaced command from running `shell`
+    /// silently under an old Allow.
+    func testChangedEntryReAsksUnderTheSameName() throws {
+        let v1 = try makeCommandOnDisk(name: "demo",
+                                       entry: "return { title: \"v1\" };")
+        let v2 = try makeCommandOnDisk(name: "demo",
+                                       entry: "return { title: \"v2\" };")
+        grants.grant([.shell], for: v1)
+        XCTAssertTrue(grants.ungranted(for: v1).isEmpty)
+        XCTAssertEqual(grants.ungranted(for: v2), [.shell],
+                       "changed code must not inherit the old code's grant")
+    }
+
+    /// Identical code under the same name keeps its grant — reinstalls and
+    /// the Maker's stage-then-save path don't re-prompt.
+    func testIdenticalEntryKeepsGrantAcrossDirectories() throws {
+        let source = "return { title: \"same\" };"
+        let one = try makeCommandOnDisk(name: "demo", entry: source,
+                                        directoryName: "one")
+        let two = try makeCommandOnDisk(name: "demo", entry: source,
+                                        directoryName: "two")
+        grants.grant([.shell], for: one)
+        XCTAssertTrue(grants.ungranted(for: two).isEmpty)
+    }
+
     func testConsentLineCoversEveryRiskyPermission() {
         for permission in CommandPermissionGrants.risky {
             XCTAssertFalse(CommandPermissionGrants.consentLine(for: permission).isEmpty)
@@ -60,6 +94,24 @@ final class CommandPermissionGrantsTests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    /// A real command on disk — the grant key hashes the entry file, so
+    /// content-scoping tests need actual bytes, not just a manifest.
+    private func makeCommandOnDisk(name: String, entry: String,
+                                   directoryName: String? = nil) throws -> Command {
+        let directory = tempRoot.appendingPathComponent(directoryName ?? name)
+        try FileManager.default.createDirectory(at: directory,
+                                                withIntermediateDirectories: true)
+        let json = """
+            {"schemaVersion": 1, "name": "\(name)", "title": "Demo",
+             "runtime": "js", "entry": "main.js", "mode": "action",
+             "permissions": ["shell"]}
+            """
+        try Data(json.utf8).write(to: directory.appendingPathComponent("command.json"))
+        try entry.write(to: directory.appendingPathComponent("main.js"),
+                        atomically: true, encoding: .utf8)
+        return try Command(directory: directory)
+    }
 
     private func makeCommand(name: String = "demo",
                              permissions: [String]) throws -> Command {

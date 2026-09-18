@@ -214,7 +214,7 @@ final class MakerModelTests: XCTestCase {
     }
 
     /// Allow records the grant and runs the paused test with the same args.
-    func testConfirmPermissionRequestRunsTest() async {
+    func testConfirmPermissionRequestRunsTest() async throws {
         let suiteName = "MakerModelTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -234,13 +234,21 @@ final class MakerModelTests: XCTestCase {
         XCTAssertEqual(result?.title, "hi")
         let cleared = await model.permissionRequest
         XCTAssertNil(cleared)
+        // Allow must persist the grant, not just resume this run — a
+        // regression here re-prompts on every test.
+        let command = try XCTUnwrap(paused?.command)
+        XCTAssertTrue(grants.ungranted(for: command).isEmpty)
     }
 
     func testDismissPermissionRequestLeavesDraftUntested() async {
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],
                                                       usesShell: true))]
-        let model = makeModel(client)
+        let model = makeModel(client, permissionGrants: grants)
 
         await model.start(prompt: "x")
         await model.test()
