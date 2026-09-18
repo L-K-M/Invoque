@@ -45,16 +45,24 @@ struct GitHubRelease: Decodable {
     var preferredAsset: Asset? {
         let preference = ["dmg", "zip", "pkg"]
         #if arch(arm64)
-        let archHints = ["arm64", "aarch64", "universal"]
+        let nativeHints = ["arm64", "aarch64", "universal"]
+        let foreignHints = ["x86_64", "x64", "intel"]
         #else
-        let archHints = ["x86_64", "x64", "intel", "universal"]
+        let nativeHints = ["x86_64", "x64", "intel", "universal"]
+        let foreignHints = ["arm64", "aarch64"]
         #endif
         func rank(_ asset: Asset) -> Int {
             let ext = (asset.name as NSString).pathExtension.lowercased()
             let extRank = preference.firstIndex(of: ext) ?? preference.count
             let name = asset.name.lowercased()
-            let archRank = archHints.contains { name.contains($0) } ? 0 : 1
-            return extRank * 2 + archRank   // extension dominates the tie-break
+            // Three tiers: explicit native match, no hint (often the universal
+            // default), explicit foreign — an un-suffixed build beats one the
+            // machine cannot run natively.
+            let archRank: Int
+            if nativeHints.contains(where: { name.contains($0) }) { archRank = 0 }
+            else if foreignHints.contains(where: { name.contains($0) }) { archRank = 2 }
+            else { archRank = 1 }
+            return extRank * 3 + archRank   // extension dominates the tie-break
         }
         return assets.min { rank($0) < rank($1) }
     }

@@ -101,6 +101,27 @@ final class GitHubReleaseTests: XCTestCase {
         #endif
     }
 
+    /// An un-suffixed asset — often the universal/default build — must beat
+    /// one explicitly tagged for the other architecture, regardless of order.
+    func testPreferredAssetUnhintedBeatsForeignArch() throws {
+        let release = try decode("""
+        {
+          "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false,
+          "assets": [
+            {"name":"App-x64.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/x64.dmg"},
+            {"name":"App.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/app.dmg"}
+          ]
+        }
+        """)
+        #if arch(arm64)
+        // "App.dmg" (unhinted) beats the explicitly foreign x64 build.
+        XCTAssertEqual(release.preferredAsset?.name, "App.dmg")
+        #else
+        // On Intel the x64 build is native — it still wins.
+        XCTAssertEqual(release.preferredAsset?.name, "App-x64.dmg")
+        #endif
+    }
+
     /// Extension preference still dominates the architecture tie-break — a
     /// foreign-arch dmg beats a native-arch zip on every architecture.
     func testPreferredAssetExtensionDominatesArch() throws {
