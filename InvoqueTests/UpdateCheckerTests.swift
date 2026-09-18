@@ -20,16 +20,16 @@ final class UpdateCheckerTests: XCTestCase {
     }
 
     /// Returns a release whose `tag_name` is `tag`; the payload shape matches
-    /// what `GitHubReleaseClient` decodes.
+    /// what `GitHubReleaseClient` decodes. Encoded via JSONSerialization so a
+    /// tag needing escaping can't corrupt the fixture.
     private func release(tag: String) throws -> GitHubRelease {
-        let json = """
-        {
-          "tag_name": "\(tag)",
-          "html_url": "https://example.com/r",
-          "prerelease": false, "draft": false, "assets": []
-        }
-        """
-        return try JSONDecoder().decode(GitHubRelease.self, from: Data(json.utf8))
+        let payload: [String: Any] = ["tag_name": tag,
+                                      "html_url": "https://example.com/r",
+                                      "prerelease": false, "draft": false,
+                                      "assets": []]
+        return try JSONDecoder().decode(
+            GitHubRelease.self,
+            from: try JSONSerialization.data(withJSONObject: payload))
     }
 
     private final class StubReleaseClient: UpdateChecker.ReleaseFetching, @unchecked Sendable {
