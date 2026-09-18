@@ -123,6 +123,10 @@ final class LLMClient: LLMClientServing {
         max(requestTimeout * 2, 300)
     }
 
+    /// Anthropic's `max_tokens` is required; the reported truncation limit
+    /// falls back to this so the error can never claim a 0-token cap.
+    static let maxOutputTokens = 4096
+
     init(configuration: Configuration, transport: LLMTransport = LLMClient.defaultTransport()) {
         self.configuration = configuration
         self.transport = transport
@@ -220,7 +224,7 @@ final class LLMClient: LLMClientServing {
             // The Claude 3 family rejects anything above its 4096 output
             // cap with a 400 — 4096 is valid for every Anthropic model and
             // comfortably covers a command.json + main.js generation.
-            "max_tokens": 4096,
+            "max_tokens": Self.maxOutputTokens,
             "messages": turns,
         ]
         if !system.isEmpty { body["system"] = system }
@@ -234,7 +238,8 @@ final class LLMClient: LLMClientServing {
         // A 200 is not success when the cap cut the output: the text ends
         // mid-file and fails far downstream as a confusing parse error.
         if (object["stop_reason"] as? String) == "max_tokens" {
-            throw LLMError.truncatedOutput(limit: body["max_tokens"] as? Int ?? 0)
+            throw LLMError.truncatedOutput(
+                limit: body["max_tokens"] as? Int ?? Self.maxOutputTokens)
         }
         return text
     }

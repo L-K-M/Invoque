@@ -235,4 +235,70 @@ final class GeneratedCommandValidatorTests: XCTestCase {
             """))
         XCTAssertEqual(outcome.issues, [])
     }
+
+    // MARK: Aliasing heuristic
+
+    /// Member access stays a direct, permission-visible call — only a bare
+    /// hand-off of the bridge object is aliasing.
+    func testMemberAccessIsNotAliasing() {
+        let notify = GeneratedCommandValidator.validate(generation(
+            manifest: manifestJSON(permissions: ["notification"]),
+            entry: """
+            async function run(args, ctx) {
+                return ctx.notify("done");
+            }
+            """))
+        XCTAssertFalse(notify.issues.contains { $0.contains("alias") },
+                       "\(notify.issues)")
+
+        let bound = GeneratedCommandValidator.validate(generation(
+            manifest: manifestJSON(permissions: ["network"]),
+            entry: """
+            async function run(args, ctx) {
+                const f = invoque.fetch;
+                await f("https://example.com");
+            }
+            """))
+        XCTAssertFalse(bound.issues.contains { $0.contains("alias") },
+                       "\(bound.issues)")
+    }
+
+    func testAliasingIsAnIssue() {
+        for source in ["const inv = invoque", "const c = ctx",
+                       "return ctx"] {
+            let outcome = GeneratedCommandValidator.validate(generation(
+                manifest: manifestJSON(),
+                entry: "async function run(args, ctx) { \(source); }"))
+            XCTAssertTrue(outcome.issues.contains { $0.contains("alias") },
+                          "\(source): \(outcome.issues)")
+        }
+    }
+
+    // MARK: Optional chaining
+
+    /// `invoque?.fetch` is valid JS and must register the same permission
+    /// requirement as `invoque.fetch` — runtime gating will deny it either
+    /// way, so validation must not report clean.
+    func testOptionalChainedModuleUseIsDetected() {
+        let network = GeneratedCommandValidator.validate(generation(
+            manifest: manifestJSON(),
+            entry: """
+            async function run(args, ctx) {
+                const r = await invoque?.fetch("https://example.com");
+                return { title: "x" };
+            }
+            """))
+        XCTAssertTrue(network.issues.contains { $0.contains("network") },
+                      "\(network.issues)")
+
+        let write = GeneratedCommandValidator.validate(generation(
+            manifest: manifestJSON(permissions: ["clipboard.read"]),
+            entry: """
+            async function run(args, ctx) {
+                await ctx?.clipboard?.write("x");
+            }
+            """))
+        XCTAssertTrue(write.issues.contains { $0.contains("clipboard.write") },
+                      "\(write.issues)")
+    }
 }

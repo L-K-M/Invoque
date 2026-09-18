@@ -266,11 +266,13 @@ enum GeneratedCommandValidator {
     private static func warnIfAliased(_ source: String, issues: inout [String]) {
         // `=` without an `=`/`!` before it (not ==, !=, <=, >=) or a
         // `return` — either moves the whole bridge object off its name.
+        // `(?!\.)` keeps member access out: `return invoque.notify(x)` and
+        // `const f = invoque.fetch` are direct, permission-visible calls.
         let aliased = source.range(
-            of: "(?<![=!<>])=\\s*(?:invoque|ctx)\\b",
+            of: "(?<![=!<>])=\\s*(?:invoque|ctx)\\b(?!\\.)",
             options: .regularExpression) != nil
             || source.range(
-                of: "\\breturn\\s+(?:invoque|ctx)\\b",
+                of: "\\breturn\\s+(?:invoque|ctx)\\b(?!\\.)",
                 options: .regularExpression) != nil
         let destructured = source.range(
             of: "\\b(?:const|let|var)\\s*\\{[^}]*\\}\\s*=\\s*(?:invoque|ctx)\\b",
@@ -293,7 +295,7 @@ enum GeneratedCommandValidator {
     private static func moduleTokens(in source: String) -> Set<String> {
         var tokens = Set<String>()
         for match in source.matches(
-            of: #/\b(?:invoque|ctx)\.([A-Za-z_$][A-Za-z0-9_$]*)/#) {
+            of: #/\b(?:invoque|ctx)\??\.([A-Za-z_$][A-Za-z0-9_$]*)/#) {
             tokens.insert(String(match.1))
         }
         return tokens
@@ -312,7 +314,7 @@ enum GeneratedCommandValidator {
                                        issues: inout [String]) {
         var sawMethod = false
         for match in source.matches(
-            of: #/\b(?:invoque|ctx)\.clipboard\.([A-Za-z_$][A-Za-z0-9_$]*)/#) {
+            of: #/\b(?:invoque|ctx)\??\.clipboard\??\.([A-Za-z_$][A-Za-z0-9_$]*)/#) {
             sawMethod = true
             switch match.1 {
             case "read":
