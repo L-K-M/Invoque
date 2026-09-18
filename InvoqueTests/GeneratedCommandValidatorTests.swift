@@ -263,6 +263,21 @@ final class GeneratedCommandValidatorTests: XCTestCase {
                        "\(bound.issues)")
     }
 
+    /// `?.` is member access too — binding or returning through it is as
+    /// permission-visible as the plain `.` form.
+    func testOptionalChainedMemberAccessIsNotAliasing() {
+        for entry in [
+            "async function run(args, ctx) { const f = invoque?.fetch; }",
+            "async function run(args, ctx) { return ctx?.notify(\"x\"); }",
+        ] {
+            let outcome = GeneratedCommandValidator.validate(generation(
+                manifest: manifestJSON(permissions: ["network"]),
+                entry: entry))
+            XCTAssertFalse(outcome.issues.contains { $0.contains("alias") },
+                           "\(entry): \(outcome.issues)")
+        }
+    }
+
     func testAliasingIsAnIssue() {
         for source in ["const inv = invoque", "const c = ctx",
                        "return ctx"] {

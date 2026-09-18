@@ -266,13 +266,13 @@ enum GeneratedCommandValidator {
     private static func warnIfAliased(_ source: String, issues: inout [String]) {
         // `=` without an `=`/`!` before it (not ==, !=, <=, >=) or a
         // `return` — either moves the whole bridge object off its name.
-        // `(?!\.)` keeps member access out: `return invoque.notify(x)` and
-        // `const f = invoque.fetch` are direct, permission-visible calls.
+        // `(?!\??\.)` keeps member access out: `return invoque.notify(x)`,
+        // `const f = invoque?.fetch` are direct, permission-visible calls.
         let aliased = source.range(
-            of: "(?<![=!<>])=\\s*(?:invoque|ctx)\\b(?!\\.)",
+            of: "(?<![=!<>])=\\s*(?:invoque|ctx)\\b(?!\\??\\.)",
             options: .regularExpression) != nil
             || source.range(
-                of: "\\breturn\\s+(?:invoque|ctx)\\b(?!\\.)",
+                of: "\\breturn\\s+(?:invoque|ctx)\\b(?!\\??\\.)",
                 options: .regularExpression) != nil
         let destructured = source.range(
             of: "\\b(?:const|let|var)\\s*\\{[^}]*\\}\\s*=\\s*(?:invoque|ctx)\\b",
