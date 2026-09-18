@@ -6,11 +6,14 @@ import Foundation
 /// PLAN §4.3: the first run of a `shell`/`paste` command shows a
 /// confirmation card; once allowed, the grant is remembered so the command
 /// runs silently thereafter. Grants live in UserDefaults keyed by the
-/// command's name **plus a hash of its entry file** — app-owned state,
-/// never under `data/` where a command could write its own grant. The
-/// content hash is the whole point: consent attaches to the code the user
-/// saw, so a regenerated, replaced, or same-named command re-asks rather
-/// than inheriting a grant it never earned. (The entry file is the only
+/// command's name **plus a hash of its entry file** — kept out of `data/`
+/// so commands can't write their own grant through sanctioned modules.
+/// (Not tamper-proof: UserDefaults is user-writable, so a command already
+/// granted `shell` could forge keys — moot, since `shell` is already
+/// arbitrary code with full user privileges.) The content hash is the
+/// whole point: consent attaches to the code the user saw, so a
+/// regenerated, replaced, or same-named command re-asks rather than
+/// inheriting a grant it never earned. (The entry file is the only
 /// executable surface — nothing can `require` extra files. Manifest perm
 /// growth is caught separately by the declared∩risky intersection.)
 final class CommandPermissionGrants {

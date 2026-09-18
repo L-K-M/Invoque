@@ -44,6 +44,14 @@ final class ActivationHandoff {
         !targetIsTerminated && targetPID != ownPID && invoqueIsActive
     }
 
+    /// Invalidates the delayed post-restore resignation check so Invoque UI that
+    /// takes focus right after a handoff restore keeps it — e.g. a panel summoned
+    /// within the 0.25 s window must not be deactivated out from under the user.
+    static func cancelPendingResignation() {
+        assert(Thread.isMainThread)
+        generation &+= 1
+    }
+
     private func finish(shouldRestore: Bool) {
         guard isTracking else { return }
         assert(Thread.isMainThread)

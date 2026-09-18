@@ -300,14 +300,22 @@ SwiftUI window from the menu-bar item (Zap's pattern):
    `UpdateChecker` checks `L-K-M/Invoque` releases on launch + daily (24 h
    throttle, state in UserDefaults under `UpdateChecker.L-K-M.Invoque.*`),
    and its alert offers Download (asset → `~/Downloads`, revealed in
-   Finder), Remind Me Later, or Skip This Version. Settings shows the
-   automatic-check toggle, a "Check Now" button and the last-check date;
-   the status menu has "Check for Updates…". A ported `ActivationHandoff`
-   + `AppActivator` (activation-only subset of Zap's `WindowEnumerator`)
-   brings the agent forward for alerts and returns focus to the previous
-   app — also wired into the Settings window lifetime.
+   Finder), Remind Me Later, or Skip This Version (compared semantically —
+   a `v1.3.0`→`1.3.0` retag still counts as skipped). A menu-bar agent is
+   almost never active, so a background check that finds a newer release
+   *queues* it instead of popping a focus-stealing modal: an "Update
+   Available: ⟨tag⟩" item appears on the status menu, and the alert
+   presents on the next real activation or that item's click. Settings
+   shows the automatic-check toggle, a "Check Now" button and the
+   last-check date; the status menu has "Check for Updates…". A ported
+   `ActivationHandoff` + `AppActivator` (activation-only subset of Zap's
+   `WindowEnumerator`) brings the agent forward for alerts and returns
+   focus to the previous app — also wired into the Settings window
+   lifetime.
 
-Menu: *Open Invoque* · *Settings…* · *Check for Updates…* · *Quit*.
+Menu: *Open Invoque* · *Update Available…* (when a background check has one
+queued) · *Settings…* · *Commands folder* · *Check for Updates…* · *Quit*.
+(*Commands folder* is documented intent — the item isn't implemented yet.)
 
 ---
 

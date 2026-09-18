@@ -15,6 +15,11 @@ import AppKit
 /// for the alert presentation.
 final class UpdateChecker: ObservableObject {
 
+    /// The one call the checker needs — seams the network for tests.
+    protocol ReleaseFetching {
+        func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease
+    }
+
     struct Configuration {
         var owner: String
         var repo: String
@@ -49,10 +54,26 @@ final class UpdateChecker: ObservableObject {
     }
 
     let configuration: Configuration
-    private let client: GitHubReleaseClient
+    private let client: any ReleaseFetching
     private let downloader = UpdateDownloader()
     private let defaults: UserDefaults
     private var timer: Timer?
+
+    /// A newer release found by a background check while Invoque was inactive —
+    /// a menu-bar agent must never steal focus for an update prompt, so it is
+    /// surfaced on the status menu immediately and presented the next time the
+    /// app legitimately owns focus.
+    private var pendingUpdate: GitHubRelease?
+    private var activationObserver: NSObjectProtocol?
+
+    /// A `checkNow()` that arrives while a check is already in flight reports
+    /// that run's outcome as user-initiated rather than being dropped.
+    private var pendingUserInitiatedCheck = false
+
+    /// Called when `pendingUpdate` changes (tag name, or nil once presented).
+    /// `AppDelegate` mirrors it onto a status-menu item so a queued update is
+    /// still discoverable while the app is inactive.
+    var onPendingUpdateChanged: ((String?) -> Void)?
 
     /// Whether to check automatically (on launch and daily). User-facing toggle.
     @Published var automaticChecksEnabled: Bool {
@@ -71,17 +92,24 @@ final class UpdateChecker: ObservableObject {
     /// True while an update asset is downloading to `~/Downloads`.
     @Published private(set) var isDownloading = false
 
-    init(configuration: Configuration, defaults: UserDefaults = .standard) {
+    init(configuration: Configuration, defaults: UserDefaults = .standard,
+         client: (any ReleaseFetching)? = nil) {
         self.configuration = configuration
         self.defaults = defaults
-        self.client = GitHubReleaseClient(owner: configuration.owner, repo: configuration.repo)
+        self.client = client ?? GitHubReleaseClient(owner: configuration.owner,
+                                                  repo: configuration.repo)
         let prefix = configuration.defaultsKeyPrefix
         // Default ON unless the user has explicitly turned it off.
         self.automaticChecksEnabled = defaults.object(forKey: "\(prefix).enabled") as? Bool ?? true
         self.lastCheckDate = defaults.object(forKey: "\(prefix).lastCheck") as? Date
     }
 
-    deinit { timer?.invalidate() }
+    deinit {
+        timer?.invalidate()
+        if let activationObserver {
+            NotificationCenter.default.removeObserver(activationObserver)
+        }
+    }
 
     // MARK: Public API
 
@@ -89,6 +117,8 @@ final class UpdateChecker: ObservableObject {
     /// Call once at launch. No-op under XCTest.
     func start() {
         guard !TestEnvironment.isRunningTests else { return }
+        // A second start() must not leave the old timer scheduled forever.
+        timer?.invalidate()
         checkInBackground()
         let interval = configuration.minimumCheckInterval
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
@@ -113,6 +143,13 @@ final class UpdateChecker: ObservableObject {
         performCheck(userInitiated: true)
     }
 
+    /// Presents the queued background update immediately — the status-menu
+    /// "Update Available" item calls this; an explicit click is a user
+    /// initiation, so the alert is appropriate even though the app was inactive.
+    func presentPendingUpdateNow() {
+        Task { @MainActor in self.presentPendingUpdateIfAny() }
+    }
+
     // MARK: Check
 
     private var skippedVersion: String? {
@@ -121,10 +158,17 @@ final class UpdateChecker: ObservableObject {
     }
 
     private func performCheck(userInitiated: Bool) {
-        guard !isChecking else { return }
+        guard !isChecking else {
+            // A checkNow() during an in-flight run must still report — mark
+            // this run's outcome as user-requested rather than dropping it.
+            if userInitiated { pendingUserInitiatedCheck = true }
+            return
+        }
         isChecking = true
         Task { @MainActor [weak self] in
             guard let self else { return }
+            let report = userInitiated || self.pendingUserInitiatedCheck
+            self.pendingUserInitiatedCheck = false
             defer { self.isChecking = false }
             do {
                 let release = try await self.client.latestRelease(
@@ -134,27 +178,70 @@ final class UpdateChecker: ObservableObject {
 
                 guard let remote = SemanticVersion(release.tagName),
                       let current = SemanticVersion(self.configuration.currentVersion) else {
-                    if userInitiated { self.presentUpToDate() }
+                    // "Couldn't determine" is not "you're up to date" — an
+                    // unparseable tag must not assert the user is current.
+                    if report { self.presentUnparseable(tag: release.tagName) }
                     return
                 }
                 if remote > current {
-                    if userInitiated || self.skippedVersion != release.tagName {
+                    // Semantic compare: a retag ("v1.3.0" → "1.3.0") must not
+                    // re-prompt a version the user already skipped.
+                    let skipped = self.skippedVersion.flatMap(SemanticVersion.init)
+                    if report {
                         self.presentUpdateAvailable(release: release, remote: remote, current: current)
+                    } else if skipped != remote {
+                        if NSApp.isActive {
+                            self.presentUpdateAvailable(release: release, remote: remote, current: current)
+                        } else {
+                            self.queuePendingUpdate(release)
+                        }
                     }
-                } else if userInitiated {
+                } else if report {
                     self.presentUpToDate()
                 }
             } catch {
-                if userInitiated { self.presentError(error) }
+                if report { self.presentError(error) }
                 else { NSLog("UpdateChecker: background check failed: %@", error.localizedDescription) }
             }
         }
+    }
+
+    /// Queues an update found in the background while the app is inactive: the
+    /// status menu gets an "Update Available" item now, and the alert itself is
+    /// presented the next time Invoque legitimately owns focus — never as a
+    /// focus-stealing modal on a timer.
+    private func queuePendingUpdate(_ release: GitHubRelease) {
+        pendingUpdate = release
+        onPendingUpdateChanged?(release.tagName)
+        guard activationObserver == nil else { return }
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.presentPendingUpdateIfAny() }
+        }
+    }
+
+    @MainActor
+    private func presentPendingUpdateIfAny() {
+        guard let release = pendingUpdate else { return }
+        pendingUpdate = nil
+        onPendingUpdateChanged?(nil)
+        guard let remote = SemanticVersion(release.tagName),
+              let current = SemanticVersion(configuration.currentVersion) else { return }
+        presentUpdateAvailable(release: release, remote: remote, current: current)
     }
 
     // MARK: Presentation
 
     @MainActor
     private func presentUpdateAvailable(release: GitHubRelease, remote: SemanticVersion, current: SemanticVersion) {
+        // A user-initiated check that presents the same release a background
+        // check queued retires the pending entry and its menu item.
+        if SemanticVersion(pendingUpdate?.tagName ?? "") == remote {
+            pendingUpdate = nil
+            onPendingUpdateChanged?(nil)
+        }
         let alert = NSAlert()
         alert.messageText = "A new version of \(configuration.appName) is available"
         var info = "\(configuration.appName) \(remote) is available — you have \(current)."
@@ -211,6 +298,18 @@ final class UpdateChecker: ObservableObject {
         _ = runModal(alert)
     }
 
+    /// A release tag the checker couldn't parse — distinct from "up to date",
+    /// which would wrongly assert the user is current when the answer is unknown.
+    @MainActor
+    private func presentUnparseable(tag: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn't check for updates"
+        alert.informativeText = "The latest release tag (“\(tag)”) couldn't be parsed."
+        alert.addButton(withTitle: "OK")
+        _ = runModal(alert)
+    }
+
     @MainActor
     private func presentError(_ error: Error) {
         let alert = NSAlert()
@@ -238,6 +337,8 @@ final class UpdateChecker: ObservableObject {
 
     private func key(_ suffix: String) -> String { "\(configuration.defaultsKeyPrefix).\(suffix)" }
 }
+
+extension GitHubReleaseClient: UpdateChecker.ReleaseFetching {}
 
 extension Bundle {
     /// `CFBundleShortVersionString` (the marketing version), or `"0"`.

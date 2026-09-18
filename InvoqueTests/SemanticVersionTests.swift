@@ -33,6 +33,15 @@ final class SemanticVersionTests: XCTestCase {
         XCTAssertTrue(SemanticVersion("1.2.0-beta")! > SemanticVersion("1.1.9")!)   // numbers win first
     }
 
+    /// Semver: numeric pre-release identifiers compare numerically, not
+    /// lexically — "beta.10" is newer than "beta.2".
+    func testPrereleaseNumericIdentifiersCompareNumerically() {
+        XCTAssertTrue(SemanticVersion("1.2.0-beta.10")! > SemanticVersion("1.2.0-beta.2")!)
+        XCTAssertTrue(SemanticVersion("1.2.0-rc.10")! > SemanticVersion("1.2.0-rc.9")!)
+        // Numeric identifiers sort before alphanumeric ones per semver.
+        XCTAssertTrue(SemanticVersion("1.2.0-1")! < SemanticVersion("1.2.0-alpha")!)
+    }
+
     func testNewerThanCurrentDetection() {
         let current = SemanticVersion("1.0")!
         XCTAssertTrue(SemanticVersion("1.0.1")! > current)

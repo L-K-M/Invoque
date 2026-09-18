@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var panelController = Self.makePanelController(preferences: preferences)
 
     private var statusItem: NSStatusItem?
+    /// Hidden until a background check queues an update — then it names the
+    /// pending release and presents its alert on click.
+    private var updateMenuItem: NSMenuItem?
 
     /// Identifies the summon hotkey to Carbon; any value unique within the app works.
     private static let summonHotkeyID: UInt32 = 1
@@ -29,6 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenu.install(into: NSApplication.shared)
         setUpStatusItem()
         setUpSummonHotkey()
+        // A background check that finds an update while the app is inactive
+        // queues it — the menu item is its discoverable surface until the
+        // alert can present without stealing focus.
+        updateChecker.onPendingUpdateChanged = { [weak self] tag in
+            guard let item = self?.updateMenuItem else { return }
+            item.isHidden = tag == nil
+            if let tag { item.title = "Update Available: \(tag)" }
+        }
         updateChecker.start()   // check GitHub for a newer release on launch + daily
     }
 
@@ -65,6 +76,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openItem.target = self
         menu.addItem(openItem)
 
+        let pendingItem = NSMenuItem(title: "", action: #selector(showPendingUpdate), keyEquivalent: "")
+        pendingItem.target = self
+        pendingItem.isHidden = true
+        menu.addItem(pendingItem)
+        updateMenuItem = pendingItem
+
         let settingsItem = NSMenuItem(title: "Invoque Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -96,6 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func checkForUpdates() {
         updateChecker.checkNow()
+    }
+
+    @objc private func showPendingUpdate() {
+        updateChecker.presentPendingUpdateNow()
     }
 
     /// Assembles the search stack and its owner. `model` is built first so

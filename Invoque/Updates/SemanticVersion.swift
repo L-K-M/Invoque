@@ -54,7 +54,16 @@ struct SemanticVersion: Comparable, Equatable, CustomStringConvertible {
         case (nil, nil): return false
         case (nil, _?):  return false   // final > pre-release
         case (_?, nil):  return true    // pre-release < final
-        case let (l?, r?): return l < r // both pre-release: lexical fallback
+        case let (l?, r?):
+            // Both pre-release: compare dot-separated identifiers — numeric
+            // fields numerically ("beta.10" > "beta.2"), everything else
+            // lexically. ASCII puts digits before letters, so mixed pairs
+            // sort numeric-first per semver.
+            return l.split(separator: ".").lexicographicallyPrecedes(
+                r.split(separator: ".")) { a, b in
+                    if let x = Int(a), let y = Int(b) { return x < y }
+                    return a < b
+                }
         }
     }
 

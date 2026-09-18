@@ -39,7 +39,11 @@ struct GitHubReleaseClient {
     }
 
     private func fetch<T: Decodable>(_ type: T.Type, path: String) async throws -> T {
-        let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/\(path)")!
+        guard let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/\(path)") else {
+            // A malformed owner/repo must throw, not crash — this type is
+            // documented reusable and callers aren't guaranteed URL-safe.
+            throw URLError(.badURL)
+        }
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")

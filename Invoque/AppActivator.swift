@@ -52,6 +52,10 @@ enum AppActivator {
     static func activateSelfForOwnWindow() {
         ensureActivationObserver()
         activationGeneration &+= 1
+        // New Invoque UI taking focus must cancel any pending post-restore
+        // resignation — otherwise a handoff that restored moments ago would
+        // deactivate this window out from under the user.
+        ActivationHandoff.cancelPendingResignation()
         if NSApp.isHidden { NSApp.unhide(nil) }
         if #available(macOS 14.0, *) {
             NSApp.activate()
