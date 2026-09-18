@@ -143,9 +143,13 @@ struct CommandManifest: Codable, Equatable {
         Set(permissions.compactMap(Permission.init(rawValue:)))
     }
 
-    /// Checks everything decoding cannot: schema version, name shape, known
-    /// permissions, and that the entry file exists inside `directory`.
-    func validate(in directory: URL, fileManager: FileManager = .default) throws {
+    /// The checks `validate(in:)` can make without a directory: schema
+    /// version, name shape, known permissions, and that `entry` is a relative
+    /// path that stays inside the command directory lexically. The Maker's
+    /// validator uses this on a manifest that exists only as generated text —
+    /// the stronger symlink-aware containment and existence checks still
+    /// happen in `validate(in:)` once the files are on disk.
+    func validateStructure() throws {
         guard schemaVersion == Self.currentSchemaVersion else {
             throw ValidationError.unsupportedSchemaVersion(schemaVersion)
         }
@@ -159,6 +163,23 @@ struct CommandManifest: Codable, Equatable {
         guard !entry.isEmpty else {
             throw ValidationError.entryNotFound(entry)
         }
+        // Lexical containment: an absolute entry, or one whose standardized
+        // form climbs out of any would-be directory, is an escape. The
+        // dir-based check in `validate(in:)` additionally resolves symlinks.
+        guard !entry.hasPrefix("/") else {
+            throw ValidationError.entryEscapesDirectory(entry)
+        }
+        let probe = URL(fileURLWithPath: "/_invoque_root", isDirectory: true)
+        let resolved = probe.appendingPathComponent(entry).standardizedFileURL
+        guard resolved.path.hasPrefix(probe.path + "/") else {
+            throw ValidationError.entryEscapesDirectory(entry)
+        }
+    }
+
+    /// Checks everything decoding cannot: schema version, name shape, known
+    /// permissions, and that the entry file exists inside `directory`.
+    func validate(in directory: URL, fileManager: FileManager = .default) throws {
+        try validateStructure()
         // The entry is read and executed, so a "../" escape would run an
         // arbitrary file outside the command directory. Standardizing both
         // paths resolves ".." segments lexically; resolving symlinks too

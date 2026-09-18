@@ -25,7 +25,11 @@ struct PanelView: View {
 
             Divider().padding(.horizontal, 12)
 
-            resultList
+            if model.makerIsActive, let maker = model.maker {
+                MakerView(model: maker, prompt: model.makerPrompt ?? "")
+            } else {
+                resultList
+            }
 
             Divider().padding(.horizontal, 12)
 
@@ -106,7 +110,9 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        Text("↑↓ navigate · ⏎ open · esc dismiss")
+        Text(model.makerIsActive
+             ? "⏎ generate/save · esc dismiss"
+             : "↑↓ navigate · ⏎ open · esc dismiss")
             .font(.caption)
             .foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity)

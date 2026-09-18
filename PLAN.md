@@ -218,35 +218,54 @@ post-v1.
 
 ## 6. The `make` Command
 
-Built-in filter command; query prefix `make`/`mk` routes the rest of the line
-to it. It owns a dedicated Maker view pushed onto the panel.
+Built-in query prefix — `make <prompt>`/`mk <prompt>` — routed by
+`PanelModel` like filter mode: while the prefix is present, `MakerView`
+replaces the results list inline (no pushed view — the swap is the same
+shape the filter list already uses).
 
 ```
 make command to format clipboard json
-  → CommandMaker.stream(prompt)         LLM emits fenced blocks:
-                                        --- command.json --- … --- main.js ---
-  → validate                            manifest schema · JS parses ·
-                                        permission-usage cross-check
-  → Maker view                          streamed code + one-key test run in a
-                                        disposable context; errors/stdout shown
-  → feedback loop                       "broke on empty clipboard" → transcript
-                                        + output back to model → diff view →
-                                        accept/discard
-  → save                                write folder; snapshot prior revision
-                                        into history/; hot-reload picks it up
+  → MakerModel.start(prompt)            single-shot LLMClient.complete —
+                                        no streaming in v1; a command is
+                                        only usable once fully generated
+  → GenerationParser.parse              `--- command.json ---`/`--- main.js ---`
+                                        delimiter blocks (what the prompt
+                                        demands), with markdown ```json/
+                                        ```js fences accepted as fallback;
+                                        `lang:name`/`lang name` on a fence
+                                        names extra files. Strict: exactly
+                                        one manifest + one entry.
+  → GeneratedCommandValidator           manifest decodes + validateStructure
+                                        (no dir needed) · JS compiles via
+                                        `new Function` — parsed, never run ·
+                                        invoque.*↔permissions cross-check on
+                                        comment/string-masked source
+  → Maker view                          draft summary (title, mode,
+                                        permissions, files) + issues; Test
+                                        button runs the draft in a temp
+                                        staging dir via CommandRunner —
+                                        explicit, never automatic
+  → feedback loop                       "broke on empty clipboard" → appended
+                                        to the transcript → regenerate
+  → save                                CommandWriter writes the folder;
+                                        snapshots prior revision into
+                                        history/; store.scan() makes it live
 ```
 
-- `edit command <name>` enters the same flow seeded with existing files.
-- System prompt: compact `invoque.d.ts` of the API, manifest schema, one worked
-  example, and rules (no sync loops, declare permissions honestly, prefer
-  `action` unless listing).
+- `edit command <name>` enters the same flow seeded with existing files —
+  **not yet implemented** (the writer's history/ snapshotting supports it).
+- System prompt (`Maker/SystemPrompt.swift`): compact `invoque.d.ts` of the
+  API, manifest schema, one worked example, and rules (no sync loops, declare
+  permissions honestly, prefer `action` unless listing). Kept in sync with
+  `InvoqueBridge` — `paste`/`apps` are listed as not-yet-implemented.
 - Provider settings: base URL (OpenAI-compatible → OpenAI/OpenRouter/Ollama/
-  LM Studio), model, API key (Keychain), optional Anthropic mode. Test button
-  in Settings.
+  LM Studio), model, API key (Keychain), Anthropic mode toggle — implemented
+  (`/v1/messages` + `x-api-key`). Test button in Settings hits `/models`
+  (`/v1/models` for Anthropic).
 - Provenance: `generated.prompt`/`model`/`revision` in the manifest; every
   accepted revision snapshots the old files into `history/<timestamp>/` —
   rollback is a file copy the user can do by hand, and the Maker can offer
-  "revert to revision N".
+  "revert to revision N" (not yet implemented).
 
 ---
 
@@ -310,12 +329,16 @@ Invoque/
 │   │   ├── InvoqueBridge.swift          # invoque.* assembly per permissions
 │   │   └── Modules/                     # Clipboard, Fetch, FS, Shell, …
 │   ├── Maker/
-│   │   ├── CommandMaker.swift           # generate→validate→test→save loop
-│   │   ├── MakerView.swift              # in-panel SwiftUI
-│   │   ├── LLMClient.swift              # streaming, provider config
-│   │   ├── GenerationParser.swift       # fenced-block → manifest+code
-│   │   ├── DiffView.swift
-│   │   └── CommandHistory.swift         # history/ snapshots
+│   │   ├── MakerModel.swift             # idle→generating→draft→testing→
+│   │   │                                #   readyToSave→saved state machine
+│   │   ├── MakerView.swift              # in-panel SwiftUI (inline swap)
+│   │   ├── MakerSettings.swift          # provider/baseURL/model (UserDefaults)
+│   │   ├── Keychain.swift               # API key — SecItem wrapper
+│   │   ├── LLMClient.swift              # single-shot, OpenAI + Anthropic
+│   │   ├── GenerationParser.swift       # delimiter/fenced blocks → files
+│   │   ├── GeneratedCommandValidator.swift  # manifest+JS+permission checks
+│   │   ├── CommandWriter.swift          # save + history/ snapshots
+│   │   └── SystemPrompt.swift           # invoque.d.ts + schema + rules
 │   ├── Settings/                        # same pattern as Zap
 │   ├── Updates/                         # copied from Zap (GitHub releases)
 │   ├── Model/Preferences.swift

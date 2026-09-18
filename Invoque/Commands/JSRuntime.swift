@@ -300,7 +300,11 @@ final class JSRuntime {
     /// not a parser — regex literals and `${}` nesting inside templates are
     /// rare enough in commands that treating them approximately is fine; the
     /// failure mode stays a syntax error, not corruption.
-    private static func opaqueRanges(in source: String) -> [Range<String.Index>] {
+    ///
+    /// Internal (not private) so `GeneratedCommandValidator` can mask the
+    /// same regions before scanning for `invoque.*` module use — a mention
+    /// inside a comment or string is not a permission requirement.
+    static func opaqueRanges(in source: String) -> [Range<String.Index>] {
         enum Region { case normal, single, double, template, lineComment, blockComment, regex }
         var ranges: [Range<String.Index>] = []
         var region = Region.normal

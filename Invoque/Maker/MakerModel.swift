@@ -1,0 +1,283 @@
+import Foundation
+
+/// The `make` command's state machine — the panel shows `MakerView` for it
+/// while the query is `make …`/`mk …` (PLAN §6).
+///
+/// Flow: `idle` → `generating` → `draft` (parsed + validated; `issues`
+/// lists anything wrong) → `readyToSave` when issue-free → `saved`. A
+/// `testing` run is always an explicit user action — generated code never
+/// runs on arrival or on save. `failed` covers transport and parse errors;
+/// the transcript is kept so `sendFeedback` can continue the conversation
+/// from a failure too.
+///
+/// `@MainActor`: every mutation feeds SwiftUI directly, and the single
+/// generation task means no lock is needed.
+@MainActor
+final class MakerModel: ObservableObject {
+
+    enum Phase: Equatable {
+        /// Nothing generated yet — the view shows the prompt + hint.
+        case idle
+        /// A request to the model is in flight.
+        case generating
+        /// A generation parsed and validated with `issues` to show.
+        case draft
+        /// An explicit test run of the draft is in flight.
+        case testing
+        /// The draft is issue-free; Save is enabled.
+        case readyToSave
+        /// `CommandWriter` wrote the command and the store rescanned.
+        case saved
+        /// Transport or parse failure — `lastError` holds the message.
+        case failed
+    }
+
+    /// A parsed + validated generation. `manifest` is nil only when
+    /// `command.json` didn't decode at all (the issue list says why).
+    struct Draft: Equatable {
+        let generation: GeneratedCommand
+        let manifest: CommandManifest?
+        let issues: [String]
+
+        var isValid: Bool { issues.isEmpty && manifest != nil }
+    }
+
+    /// One completed generation round, for the session's history.
+    struct Exchange: Equatable {
+        let prompt: String
+        let output: String
+    }
+
+    // MARK: Published state
+
+    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var draft: Draft?
+    /// The last explicit test run's result — cleared on regeneration.
+    @Published private(set) var testResult: JSResult?
+    @Published private(set) var lastError: String?
+    /// The prompt that started the current draft's conversation.
+    @Published private(set) var prompt = ""
+    /// The model that produced the last response — provenance for save.
+    @Published private(set) var lastUsedModel: String?
+    /// Prompt/output pairs for every completed generation this session.
+    @Published private(set) var sessionHistory: [Exchange] = []
+
+    /// The conversation sent to the model: system prompt, the original
+    /// request, then alternating assistant outputs and user feedback.
+    private(set) var transcript: [LLMMessage] = []
+
+    private let clientProvider: () -> LLMClientServing
+    private let runner: CommandRunner
+    private let writer: CommandWriter
+    private let store: CommandStore?
+
+    private var generationTask: Task<Void, Never>?
+    /// Temp directory the current draft is staged into for test runs.
+    private var stagingDirectory: URL?
+    /// The last raw model output — appended to the transcript as the
+    /// assistant's turn when feedback loops back.
+    private var lastRawOutput: String?
+    /// Bumped by `reset()` — an in-flight `test()` whose suspension let a
+    /// new session start must not publish its result or phase over the new
+    /// state.
+    private var epoch = 0
+
+    /// `client` is a factory, not an instance, so each generation snapshots
+    /// the current Settings (a mid-session model change applies at once).
+    /// `store` is rescanned after a save; nil is fine for tests.
+    nonisolated init(client: @escaping () -> LLMClientServing,
+                     runner: CommandRunner,
+                     writer: CommandWriter,
+                     store: CommandStore? = nil) {
+        self.clientProvider = client
+        self.runner = runner
+        self.writer = writer
+        self.store = store
+    }
+
+    // MARK: Generate
+
+    /// What ⏎ in the search field means while the maker owns the panel:
+    /// start when idle (or retry after save/failure), save when the draft
+    /// is clean, nothing while busy or while issues remain — the feedback
+    /// field is the way forward from `draft`.
+    func primarySubmit(prompt: String) async {
+        switch phase {
+        case .idle, .saved, .failed:
+            await start(prompt: prompt)
+        case .readyToSave:
+            save()
+        case .generating, .testing, .draft:
+            break
+        }
+    }
+
+    /// Starts a fresh generation for `prompt`. A no-op while a generation
+    /// is already in flight or the prompt is blank.
+    func start(prompt: String) async {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, phase != .generating else { return }
+        reset()
+        self.prompt = trimmed
+        transcript = [
+            LLMMessage(.system, SystemPrompt.text),
+            LLMMessage(.user, trimmed),
+        ]
+        await generate()
+    }
+
+    /// Regenerates with the existing transcript — the right retry for a
+    /// transport failure, where the conversation is still the correct one
+    /// and starting over would just lose it.
+    func retry() async {
+        guard !transcript.isEmpty, phase == .failed || phase == .idle else {
+            return
+        }
+        await generate()
+    }
+
+    /// Feedback loop: appends the model's last output and the user's
+    /// correction to the transcript, then regenerates. Works from `draft`,
+    /// `readyToSave`, and `failed` — a malformed response is exactly what
+    /// feedback is for.
+    func sendFeedback(_ text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !transcript.isEmpty,
+              phase != .generating, phase != .testing else { return }
+        if let lastRawOutput {
+            transcript.append(LLMMessage(.assistant, lastRawOutput))
+        }
+        transcript.append(LLMMessage(.user, trimmed))
+        draft = nil
+        testResult = nil
+        await generate()
+    }
+
+    private func generate() async {
+        phase = .generating
+        lastError = nil
+        let client = clientProvider()
+        lastUsedModel = client.model
+        let task = Task { await self.runGeneration(client: client) }
+        generationTask = task
+        await task.value
+    }
+
+    private func runGeneration(client: LLMClientServing) async {
+        do {
+            let output = try await client.complete(messages: transcript)
+            try Task.checkCancellation()
+            lastRawOutput = output
+            // The last transcript entry is always the user turn that
+            // triggered this round — the prompt on first generation, the
+            // feedback text on revisions.
+            sessionHistory.append(Exchange(
+                prompt: transcript.last?.content ?? prompt, output: output))
+            let generation = try GenerationParser.parse(output)
+            let outcome = GeneratedCommandValidator.validate(generation)
+            draft = Draft(generation: generation, manifest: outcome.manifest,
+                          issues: outcome.issues)
+            testResult = nil
+            phase = draft?.isValid == true ? .readyToSave : .draft
+        } catch is CancellationError {
+            // discard() owns the phase; a cancelled in-flight generation
+            // must not clobber the idle state it just set.
+        } catch {
+            lastError = error.localizedDescription
+            phase = .failed
+        }
+    }
+
+    // MARK: Test
+
+    /// Runs the draft once in a disposable staging directory — never the
+    /// commands root, so the store can't pick up a draft mid-test and the
+    /// script's `data/` writes stay throwaway. Always user-triggered.
+    func test(args: [String] = []) async {
+        guard let draft, draft.manifest != nil,
+              phase == .draft || phase == .readyToSave else { return }
+        phase = .testing
+        let epoch = self.epoch
+        let result: JSResult
+        do {
+            let directory = try stage(draft)
+            let command = try Command(directory: directory)
+            result = await runner.run(command: command, args: args)
+        } catch {
+            result = JSResult(output: .void, logs: [],
+                              error: .exception(error.localizedDescription))
+        }
+        // The await above suspended: a discard/start in the meantime means
+        // this result belongs to a draft that no longer exists.
+        guard epoch == self.epoch else { return }
+        testResult = result
+        phase = draft.isValid ? .readyToSave : .draft
+    }
+
+    /// Writes the draft's files into a fresh temp dir so `Command` can load
+    /// and run them — the runtime reads the entry file from disk.
+    private func stage(_ draft: Draft) throws -> URL {
+        if let stagingDirectory {
+            try? FileManager.default.removeItem(at: stagingDirectory)
+        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-maker-\(UUID().uuidString)",
+                                    isDirectory: true)
+        try FileManager.default.createDirectory(at: directory,
+                                                withIntermediateDirectories: true)
+        for (name, contents) in draft.generation.files {
+            let url = directory.appendingPathComponent(name)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+        }
+        stagingDirectory = directory
+        return directory
+    }
+
+    // MARK: Save / discard
+
+    /// Writes the draft into the commands root and rescans the store.
+    /// Only possible on a clean draft — `readyToSave` implies `isValid`,
+    /// which implies a decoded manifest.
+    func save() {
+        guard let draft, phase == .readyToSave, let manifest = draft.manifest else {
+            return
+        }
+        do {
+            try writer.save(draft.generation, manifest: manifest,
+                            prompt: prompt, model: lastUsedModel ?? "")
+        } catch {
+            lastError = error.localizedDescription
+            phase = .failed
+            return
+        }
+        // The watcher would rescan within ~0.3 s anyway; the explicit pass
+        // makes the new command usable the instant the state flips.
+        store?.scan()
+        phase = .saved
+    }
+
+    /// Drops the draft and the conversation, back to `idle`.
+    func discard() {
+        generationTask?.cancel()
+        generationTask = nil
+        reset()
+    }
+
+    /// Shared teardown for `start` and `discard`.
+    private func reset() {
+        epoch += 1
+        phase = .idle
+        draft = nil
+        testResult = nil
+        lastError = nil
+        prompt = ""
+        transcript = []
+        lastRawOutput = nil
+        if let stagingDirectory {
+            try? FileManager.default.removeItem(at: stagingDirectory)
+            stagingDirectory = nil
+        }
+    }
+}

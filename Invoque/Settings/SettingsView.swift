@@ -4,6 +4,18 @@ import SwiftUI
 struct SettingsView: View {
 
     @ObservedObject var preferences: Preferences
+    @ObservedObject var makerSettings: MakerSettings
+
+    /// Draft of the API key field — written to Keychain only on Save.
+    @State private var apiKeyDraft = ""
+    /// Result line for "Test connection": nil = not run this session.
+    @State private var connectionTestResult: String?
+    @State private var connectionTestRunning = false
+
+    init(preferences: Preferences, makerSettings: MakerSettings = .shared) {
+        self.preferences = preferences
+        self.makerSettings = makerSettings
+    }
 
     var body: some View {
         Form {
@@ -11,6 +23,8 @@ struct SettingsView: View {
                 Toggle("Launch at login", isOn: $preferences.launchAtLogin)
                 Toggle("Keep query when the panel re-opens", isOn: $preferences.keepQueryOnReshow)
             }
+
+            makerSection
 
             Section {
                 LabeledContent("Version") {
@@ -21,6 +35,68 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    // MARK: Maker (PLAN §7 AI section)
+
+    /// Provider, base URL, model, and the Keychain-held API key the `make`
+    /// command uses. The key field never displays the stored secret — only
+    /// whether one is set.
+    private var makerSection: some View {
+        Section {
+            Picker("Provider", selection: $makerSettings.provider) {
+                ForEach(LLMProvider.allCases, id: \.self) { provider in
+                    Text(provider.displayName).tag(provider)
+                }
+            }
+            TextField("Base URL", text: $makerSettings.baseURL)
+            TextField("Model", text: $makerSettings.model)
+
+            HStack(spacing: 8) {
+                SecureField("API key", text: $apiKeyDraft)
+                Button("Save") {
+                    makerSettings.apiKey = apiKeyDraft
+                    apiKeyDraft = ""
+                }
+                .disabled(apiKeyDraft.isEmpty)
+            }
+            Text(makerSettings.hasAPIKey ? "API key stored in Keychain" : "No API key set")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Button(connectionTestRunning ? "Testing…" : "Test connection") {
+                    testConnection()
+                }
+                .disabled(connectionTestRunning)
+                if let connectionTestResult {
+                    Text(connectionTestResult)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        } header: {
+            Text("Maker (used by `make`)")
+        } footer: {
+            Text("Any OpenAI-compatible endpoint works — OpenAI, OpenRouter, Ollama (http://localhost:11434/v1), LM Studio. The API key is stored in Keychain, never on disk.")
+                .font(.caption)
+        }
+    }
+
+    private func testConnection() {
+        connectionTestRunning = true
+        connectionTestResult = nil
+        let client = makerSettings.makeClient()
+        Task { @MainActor in
+            do {
+                let status = try await client.testConnection()
+                connectionTestResult = status
+            } catch {
+                connectionTestResult = error.localizedDescription
+            }
+            connectionTestRunning = false
+        }
     }
 
     private static var versionString: String {

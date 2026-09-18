@@ -381,7 +381,83 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.first?.subtitle, "nope")
     }
 
+    // MARK: Maker routing
+
+    /// A MakerModel whose LLM is a stub — generation resolves to a clean
+    /// draft without touching the network.
+    private func makeMaker(responding output: String? = nil) -> MakerModel {
+        let client = MakerStubClient()
+        client.response = output ?? """
+            --- command.json ---
+            { "schemaVersion": 1, "name": "gen", "title": "Gen" }
+            --- main.js ---
+            async function run() { return { title: "done" }; }
+            """
+        return MakerModel(client: { client },
+                          runner: CommandRunner(),
+                          writer: CommandWriter(rootURL: commandDirectory))
+    }
+
+    func testMakeKeywordActivatesMaker() {
+        let model = makeModel(items: [Self.appItem(id: "app:x", title: "X")])
+        model.maker = makeMaker()
+        model.query = "make a clipboard formatter"
+        XCTAssertEqual(model.makerPrompt, "a clipboard formatter")
+        XCTAssertTrue(model.makerIsActive)
+        // The maker owns the panel — no search results behind the view.
+        XCTAssertTrue(model.results.isEmpty)
+    }
+
+    func testMkAliasActivatesMaker() {
+        let model = makeModel(items: [])
+        model.maker = makeMaker()
+        model.query = "mk a thing"
+        XCTAssertEqual(model.makerPrompt, "a thing")
+        XCTAssertTrue(model.makerIsActive)
+    }
+
+    func testBareMakeKeywordStaysSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:maker", title: "Maker")])
+        model.maker = makeMaker()
+        model.query = "make"
+        XCTAssertNil(model.makerPrompt)
+        XCTAssertFalse(model.makerIsActive)
+        XCTAssertEqual(model.results.map(\.id), ["app:maker"])
+    }
+
+    func testUnwiredMakerLeavesQueryAsSearch() {
+        // No maker injected — `make x` behaves like an ordinary query.
+        let model = makeModel(items: [Self.appItem(id: "app:x", title: "X")])
+        model.query = "make x"
+        XCTAssertFalse(model.makerIsActive)
+    }
+
+    func testSubmitWhileMakerActiveStartsGeneration() async {
+        let model = makeModel(items: [])
+        let maker = makeMaker()
+        model.maker = maker
+        model.query = "make something"
+        var submitted = false
+        model.onSubmit = { _ in submitted = true }
+        model.submit()
+
+        // The maker got the prompt instead of a row submission.
+        XCTAssertFalse(submitted)
+        for _ in 0..<100 {
+            if await maker.phase == .readyToSave { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let phase = await maker.phase
+        XCTAssertEqual(phase, .readyToSave)
+    }
+
     // MARK: Helpers
+
+    private final class MakerStubClient: LLMClientServing {
+        var model = "stub"
+        var response = ""
+        func complete(messages: [LLMMessage]) async throws -> String { response }
+    }
 
     private final class StubSource: ItemSource {
         var stubbed: [Item]

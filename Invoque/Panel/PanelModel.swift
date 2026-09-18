@@ -65,6 +65,13 @@ final class PanelModel: ObservableObject {
         didSet { refreshResults() }
     }
 
+    /// The Maker's state machine — injected at wiring time; `nil` in tests
+    /// that don't exercise `make`. While `makerPrompt` is non-nil the maker
+    /// owns the panel (the view swaps the results list for `MakerView`).
+    var maker: MakerModel? {
+        didSet { refreshResults() }
+    }
+
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
@@ -88,6 +95,32 @@ final class PanelModel: ObservableObject {
         results.indices.contains(selection) ? results[selection] : nil
     }
 
+    // MARK: Maker routing
+
+    /// Keywords that route the query into the Maker — `make ` and `mk `
+    /// (PLAN §6). The bare keyword without a trailing space stays a normal
+    /// search, same convention as filter-mode commands.
+    static let makerKeywords = ["make", "mk"]
+
+    /// The make-request text when `query` is `make <prompt>`/`mk <prompt>`,
+    /// else nil. Checked before filter routing — the built-in wins if a
+    /// command ever claims "make" as its keyword.
+    var makerPrompt: String? {
+        for keyword in Self.makerKeywords {
+            let prefix = keyword + " "
+            if query.hasPrefix(prefix) {
+                return String(query.dropFirst(prefix.count))
+            }
+        }
+        return nil
+    }
+
+    /// Whether the Maker view owns the panel right now — the prefix is
+    /// typed AND a maker is wired (unwired, "make x" stays a normal search).
+    var makerIsActive: Bool {
+        makerPrompt != nil && maker != nil
+    }
+
     // MARK: Searching
 
     /// Re-runs the current query. Called on query changes and by
@@ -95,6 +128,18 @@ final class PanelModel: ObservableObject {
     /// landing after the panel opened must fill the visible list without
     /// waiting for the next keystroke.
     func refreshResults() {
+        // The maker owns the panel: `MakerView` replaces the list, and a
+        // command source rescan must not refill rows nobody can see.
+        if makerIsActive {
+            filterTask?.cancel()
+            filterTask = nil
+            activeFilterKeyword = nil
+            // Same stale-drop as the mode-exit path: an in-flight filter
+            // run must not stamp rows over the maker-owned panel.
+            filterGeneration += 1
+            if !results.isEmpty { results = [] }
+            return
+        }
         if let resolved = activeFilter() {
             scheduleFilter(resolved.command, keyword: resolved.keyword,
                            text: resolved.text)
@@ -291,6 +336,12 @@ final class PanelModel: ObservableObject {
     /// the query expands to `"<keyword> "`, entering the command's filter
     /// mode instead of dismissing.
     func submit() {
+        // While the maker owns the panel ⏎ means "advance the maker flow"
+        // (generate when idle, save when clean) — `MakerModel` decides.
+        if makerIsActive, let maker, let prompt = makerPrompt {
+            Task { await maker.primarySubmit(prompt: prompt) }
+            return
+        }
         if let row = selectedRow,
            case .enterFilter(let keyword, let commandName) = row.action {
             // Pin the session to the picked command — its trigger word may
