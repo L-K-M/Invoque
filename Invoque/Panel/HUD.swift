@@ -10,9 +10,14 @@ enum HUD {
     private static let fadeSeconds: TimeInterval = 0.25
 
     /// Shows `text` briefly near the screen under the mouse. Re-show
-    /// replaces the current overlay rather than stacking.
-    @MainActor
+    /// replaces the current overlay rather than stacking. Callable from
+    /// any context — the AppKit work always happens on the main queue.
     static func show(_ text: String) {
+        DispatchQueue.main.async { present(text) }
+    }
+
+    @MainActor
+    private static func present(_ text: String) {
         dismiss()
 
         let label = NSTextField(labelWithString: text)
@@ -62,14 +67,19 @@ enum HUD {
         current = panel
         panel.orderFrontRegardless()
 
+        // A second show() during the window must not have its panel
+        // dismissed early by the first show's timer.
+        generation += 1
+        let shown = generation
         DispatchQueue.main.asyncAfter(deadline: .now() + visibleSeconds) {
-            dismiss()
+            if generation == shown { dismiss() }
         }
     }
 
     // MARK: Internals
 
     @MainActor private static var current: NSPanel?
+    @MainActor private static var generation = 0
 
     @MainActor
     private static func dismiss() {
