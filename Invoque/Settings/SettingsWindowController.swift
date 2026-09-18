@@ -8,14 +8,23 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
     private let preferences: Preferences
+    private let updateChecker: UpdateChecker
 
-    init(preferences: Preferences) {
+    private var activationHandoff: ActivationHandoff?
+
+    init(preferences: Preferences, updateChecker: UpdateChecker) {
         self.preferences = preferences
+        self.updateChecker = updateChecker
     }
 
     func show() {
+        // One handoff spans the complete lifetime of this presentation, including
+        // time spent hidden or behind another app.
+        beginActivationHandoff()
+
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(preferences: preferences))
+            let hosting = NSHostingController(rootView: SettingsView(preferences: preferences,
+                                                                     updateChecker: updateChecker))
             // Only let the SwiftUI content drive the window's *minimum* size; the
             // user is free to make it larger.
             hosting.sizingOptions = [.minSize]
@@ -34,12 +43,35 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
 
         // An accessory app's window doesn't take focus on its own; ask for it.
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        AppActivator.activateSelfForOwnWindow()
         window?.deminiaturize(nil)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        finishActivationHandoff()
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        // A minimized Settings window is no longer a visible Invoque destination.
+        // End its presentation now rather than leaving Invoque active with no UI
+        // onscreen.
+        finishActivationHandoff()
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        // A Dock-driven restore does not pass through `show()`, so begin a fresh
+        // presentation here as well. The handoff retains the last external target.
+        beginActivationHandoff()
+    }
+
+    private func beginActivationHandoff() {
+        if activationHandoff == nil { activationHandoff = ActivationHandoff() }
+    }
+
+    private func finishActivationHandoff() {
+        let handoff = activationHandoff
+        activationHandoff = nil
+        handoff?.restore()
     }
 }

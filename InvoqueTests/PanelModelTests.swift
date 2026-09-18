@@ -127,6 +127,101 @@ final class PanelModelTests: XCTestCase {
         XCTAssertTrue(called)
     }
 
+    // MARK: Permission requests
+
+    private func makePermissionRequest(grants: CommandPermissionGrants,
+                                       permissions: [String] = ["shell"],
+                                       args: [String] = ["a"]) throws -> CommandPermissionRequest {
+        // JSONSerialization, not interpolation — a permission string needing
+        // escaping must not corrupt the fixture.
+        let payload: [String: Any] = ["schemaVersion": 1, "name": "risky-demo",
+                                      "title": "Risky", "runtime": "js",
+                                      "entry": "main.js", "mode": "action",
+                                      "permissions": permissions]
+        let manifest = try JSONDecoder().decode(
+            CommandManifest.self,
+            from: try JSONSerialization.data(withJSONObject: payload))
+        let command = Command(manifest: manifest,
+                              directory: URL(fileURLWithPath: "/tmp/risky-demo"))
+        // The request comes from the production derivation — if "risky"
+        // ever changes, the fixture can't drift into requests the run
+        // path would never build.
+        return try XCTUnwrap(grants.consentRequest(for: command, args: args),
+                             "fixture permissions must include a risky one")
+    }
+
+    /// An isolated grants store on a fresh suite, with teardown cleanup
+    /// registered — one place so future tests can't leak a persistent domain.
+    private func makeFreshGrants() -> CommandPermissionGrants {
+        let suiteName = "PanelModelTests-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create UserDefaults suite \(suiteName)")
+        }
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return CommandPermissionGrants(defaults: defaults)
+    }
+
+    /// Plain ⏎ is neutral while the consent card is up — a permanent grant
+    /// must take ⌘⏎ or a click, never a habitual double-⏎.
+    func testPlainSubmitIsNeutralOnPendingPermissionRequest() throws {
+        let grants = makeFreshGrants()
+        let model = makeModel(items: [])
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+
+        var confirmed = false
+        model.onPermissionConfirmed = { _ in confirmed = true }
+        var submitted = false
+        model.onSubmit = { _ in submitted = true }
+        model.submit()
+
+        XCTAssertFalse(confirmed)
+        XCTAssertFalse(submitted, "⏎ must not reach the row underneath the card")
+        XCTAssertNotNil(model.permissionRequest)
+    }
+
+    /// ⌘⏎ while a consent card is up means Allow — the paused run is handed
+    /// back to the controller (which records the grant before resuming).
+    func testCommandSubmitConfirmsPendingPermissionRequest() throws {
+        let grants = makeFreshGrants()
+        let model = makeModel(items: [])
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+
+        var confirmed: CommandPermissionRequest?
+        model.onPermissionConfirmed = { confirmed = $0 }
+        var submitted = false
+        model.onSubmit = { _ in submitted = true }
+        model.submit(commandModifier: true)
+
+        XCTAssertFalse(submitted)
+        XCTAssertEqual(confirmed?.command.name, "risky-demo")
+        XCTAssertEqual(confirmed?.args, ["a"])
+        XCTAssertNil(model.permissionRequest)
+    }
+
+    func testDismissPermissionRequestClearsWithoutGrant() throws {
+        let grants = makeFreshGrants()
+        let model = makeModel(items: [])
+        let request = try makePermissionRequest(grants: grants)
+        model.permissionRequest = request
+
+        model.dismissPermissionRequest()
+        XCTAssertNil(model.permissionRequest)
+        // PanelModel holds no grants store by design — the controller owns
+        // grant recording — so "dismiss doesn't grant" is a structural
+        // guarantee this assertion pins on the store a grant *would* use.
+        XCTAssertEqual(grants.ungranted(for: request.command), [.shell])
+    }
+
+    /// A pending consent prompt belongs to the summon that produced it —
+    /// the next summon starts clean.
+    func testResetClearsPermissionRequest() throws {
+        let grants = makeFreshGrants()
+        let model = makeModel(items: [])
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+        model.reset(clearQuery: false)
+        XCTAssertNil(model.permissionRequest)
+    }
+
     // MARK: Filter mode
 
     /// A real filter-mode command on disk — `CommandRunner` runs the file.
@@ -395,7 +490,8 @@ final class PanelModelTests: XCTestCase {
             """
         return MakerModel(client: { client },
                           runner: CommandRunner(),
-                          writer: CommandWriter(rootURL: commandDirectory))
+                          writer: CommandWriter(rootURL: commandDirectory),
+                          permissionGrants: makeFreshGrants())
     }
 
     func testMakeKeywordActivatesMaker() {

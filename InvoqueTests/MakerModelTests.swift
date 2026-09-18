@@ -45,20 +45,37 @@ final class MakerModelTests: XCTestCase {
         }
     }
 
-    private func makeModel(_ client: StubClient) -> MakerModel {
+    private func makeModel(_ client: StubClient,
+                           permissionGrants: CommandPermissionGrants? = nil) -> MakerModel {
         MakerModel(client: { client },
                    runner: CommandRunner(),
                    writer: CommandWriter(rootURL: root),
-                   store: store)
+                   store: store,
+                   permissionGrants: permissionGrants ?? makeFreshGrants())
+    }
+
+    /// An isolated grants store on a fresh suite, with teardown cleanup
+    /// registered — same pattern as `PanelModelTests.makeFreshGrants`.
+    private func makeFreshGrants() -> CommandPermissionGrants {
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return CommandPermissionGrants(defaults: defaults)
     }
 
     private func generationOutput(name: String = "gen-demo",
                                   permissions: [String] = [],
-                                  usesClipboard: Bool = false) -> String {
+                                  usesClipboard: Bool = false,
+                                  usesShell: Bool = false) -> String {
         let list = permissions.map { "\"\($0)\"" }.joined(separator: ", ")
-        let body = usesClipboard
-            ? "const t = ctx.clipboard.read() ?? \"\"; return { title: t };"
-            : "return { title: \"done\" };"
+        let body: String
+        if usesShell {
+            body = "const r = ctx.shell.run(\"echo hi\"); return { title: r.stdout.trim() };"
+        } else if usesClipboard {
+            body = "const t = ctx.clipboard.read() ?? \"\"; return { title: t };"
+        } else {
+            body = "return { title: \"done\" };"
+        }
         return """
         --- command.json ---
         {
@@ -176,6 +193,136 @@ final class MakerModelTests: XCTestCase {
         XCTAssertNil(result)
     }
 
+    // MARK: Permission consent
+
+    /// A draft declaring `shell` pauses the test run for first-run consent
+    /// — generated code is untrusted, so testing can't bypass the gate
+    /// installed commands pass through.
+    func testShellDraftPausesForConsent() async {
+        let grants = makeFreshGrants()
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+
+        let request = await model.permissionRequest
+        XCTAssertEqual(request?.permissions, [.shell])
+        let result = await model.testResult
+        XCTAssertNil(result, "nothing must execute before consent")
+        // The phase is untouched — the draft stays testable/saveable.
+        let phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+    }
+
+    /// Allow records the grant and runs the paused test with the same args.
+    func testConfirmPermissionRequestRunsTest() async throws {
+        // This test needs the suite name for the reload assertion below, so
+        // it builds its own suite rather than using makeFreshGrants().
+        let suiteName = "MakerModelTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        let grants = CommandPermissionGrants(defaults: defaults)
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+        let paused = await model.permissionRequest
+        XCTAssertNotNil(paused)
+
+        await model.confirmPermissionRequest()
+        let result = await model.testResult
+        XCTAssertEqual(result?.title, "hi")
+        let cleared = await model.permissionRequest
+        XCTAssertNil(cleared)
+        // Allow must persist the grant, not just resume this run — a
+        // regression here re-prompts on every test. `paused.command`'s
+        // staging dir was deleted by the re-run's stage(), so check the
+        // installed command: identical entry bytes → same grant key.
+        await model.save()
+        let installed = try Command(
+            directory: root.appendingPathComponent("gen-demo"))
+        // Read through a fresh instance over the same suite — the grant
+        // must reach UserDefaults, not just an in-memory cache.
+        let reloaded = CommandPermissionGrants(
+            defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
+        XCTAssertTrue(reloaded.ungranted(for: installed).isEmpty)
+    }
+
+    /// A second Test tap while the consent card is up must not silently
+    /// replace the paused request — the paused snapshot and args stand until
+    /// the user answers.
+    func testSecondTestWhileConsentPendingKeepsPausedRequest() async throws {
+        let grants = makeFreshGrants()
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+        let paused = await model.permissionRequest
+        XCTAssertNotNil(paused)
+
+        await model.test()   // double-tap — must be a no-op
+        let after = await model.permissionRequest
+        // stage() uses a fresh UUID dir per run, so a replaced request
+        // would point at a different entryURL — this equality is the
+        // detection, not a tautology.
+        XCTAssertEqual(after?.command.entryURL, paused?.command.entryURL)
+        let result = await model.testResult
+        XCTAssertNil(result, "the second test must not execute either")
+    }
+
+    /// Confirm must not grant when the draft can no longer run — a save()
+    /// between pause and confirm flips phase to .saved; granting anyway would
+    /// persist consent for code that never executed.
+    func testConfirmAfterSaveRecordsNoGrant() async throws {
+        let grants = makeFreshGrants()
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+        let paused = await model.permissionRequest
+        XCTAssertNotNil(paused)
+
+        await model.save()   // phase → .saved, request left behind
+        await model.confirmPermissionRequest()
+
+        let cleared = await model.permissionRequest
+        XCTAssertNil(cleared)
+        let installed = try Command(
+            directory: root.appendingPathComponent("gen-demo"))
+        XCTAssertEqual(grants.ungranted(for: installed), [.shell],
+                       "no grant may persist for a run that never happened")
+        let result = await model.testResult
+        XCTAssertNil(result)
+    }
+
+    func testDismissPermissionRequestLeavesDraftUntested() async {
+        let grants = makeFreshGrants()
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true))]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+        await model.dismissPermissionRequest()
+        let request = await model.permissionRequest
+        XCTAssertNil(request)
+        let result = await model.testResult
+        XCTAssertNil(result)
+    }
+
     // MARK: Save
 
     func testSaveWritesCommandAndRescans() async {
@@ -219,7 +366,8 @@ final class MakerModelTests: XCTestCase {
         let model = MakerModel(client: { client },
                                runner: CommandRunner(),
                                writer: CommandWriter(rootURL: blocker),
-                               store: nil)
+                               store: nil,
+                               permissionGrants: makeFreshGrants())
 
         await model.start(prompt: "demo")
         await model.save()

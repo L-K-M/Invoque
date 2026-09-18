@@ -25,7 +25,11 @@ struct PanelView: View {
 
             Divider().padding(.horizontal, 12)
 
-            if model.makerIsActive, let maker = model.maker {
+            if let request = model.permissionRequest {
+                PermissionRequestCard(request: request,
+                                      onAllow: model.confirmPermissionRequest,
+                                      onDecline: model.dismissPermissionRequest)
+            } else if model.makerIsActive, let maker = model.maker {
                 MakerView(model: maker, prompt: model.makerPrompt ?? "")
             } else {
                 resultList
@@ -55,7 +59,7 @@ struct PanelView: View {
                 text: $model.query,
                 onUp: { model.moveSelection(by: -1) },
                 onDown: { model.moveSelection(by: 1) },
-                onReturn: { model.submit() }
+                onReturn: { model.submit(commandModifier: $0) }
             )
             // The representable's intrinsic size hugs the placeholder —
             // claim the row's width so the field doesn't resize per keystroke.
@@ -110,7 +114,9 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        Text(model.makerIsActive
+        Text(model.permissionRequest != nil
+             ? "⌘⏎ allow · esc dismiss"
+             : model.makerIsActive
              ? "⏎ generate/save · esc dismiss"
              : "↑↓ navigate · ⏎ open · esc dismiss")
             .font(.caption)
@@ -118,6 +124,56 @@ struct PanelView: View {
             .frame(maxWidth: .infinity)
     }
 }
+
+/// The first-run consent card for a command's risky permissions (PLAN
+/// §4.3): what the command wants, spelled out per permission, then
+/// Allow / Don't Run. ⌘⏎ (or the Allow button) grants; plain ⏎ is neutral.
+private struct PermissionRequestCard: View {
+
+    let request: CommandPermissionRequest
+    let onAllow: () -> Void
+    let onDecline: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "lock.shield")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    // The title is command-authored and could pose as a
+                    // system prompt — the trusted attribution leads, the
+                    // untrusted title follows it.
+                    Text("Invoque command · \(request.command.name)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(request.command.manifest.title)
+                        .font(.headline)
+                    Text("wants to:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            ForEach(request.permissions, id: \.rawValue) { permission in
+                Label(CommandPermissionGrants.consentLine(for: permission),
+                      systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .padding(.leading, 4)
+            }
+            HStack(spacing: 10) {
+                Spacer(minLength: 0)
+                Button("Don't Run", action: onDecline)
+                Button("Allow", action: onAllow)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(.horizontal, Metrics.edgePadding + 6)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// MARK: -
 
 /// Layout constants for the card and its rows.
 private enum Metrics {
@@ -194,7 +250,9 @@ private struct SearchField: NSViewRepresentable {
     @Binding var text: String
     var onUp: () -> Void
     var onDown: () -> Void
-    var onReturn: () -> Void
+    /// `true` when ⌘ was held — consent cards need ⌘⏎ so a habitual
+    /// double-⏎ can't record a permanent permission grant.
+    var onReturn: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -246,7 +304,8 @@ private struct SearchField: NSViewRepresentable {
                 parent.onDown()
                 return true
             case #selector(NSResponder.insertNewline(_:)):
-                parent.onReturn()
+                parent.onReturn(NSApp.currentEvent?.modifierFlags
+                    .contains(.command) == true)
                 return true
             default:
                 // Everything else — notably `cancelOperation:` (Esc) — stays

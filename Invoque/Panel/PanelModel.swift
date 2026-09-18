@@ -72,6 +72,29 @@ final class PanelModel: ObservableObject {
         didSet { refreshResults() }
     }
 
+    /// A command run paused on first-run consent (PLAN §4.3). While set,
+    /// the panel shows the confirmation card instead of the results list
+    /// and ⌘⏎ means Allow.
+    @Published var permissionRequest: CommandPermissionRequest?
+
+    /// Fires after the user allows a `permissionRequest` — the controller
+    /// records the grant and re-dispatches the run. Granting lives on the
+    /// controller side (where the ungranted check runs), so an unwired or
+    /// divergent store can't make Allow loop on the card forever.
+    var onPermissionConfirmed: ((CommandPermissionRequest) -> Void)?
+
+    /// Releases the paused run to the controller — it grants and resumes.
+    func confirmPermissionRequest() {
+        guard let request = permissionRequest else { return }
+        permissionRequest = nil
+        onPermissionConfirmed?(request)
+    }
+
+    /// Declines the request: no grant, no run — back to the results list.
+    func dismissPermissionRequest() {
+        permissionRequest = nil
+    }
+
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
@@ -314,6 +337,9 @@ final class PanelModel: ObservableObject {
     func reset(clearQuery: Bool) {
         if clearQuery { query = "" }
         selection = 0
+        // A pending consent prompt belongs to the last summon — it must
+        // not greet the next one.
+        permissionRequest = nil
     }
 
     /// Moves the selection by `delta` rows, wrapping at both ends.
@@ -335,7 +361,17 @@ final class PanelModel: ObservableObject {
     /// `onSubmit` — except `.enterFilter`, which stays inside the panel:
     /// the query expands to `"<keyword> "`, entering the command's filter
     /// mode instead of dismissing.
-    func submit() {
+    ///
+    /// `commandModifier` distinguishes plain ⏎ from ⌘⏎ — only ⌘⏎ grants a
+    /// pending consent request, so a habitual double-⏎ can't silently
+    /// record a permanent `shell` grant.
+    func submit(commandModifier: Bool = false) {
+        // A pending consent prompt swallows ⏎ — neutral, not "run whatever
+        // row is selected underneath the card"; ⌘⏎ means Allow.
+        if permissionRequest != nil {
+            if commandModifier { confirmPermissionRequest() }
+            return
+        }
         // While the maker owns the panel ⏎ means "advance the maker flow"
         // (generate when idle, save when clean) — `MakerModel` decides.
         if makerIsActive, let maker, let prompt = makerPrompt {

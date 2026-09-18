@@ -199,10 +199,36 @@ post-v1.
 ### 4.3 Permissions UX
 
 - Declared in the manifest, visible on the command's detail line (small lock
-  badge). First run of a `shell`/`paste` command shows a confirmation sheet
-  explaining what it will do.
+  badge). First run of a `shell`/`paste` command pauses at the run boundary
+  and shows an in-panel consent card spelling out each risky permission —
+  ⌘⏎ or the Allow button grants (plain ⏎ is neutral, so a habitual
+  double-⏎ can't record a permanent grant); "Don't Run"/esc declines.
+  Grants persist in UserDefaults keyed by command name plus a hash of the
+  entry file — consent attaches to the entry bytes the user approved, so
+  regenerated, replaced, or same-named entry code re-asks, and a manifest
+  that gains a risky permission re-asks for that one only. (Widening the
+  key to hash auxiliary files is a follow-up once commands actually ship
+  executable siblings — today nothing can `require` them, though a
+  `shell`-permitted entry could `exec` one.) The Maker's Test button
+  applies the same gate to generated drafts. **Trust boundary:** the
+  defaults domain is writable by any user-context process — including a
+  previously-consented `shell` command — so grant records are forgeable
+  and the store is a UX consent ledger, not a tamper-proof security
+  boundary. Making records tamper-evident (HMAC over name + hash +
+  permission set, key in an app-owned Keychain item) is a follow-up
+  alongside auxiliary-file hashing; both bind "consent" to "what
+  actually executes".
 - The Maker never silently grants: generated manifests suggest the minimum set;
   elevating requires the user to tick it (or edit the JSON).
+- **Why `clipboard.read` isn't gated:** the consent gate is for ambient
+  capabilities where declaration isn't enough (`shell`, `paste`); a
+  clipboard read is a declared capability the permission badge already
+  surfaces. The known gap is the *pairing*: `clipboard.read` + `network`
+  (`invoque.fetch`) is an ungated exfiltration path — the same class of
+  hole as the `open` ambient-egress fix, but for a declared module. Whether
+  `network`, `clipboard.read`, or the pair should join `risky` is a
+  manifest-schema decision deferred to a follow-up rather than grown into
+  the consent PR.
 
 ---
 
@@ -286,9 +312,26 @@ SwiftUI window from the menu-bar item (Zap's pattern):
 3. **AI** — provider, base URL, model, API key, test-connection.
 4. **Permissions** — Accessibility status (needed only for `paste` commands) +
    System Settings deep links.
-5. **About/Updates** — GitHub-release updater copied from Zap `Updates/`.
+5. **About/Updates** — GitHub-release updater ported from Zap `Updates/`:
+   `UpdateChecker` checks `L-K-M/Invoque` releases on launch + daily (24 h
+   throttle, state in UserDefaults under `UpdateChecker.L-K-M.Invoque.*`),
+   and its alert offers Download (asset → `~/Downloads`, revealed in
+   Finder), Remind Me Later, or Skip This Version (compared semantically —
+   a `v1.3.0`→`1.3.0` retag still counts as skipped). A menu-bar agent is
+   almost never active, so a background check that finds a newer release
+   *queues* it instead of popping a focus-stealing modal: an "Update
+   Available: ⟨tag⟩" item appears on the status menu, and the alert
+   presents on the next real activation or that item's click. Settings
+   shows the automatic-check toggle, a "Check Now" button and the
+   last-check date; the status menu has "Check for Updates…". A ported
+   `ActivationHandoff` + `AppActivator` (activation-only subset of Zap's
+   `WindowEnumerator`) brings the agent forward for alerts and returns
+   focus to the previous app — also wired into the Settings window
+   lifetime.
 
-Menu: *Open Invoque* · *Settings…* · *Commands folder* · *Quit*.
+Menu: *Open Invoque* · *Update Available…* (when a background check has one
+queued) · *Settings…* · *Commands folder* · *Check for Updates…* · *Quit*.
+(*Commands folder* is documented intent — the item isn't implemented yet.)
 
 ---
 
@@ -314,6 +357,8 @@ Invoque/
 │   ├── InvoqueApp.swift        # @main (or manual NSApplication bootstrap —
 │   │                           #   evaluate; Zap uses App+delegate)
 │   ├── AppDelegate.swift
+│   ├── AppActivator.swift      # activation subset of Zap's WindowEnumerator
+│   ├── ActivationHandoff.swift # focus handoff after alerts/Settings (Zap)
 │   ├── Hotkey/
 │   │   ├── CarbonHotkey.swift           # from Zap
 │   │   └── HotkeyRecorder.swift         # settings UI
@@ -330,6 +375,7 @@ Invoque/
 │   ├── Commands/
 │   │   ├── CommandManifest.swift        # Codable + validation
 │   │   ├── CommandStore.swift           # scan roots, FS-watch, reload
+│   │   ├── CommandPermissionGrants.swift # first-run consent records
 │   │   ├── JSRuntime.swift              # JSContext lifecycle, eval, errors
 │   │   ├── InvoqueBridge.swift          # invoque.* assembly per permissions
 │   │   └── Modules/                     # Clipboard, Fetch, FS, Shell, …

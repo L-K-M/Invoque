@@ -5,6 +5,7 @@ struct SettingsView: View {
 
     @ObservedObject var preferences: Preferences
     @ObservedObject var makerSettings: MakerSettings
+    @ObservedObject var updateChecker: UpdateChecker
 
     /// Draft of the API key field — written to Keychain only on Save.
     @State private var apiKeyDraft = ""
@@ -15,9 +16,12 @@ struct SettingsView: View {
     @State private var connectionTestedDraft: String?
     @State private var connectionTestRunning = false
 
-    init(preferences: Preferences, makerSettings: MakerSettings = .shared) {
+    init(preferences: Preferences,
+         makerSettings: MakerSettings = .shared,
+         updateChecker: UpdateChecker) {
         self.preferences = preferences
         self.makerSettings = makerSettings
+        self.updateChecker = updateChecker
     }
 
     var body: some View {
@@ -26,6 +30,8 @@ struct SettingsView: View {
                 Toggle("Launch at login", isOn: $preferences.launchAtLogin)
                 Toggle("Keep query when the panel re-opens", isOn: $preferences.keepQueryOnReshow)
             }
+
+            updatesSection
 
             makerSection
 
@@ -38,6 +44,35 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    // MARK: Software updates
+
+    /// Automatic GitHub release check toggle plus a manual "Check Now" and the
+    /// last check timestamp — same UI pattern as Zap's GeneralView.
+    private var updatesSection: some View {
+        Section("Software updates") {
+            Toggle("Automatically check for updates", isOn: $updateChecker.automaticChecksEnabled)
+            HStack {
+                Button("Check Now") { updateChecker.checkNow() }
+                    .disabled(updateChecker.isChecking || updateChecker.isDownloading)
+                if updateChecker.isChecking || updateChecker.isDownloading {
+                    ProgressView().controlSize(.small)
+                }
+                if updateChecker.isDownloading {
+                    Text("Downloading…").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let date = updateChecker.lastCheckDate {
+                    Text("Last checked \(date.formatted(.relative(presentation: .named)))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Text("Checks GitHub for new releases on launch and once a day. When an update is found you can download it straight to your Downloads folder (it's revealed in Finder), skip that version, or be reminded later.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: Maker (PLAN §7 AI section)

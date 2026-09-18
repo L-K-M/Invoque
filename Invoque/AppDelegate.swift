@@ -5,10 +5,17 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
-    private lazy var settingsWindow = SettingsWindowController(preferences: preferences)
+    private let updateChecker = UpdateChecker(
+        configuration: .init(owner: "L-K-M", repo: "Invoque", appName: "Invoque")
+    )
+    private lazy var settingsWindow = SettingsWindowController(preferences: preferences,
+                                                               updateChecker: updateChecker)
     private lazy var panelController = Self.makePanelController(preferences: preferences)
 
     private var statusItem: NSStatusItem?
+    /// Hidden until a background check queues an update — then it names the
+    /// pending release and presents its alert on click.
+    private var updateMenuItem: NSMenuItem?
 
     /// Identifies the summon hotkey to Carbon; any value unique within the app works.
     private static let summonHotkeyID: UInt32 = 1
@@ -25,6 +32,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenu.install(into: NSApplication.shared)
         setUpStatusItem()
         setUpSummonHotkey()
+        // A background check that finds an update while the app is inactive
+        // queues it — the menu item is its discoverable surface until the
+        // alert can present without stealing focus.
+        updateChecker.onPendingUpdateChanged = { [weak self] tag in
+            guard let item = self?.updateMenuItem else { return }
+            item.isHidden = tag == nil
+            if let tag { item.title = "Update Available: \(tag)" }
+        }
+        updateChecker.start()   // check GitHub for a newer release on launch + daily
     }
 
     // MARK: Status item
@@ -60,9 +76,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openItem.target = self
         menu.addItem(openItem)
 
+        let pendingItem = NSMenuItem(title: "", action: #selector(showPendingUpdate), keyEquivalent: "")
+        pendingItem.target = self
+        pendingItem.isHidden = true
+        menu.addItem(pendingItem)
+        updateMenuItem = pendingItem
+
         let settingsItem = NSMenuItem(title: "Invoque Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
+
+        let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updatesItem.target = self
+        menu.addItem(updatesItem)
 
         menu.addItem(.separator())
 
@@ -85,6 +111,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController.show()
     }
 
+    @objc private func checkForUpdates() {
+        updateChecker.checkNow()
+    }
+
+    @objc private func showPendingUpdate() {
+        updateChecker.presentPendingUpdateNow()
+    }
+
     /// Assembles the search stack and its owner. `model` is built first so
     /// `AppSource.onReload` can re-run the open query — the hook must be
     /// passed at init (a post-init assignment can miss the first scan).
@@ -104,6 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.commandLookup = { [commandStore] name in
             commandStore.command(named: name)
         }
+        // First-run consent for risky permissions — one store shared by the
+        // panel's run path and the Maker's test path, so Allow once covers
+        // both (PLAN §4.3).
+        let permissionGrants = CommandPermissionGrants()
         // The Maker: `make `/`mk ` routes to it. The client is a factory so
         // each generation picks up the current Settings (model/key changes
         // apply without a relaunch).
@@ -113,7 +151,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The writer saves into the same root the store scans — a saved
             // command is visible to the launcher immediately.
             writer: CommandWriter(rootURL: commandStore.primaryRootURL),
-            store: commandStore)
+            store: commandStore,
+            permissionGrants: permissionGrants)
         // Kick the initial scan only after the model is fully wired — an
         // unstructured Task starts immediately and can outrun the lines
         // above. (The store's onChange→onReload subscription is init-time,
@@ -130,7 +169,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return PanelController(preferences: preferences, model: model,
                                searchModel: searchModel,
                                commandStore: commandStore,
-                               commandRunner: commandRunner)
+                               commandRunner: commandRunner,
+                               permissionGrants: permissionGrants)
     }
 
     @objc private func quit() {
