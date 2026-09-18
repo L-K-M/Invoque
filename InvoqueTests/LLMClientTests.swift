@@ -61,6 +61,8 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(request?.httpMethod, "POST")
         XCTAssertEqual(request?.value(forHTTPHeaderField: "Authorization"),
                        "Bearer sk-test")
+        // OpenAI mode must not leak the Anthropic header pair.
+        XCTAssertNil(request?.value(forHTTPHeaderField: "x-api-key"))
         let body = request?.httpBody.flatMap {
             try? JSONSerialization.jsonObject(with: $0)
         } as? [String: Any]
@@ -92,6 +94,8 @@ final class LLMClientTests: XCTestCase {
                        "https://api.anthropic.com/v1/messages")
         XCTAssertEqual(request?.httpMethod, "POST")
         XCTAssertEqual(request?.value(forHTTPHeaderField: "x-api-key"), "sk-test")
+        // Anthropic mode must not leak the OpenAI-style bearer header.
+        XCTAssertNil(request?.value(forHTTPHeaderField: "Authorization"))
         XCTAssertEqual(request?.value(forHTTPHeaderField: "anthropic-version"),
                        "2023-06-01")
         let body = request?.httpBody.flatMap {
