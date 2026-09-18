@@ -10,6 +10,9 @@ struct SettingsView: View {
     @State private var apiKeyDraft = ""
     /// Result line for "Test connection": nil = not run this session.
     @State private var connectionTestResult: String?
+    /// The draft key the last test ran against — `nil` when the stored
+    /// key was tested. Lets Save keep a still-accurate result line.
+    @State private var connectionTestedDraft: String?
     @State private var connectionTestRunning = false
 
     init(preferences: Preferences, makerSettings: MakerSettings = .shared) {
@@ -62,6 +65,7 @@ struct SettingsView: View {
                 if makerSettings.hasAPIKey {
                     Button("Remove", role: .destructive) {
                         makerSettings.apiKey = ""
+                        connectionTestResult = nil
                     }
                 }
             }
@@ -92,6 +96,9 @@ struct SettingsView: View {
     private func saveAPIKeyDraft() {
         guard !apiKeyDraft.isEmpty else { return }
         makerSettings.apiKey = apiKeyDraft
+        // The status line is only accurate for the draft actually tested —
+        // editing after a test leaves it describing the wrong key.
+        if apiKeyDraft != connectionTestedDraft { connectionTestResult = nil }
         apiKeyDraft = ""
     }
 
@@ -102,6 +109,7 @@ struct SettingsView: View {
         let keyOverride = apiKeyDraft.isEmpty ? nil : apiKeyDraft
         connectionTestRunning = true
         connectionTestResult = nil
+        connectionTestedDraft = keyOverride
         let client = makerSettings.makeClient(keyOverride: keyOverride)
         Task { @MainActor in
             do {
