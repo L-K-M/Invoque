@@ -25,9 +25,13 @@ enum ActionPerformer {
         case .system(let systemAction):
             SystemActionPerformer.perform(systemAction)
         case .runCommand(let name, _):
-            // Command rows arrive with the command-source milestone; nothing
-            // emits this action yet, so a stray one is logged, not run.
-            NSLog("Invoque: runCommand '%@' ignored — command runtime not wired", name)
+            // Intercepted by PanelController, which owns the runtime —
+            // reaching here means a stray row bypassed the model's submit.
+            NSLog("Invoque: runCommand '%@' reached ActionPerformer — ignored", name)
+        case .enterFilter(let keyword):
+            // Intercepted by PanelModel.submit (it expands the query rather
+            // than dismissing); reaching here means the same bypass.
+            NSLog("Invoque: enterFilter '%@' reached ActionPerformer — ignored", keyword)
         }
     }
 }

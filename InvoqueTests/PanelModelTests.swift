@@ -5,17 +5,24 @@ final class PanelModelTests: XCTestCase {
 
     private var defaults: UserDefaults!
     private var suiteName: String!
+    private var commandDirectory: URL!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         suiteName = "invoque-test-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
+        commandDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-panel-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: commandDirectory,
+                                                withIntermediateDirectories: true)
     }
 
     override func tearDownWithError() throws {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         suiteName = nil
+        try? FileManager.default.removeItem(at: commandDirectory)
+        commandDirectory = nil
         try super.tearDownWithError()
     }
 
@@ -118,6 +125,111 @@ final class PanelModelTests: XCTestCase {
         model.onSubmit = { called = true; XCTAssertNil($0) }
         model.submit()
         XCTAssertTrue(called)
+    }
+
+    // MARK: Filter mode
+
+    /// A real filter-mode command on disk — `CommandRunner` runs the file.
+    private func writeFilterCommand(keyword: String, source: String,
+                                    name: String = "test-filter") throws -> Command {
+        let manifest = """
+        {
+          "schemaVersion": 1, "name": "\(name)", "title": "\(name)",
+          "runtime": "js", "entry": "main.js", "mode": "filter",
+          "keywords": ["\(keyword)"]
+        }
+        """
+        try manifest.write(to: commandDirectory.appendingPathComponent("command.json"),
+                           atomically: true, encoding: .utf8)
+        try source.write(to: commandDirectory.appendingPathComponent("main.js"),
+                         atomically: true, encoding: .utf8)
+        return try Command(directory: commandDirectory)
+    }
+
+    /// Polls until `model.results` satisfies `predicate` or ~2 s pass —
+    /// filter results arrive asynchronously past the 80 ms debounce.
+    private func awaitResults(_ model: PanelModel,
+                              _ predicate: ([ResultRow]) -> Bool) async {
+        for _ in 0..<100 where !predicate(model.results) {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
+    func testEnterFilterActionExpandsQuery() throws {
+        let item = Item(id: "cmd:json", title: "JSON Tools", subtitle: "",
+                        icon: .symbol("terminal"), action: .enterFilter(keyword: "jf"),
+                        matchText: "JSON Tools")
+        let model = makeModel(items: [item])
+        model.query = "json"
+        model.submit()
+        XCTAssertEqual(model.query, "jf ")
+    }
+
+    func testFilterKeywordRunsCommandAndMapsRows() async throws {
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run(args) {
+                return { items: [
+                    { title: "got " + args[0], arg: "https://example.com/" + args[0] },
+                    { title: "copy " + args[0], arg: "text:" + args[0] },
+                ] };
+            }
+            """)
+        let model = makeModel(items: [])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.commandRunner = CommandRunner()
+        model.query = "jf abc"
+
+        await awaitResults(model) { $0.count == 2 }
+        XCTAssertEqual(model.results.map(\.title), ["got abc", "copy abc"])
+        XCTAssertEqual(model.results.first?.id, "filter:test-filter:0")
+        // An http(s) arg opens; anything else copies.
+        XCTAssertEqual(model.results[0].action,
+                       .openURL(URL(string: "https://example.com/abc")!))
+        XCTAssertEqual(model.results[1].action, .copyText("text:abc"))
+    }
+
+    func testBareKeywordDoesNotEnterFilterMode() async throws {
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run() { return { items: [{ title: "x" }] }; }
+            """)
+        let model = makeModel(items: [Self.appItem(id: "app:jfutil", title: "JF Utility")])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.commandRunner = CommandRunner()
+        model.query = "jf"
+        // No trailing space → normal search, not the filter list.
+        XCTAssertEqual(model.results.map(\.id), ["app:jfutil"])
+    }
+
+    func testStaleFilterResultIsDropped() async throws {
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run(args) {
+                return { items: [{ title: "got " + args[0] }] };
+            }
+            """)
+        let model = makeModel(items: [])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.commandRunner = CommandRunner()
+        // Two keystroke states land inside one debounce window; the first
+        // task is cancelled before it can run.
+        model.query = "jf a"
+        model.query = "jf ab"
+
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(model.results.map(\.title), ["got ab"])
+    }
+
+    func testFilterFailureShowsErrorRow() async throws {
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run() { throw new Error("nope"); }
+            """)
+        let model = makeModel(items: [])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.commandRunner = CommandRunner()
+        model.query = "jf x"
+
+        await awaitResults(model) { !$0.isEmpty }
+        XCTAssertEqual(model.results.first?.title, "Command failed")
+        XCTAssertEqual(model.results.first?.subtitle, "nope")
     }
 
     // MARK: Helpers

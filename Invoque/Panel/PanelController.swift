@@ -16,26 +16,39 @@ final class PanelController: NSObject {
     private let preferences: Preferences
     private let searchModel: SearchModel
     private let model: PanelModel
+    private let commandStore: CommandStore
+    private let commandRunner: CommandRunner
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
 
     /// `model` is injected because the app's `AppSource.onReload` hook must
     /// reference it before `SearchModel` (which owns the source) exists.
-    init(preferences: Preferences, model: PanelModel, searchModel: SearchModel) {
+    init(preferences: Preferences, model: PanelModel, searchModel: SearchModel,
+         commandStore: CommandStore, commandRunner: CommandRunner) {
         self.preferences = preferences
         self.searchModel = searchModel
         self.model = model
+        self.commandStore = commandStore
+        self.commandRunner = commandRunner
         super.init()
 
         // Dismiss first, then perform: a slow action (app launch, AppleEvent
-        // consent) must not hold the panel open.
+        // consent) must not hold the panel open. `.runCommand` is the
+        // exception — an async command run isn't blocking, and a `{items}`
+        // result needs the list to stay.
         model.onSubmit = { [weak self] row in
             guard let self else { return }
-            self.hide()
-            if let row {
-                self.searchModel.recordSelection(itemID: row.id)
-                ActionPerformer.perform(row.action)
+            guard let row else {
+                self.hide()
+                return
             }
+            self.searchModel.recordSelection(itemID: row.id)
+            if case .runCommand(let name, let args) = row.action {
+                self.runCommand(named: name, args: args)
+                return
+            }
+            self.hide()
+            ActionPerformer.perform(row.action)
         }
         model.searchModel = searchModel
     }
@@ -89,6 +102,41 @@ final class PanelController: NSObject {
 
     func hide() {
         panel?.orderOut(nil)
+    }
+
+    // MARK: Commands
+
+    /// Runs an action-mode command. The panel stays up while it runs —
+    /// the run is async, so nothing blocks — then:
+    /// `{items}` replaces the list in place (PLAN §4.1), `{title}` shows
+    /// the HUD and dismisses, `.void` dismisses silently, and a failure
+    /// surfaces as a one-line HUD so it isn't invisible.
+    private func runCommand(named name: String, args: [String]) {
+        guard let command = commandStore.command(named: name) else {
+            hide()
+            HUD.show("Unknown command: \(name)")
+            return
+        }
+        let runner = commandRunner
+        Task {
+            let result = await runner.run(command: command, args: args)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                switch result.output {
+                case .items(let items):
+                    self.model.showCommandResults(
+                        PanelModel.commandRows(command: command, items: items))
+                case .title(let title):
+                    self.hide()
+                    HUD.show(title)
+                case .void:
+                    self.hide()
+                    if let error = result.error {
+                        HUD.show(error.localizedDescription)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Panel lifecycle

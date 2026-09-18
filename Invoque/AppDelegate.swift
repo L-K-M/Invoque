@@ -90,14 +90,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// passed at init (a post-init assignment can miss the first scan).
     private static func makePanelController(preferences: Preferences) -> PanelController {
         let model = PanelModel()
+        let commandStore = CommandStore()
+        commandStore.startWatching()
+        let commandSource = CommandSource(store: commandStore)
+        commandSource.onReload = { [weak model] in model?.refreshResults() }
+        let commandRunner = CommandRunner()
+        model.commandRunner = commandRunner
+        model.filterLookup = { [commandSource] keyword in
+            commandSource.filterCommand(forKeyword: keyword)
+        }
         let sources: [ItemSource] = [
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
+            commandSource,
             CalculatorSource(),
             SystemSource(),
             WebSource(),
         ]
         let searchModel = SearchModel(sources: sources, frecency: Frecency())
-        return PanelController(preferences: preferences, model: model, searchModel: searchModel)
+        return PanelController(preferences: preferences, model: model,
+                               searchModel: searchModel,
+                               commandStore: commandStore,
+                               commandRunner: commandRunner)
     }
 
     @objc private func quit() {

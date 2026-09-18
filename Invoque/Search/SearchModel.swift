@@ -110,7 +110,10 @@ final class SearchModel {
     /// the whole `Item`.
     func recordSelection(itemID: String) {
         guard !itemID.hasPrefix(Item.webIDPrefix),
-              !itemID.hasPrefix(Item.calculatorIDPrefix) else { return }
+              !itemID.hasPrefix(Item.calculatorIDPrefix),
+              // Filter rows embed a per-run index — recording them would
+              // persist meaningless ids and slowly evict real history.
+              !itemID.hasPrefix(Item.filterRowIDPrefix) else { return }
         frecency.record(itemID)
     }
 }

@@ -1,0 +1,85 @@
+import AppKit
+
+/// Transient one-line overlay — the "HUD" an action-mode command's
+/// `{title}` result (or a failure message) renders as (PLAN §4.1).
+/// Non-activating, centered on the screen under the mouse, auto-dismisses.
+enum HUD {
+
+    /// How long the overlay stays up before fading out.
+    private static let visibleSeconds: TimeInterval = 1.6
+    private static let fadeSeconds: TimeInterval = 0.25
+
+    /// Shows `text` briefly near the screen under the mouse. Re-show
+    /// replaces the current overlay rather than stacking.
+    @MainActor
+    static func show(_ text: String) {
+        dismiss()
+
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingMiddle
+        label.maximumNumberOfLines = 1
+
+        let padding = NSSize(width: 40, height: 22)
+        let contentSize = NSSize(
+            width: min(label.fittingSize.width + padding.width, 560),
+            height: label.fittingSize.height + padding.height)
+
+        let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: contentSize))
+        effect.material = .hudWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = 12
+        label.frame = NSRect(
+            x: padding.width / 2,
+            y: padding.height / 2,
+            width: contentSize.width - padding.width,
+            height: label.fittingSize.height)
+        effect.addSubview(label)
+
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false)
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.contentView = effect
+
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+        if let frame = screen?.visibleFrame {
+            panel.setFrameOrigin(NSPoint(
+                x: frame.midX - contentSize.width / 2,
+                y: frame.midY - contentSize.height / 2))
+        }
+
+        current = panel
+        panel.orderFrontRegardless()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + visibleSeconds) {
+            dismiss()
+        }
+    }
+
+    // MARK: Internals
+
+    @MainActor private static var current: NSPanel?
+
+    @MainActor
+    private static func dismiss() {
+        guard let panel = current else { return }
+        current = nil
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = fadeSeconds
+            panel.animator().alphaValue = 0
+        } completionHandler: {
+            panel.orderOut(nil)
+        }
+    }
+}
