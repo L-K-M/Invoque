@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 /// The launcher card's background material — Invoque's counterpart to Jetty's
 /// `GlassBackground`, sharing its approach.
@@ -23,6 +22,11 @@ struct PanelBackground: View {
     /// solid fills go fully opaque when the user asked for it.
     var opacity: Double
     var cornerRadius: CGFloat
+    /// The user's Reduce Transparency setting, supplied by the caller (the
+    /// `@Environment` key needs macOS 14; we target 13) — gates the
+    /// `.glassEffect` path, which has no opaque-transparency fallback of its
+    /// own.
+    var reduceTransparency: Bool
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -79,10 +83,6 @@ struct PanelBackground: View {
             }
         }
         .clipShape(shape)
-    }
-
-    private var reduceTransparency: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
     }
 
     // 0° = top→bottom, increasing counterclockwise on screen — 90° runs left→right

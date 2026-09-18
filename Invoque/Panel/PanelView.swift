@@ -80,7 +80,8 @@ struct PanelView: View {
             opacity: AccessibilityDisplaySettings.effectiveBackgroundOpacity(
                 configured: preferences.backgroundOpacity,
                 reduceTransparency: a11y.reduceTransparency),
-            cornerRadius: preferences.panelCornerRadius)
+            cornerRadius: preferences.panelCornerRadius,
+            reduceTransparency: a11y.reduceTransparency)
     }
 
     /// The retro corner flourish — ZX stripes, boing ball, … — drawn hugging a
@@ -103,6 +104,9 @@ struct PanelView: View {
                 }
             }
             .opacity(preferences.decorationOpacity)
+            // Decorative: each style disables hit-testing internally, and the
+            // guard here keeps any future case from swallowing header clicks.
+            .allowsHitTesting(false)
             .clipShape(RoundedRectangle(cornerRadius: preferences.panelCornerRadius,
                                         style: .continuous))
         }
@@ -118,10 +122,14 @@ struct PanelView: View {
         }
     }
 
+    /// Approximate height of the header row — keep in sync with `searchField`'s
+    /// font/padding if the header is ever restyled.
+    static let headerRowHeight: CGFloat = 54
+
     /// The boing ball's diameter, proportional to the header like Zap's
-    /// (`headerHeight × min(size × 0.12, 2)`) — our header row is ~54pt.
+    /// (`headerHeight × min(size × 0.12, 2)`).
     static func ballDiameter(decorationSize: Double) -> CGFloat {
-        54 * min(decorationSize * 0.12, 2)
+        headerRowHeight * min(decorationSize * 0.12, 2)
     }
 
     /// Whether the theme owns the text color — true on `solid`/`gradient`,

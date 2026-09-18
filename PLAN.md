@@ -336,13 +336,13 @@ SwiftUI window from the menu-bar item (Zap's pattern):
 2. **Appearance** — the theming controls from §3 (material, colors, selection,
    adaptive accent, layout, decoration, CRT, presets with import/export) plus
    a live preview of the real `PanelView` fed by an inert sample `PanelModel`.
-2. **Commands** — list of loaded commands (title, mode, permissions, origin),
+3. **Commands** — list of loaded commands (title, mode, permissions, origin),
    commands directories (add/remove, reveal in Finder), per-command
    enable/disable.
-3. **AI** — provider, base URL, model, API key, test-connection.
-4. **Permissions** — Accessibility status (needed only for `paste` commands) +
+4. **AI** — provider, base URL, model, API key, test-connection.
+5. **Permissions** — Accessibility status (needed only for `paste` commands) +
    System Settings deep links.
-5. **About/Updates** — GitHub-release updater ported from Zap `Updates/`:
+6. **About/Updates** — GitHub-release updater ported from Zap `Updates/`:
    `UpdateChecker` checks `L-K-M/Invoque` releases on launch + daily (24 h
    throttle, state in UserDefaults under `UpdateChecker.L-K-M.Invoque.*`),
    and its alert offers Download (asset → `~/Downloads`, revealed in

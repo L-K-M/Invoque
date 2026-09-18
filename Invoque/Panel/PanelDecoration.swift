@@ -31,10 +31,12 @@ struct PanelDecoration: View {
             let axis = CGVector(dx: (trailing ? 1 : -1) * invSqrt2, dy: invSqrt2)
             let inward = CGVector(dx: (trailing ? -1 : 1) * invSqrt2, dy: invSqrt2)
 
-            // A pitch equal to the thickness gives solid, gapless bands. The
-            // overshoot pushes each stripe past both edges so the clip — not the
-            // butt cap — defines the flush edge.
-            let pitch = thickness
+            // Bands overlap by ~1pt so each stripe's AA feather lands on the
+            // previous band's solid fill — exactly-abutting strokes would leave
+            // a ~25%-background hairline at every band boundary. The overshoot
+            // pushes each stripe past both edges so the clip — not the butt
+            // cap — defines the flush edge.
+            let pitch = max(thickness - 1, thickness / 2)
             let overshoot = thickness * 1.8
             // Distance along the diagonal from the sharp corner to the rounded
             // edge's nearest point, so the first band clears the rounding.

@@ -219,7 +219,7 @@ struct AppearanceView: View {
         do {
             try data.write(to: url)
         } catch {
-            NSLog("Invoque: failed to export theme: %@", error.localizedDescription)
+            NSAlert(error: error).runModal()
         }
     }
 
@@ -231,15 +231,25 @@ struct AppearanceView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let data = try? Data(contentsOf: url),
-              let preset = AppearancePreset.decode(from: data) else {
-            NSLog("Invoque: couldn't read a theme from %@", url.lastPathComponent)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url, options: .mappedIfSafe)
+        } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
+        guard let preset = AppearancePreset.decode(from: data) else {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn't Import Theme"
+            alert.informativeText = "\"\(url.lastPathComponent)\" doesn't look like an Invoque, Jetty, or Zap theme file."
+            alert.runModal()
             return
         }
         preset.apply(to: preferences)
     }
 
     private func resetDefaults() {
-        AppearancePreset.classic.apply(to: preferences)
+        preferences.resetAppearanceToDefaults()
     }
 }

@@ -104,6 +104,7 @@ struct BoingBallDecoration: View {
     /// resolution with interpolation off so the chunky pixels survive scaling.
     /// Cached per rendition.
     static func sphereImage(diameter: CGFloat, scale: CGFloat, pixelated: Bool) -> Image? {
+        assert(Thread.isMainThread, "sphere cache is main-thread-only by design")
         if pixelated {
             if let cached = cachedPixelated { return cached }
             guard let bitmap = renderSphere(pixelDiameter: pixelatedResolution,

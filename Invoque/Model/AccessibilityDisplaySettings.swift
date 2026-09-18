@@ -13,6 +13,10 @@ import SwiftUI
 ///
 /// An `ObservableObject` so SwiftUI re-renders when the user changes either
 /// setting mid-session; `NSWorkspace` posts a notification for both.
+///
+/// Main-thread only by design: `@Published` mutations must reach SwiftUI on
+/// the main queue, which the observer's `queue: .main` delivers — the asserts
+/// keep that an *enforced* invariant rather than a convention.
 final class AccessibilityDisplaySettings: ObservableObject {
 
     static let shared = AccessibilityDisplaySettings()
@@ -27,6 +31,7 @@ final class AccessibilityDisplaySettings: ObservableObject {
     private var observer: NSObjectProtocol?
 
     init(workspace: NSWorkspace = .shared) {
+        assert(Thread.isMainThread, "AccessibilityDisplaySettings publishes on main only")
         self.workspace = workspace
         reduceTransparency = workspace.accessibilityDisplayShouldReduceTransparency
         reduceMotion = workspace.accessibilityDisplayShouldReduceMotion
@@ -46,6 +51,7 @@ final class AccessibilityDisplaySettings: ObservableObject {
     }
 
     private func refresh() {
+        assert(Thread.isMainThread, "AccessibilityDisplaySettings publishes on main only")
         let transparency = workspace.accessibilityDisplayShouldReduceTransparency
         let motion = workspace.accessibilityDisplayShouldReduceMotion
         if reduceTransparency != transparency { reduceTransparency = transparency }

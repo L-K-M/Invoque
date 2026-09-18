@@ -1,9 +1,12 @@
 import SwiftUI
 
 /// A circular dial for picking a `0...360`° angle by dragging or clicking around
-/// it. 0° points straight down (a top→bottom gradient) and increases clockwise,
-/// matching `Preferences.gradientAngle`. The knob points in the gradient's flow
-/// direction, so the dial reads as "the gradient runs this way."
+/// it. 0° points straight down (a top→bottom gradient) and increases
+/// counterclockwise on screen (90° right, 180° up, 270° left) — screen y grows
+/// downward, so (sin, cos) sweeps bottom→right→top→left. Matches
+/// `Preferences.gradientAngle` and `PanelBackground`'s endpoint math. The knob
+/// points in the gradient's flow direction, so the dial reads as "the gradient
+/// runs this way."
 struct AngleDial: View {
     @Binding var angleDegrees: Double
     var diameter: CGFloat = 46
@@ -44,5 +47,15 @@ struct AngleDial: View {
         )
         .accessibilityLabel("Gradient direction")
         .accessibilityValue("\(Int(angleDegrees.rounded())) degrees")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                angleDegrees = (angleDegrees + 15).truncatingRemainder(dividingBy: 360)
+            case .decrement:
+                angleDegrees = (angleDegrees + 345).truncatingRemainder(dividingBy: 360)
+            @unknown default:
+                break
+            }
+        }
     }
 }

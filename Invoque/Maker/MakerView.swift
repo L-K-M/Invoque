@@ -67,6 +67,7 @@ struct MakerView: View {
                 .foregroundStyle(secondaryColor)
             Text(displayedPrompt)
                 .font(.headline)
+                .foregroundStyle(titleColor)
                 .lineLimit(2)
             Spacer(minLength: 0)
         }
@@ -238,6 +239,7 @@ struct MakerView: View {
                     .map { CommandPermissionGrants.consentLine(for: $0) }
                     .joined(separator: "; "))
                 .font(.caption)
+                .foregroundStyle(titleColor)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Button("Allow & Test") { Task { await model.confirmPermissionRequest() } }

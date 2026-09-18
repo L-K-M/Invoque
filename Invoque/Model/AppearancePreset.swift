@@ -64,30 +64,38 @@ extension AppearancePreset {
     /// `Preferences` does on load — so an imported (possibly hand-edited or
     /// stale) file can never push a setting out of range or set an invalid color.
     func apply(to preferences: Preferences) {
+        let limits = Preferences.Limit.self
         preferences.panelMaterial = material
         preferences.tintHex = Self.validColor(tintHex, default: Preferences.Default.tintHex)
         preferences.gradientHex = Self.validColor(gradientHex, default: Preferences.Default.gradientHex)
         preferences.gradientAngle = Self.normalizedAngle(gradientAngle)
-        preferences.backgroundOpacity = Self.clamp(backgroundOpacity, 0, 1, Preferences.Default.backgroundOpacity)
+        preferences.backgroundOpacity = Self.clamp(backgroundOpacity, in: limits.unitInterval,
+                                                   fallback: Preferences.Default.backgroundOpacity)
         preferences.highlightHex = Self.validColor(highlightHex, default: Preferences.Default.highlightHex)
-        preferences.highlightOpacity = Self.clamp(highlightOpacity, 0, 1, Preferences.Default.highlightOpacity)
+        preferences.highlightOpacity = Self.clamp(highlightOpacity, in: limits.unitInterval,
+                                                  fallback: Preferences.Default.highlightOpacity)
         preferences.labelHex = Self.validColor(labelHex, default: Preferences.Default.labelHex)
-        preferences.panelCornerRadius = Self.clamp(cornerRadius, 0, 32, Preferences.Default.panelCornerRadius)
-        preferences.highlightCornerRadius = Self.clamp(highlightCornerRadius, 0, 32, Preferences.Default.highlightCornerRadius)
+        preferences.panelCornerRadius = Self.clamp(cornerRadius, in: limits.radius,
+                                                   fallback: Preferences.Default.panelCornerRadius)
+        preferences.highlightCornerRadius = Self.clamp(highlightCornerRadius, in: limits.radius,
+                                                       fallback: Preferences.Default.highlightCornerRadius)
         preferences.adaptiveAccent = adaptiveAccent
         preferences.decorationStyle = DecorationStyle(rawValue: decorationStyle) ?? Preferences.Default.decorationStyle
         preferences.decorationPosition = DecorationPosition(rawValue: decorationPosition) ?? Preferences.Default.decorationPosition
-        preferences.decorationOpacity = Self.clamp(decorationOpacity, 0, 1, Preferences.Default.decorationOpacity)
-        preferences.decorationSize = Self.clamp(decorationSize, 4, 30, Preferences.Default.decorationSize)
+        preferences.decorationOpacity = Self.clamp(decorationOpacity, in: limits.unitInterval,
+                                                   fallback: Preferences.Default.decorationOpacity)
+        preferences.decorationSize = Self.clamp(decorationSize, in: limits.decorationSize,
+                                                fallback: Preferences.Default.decorationSize)
         preferences.crtEnabled = crtEnabled
-        preferences.crtIntensity = Self.clamp(crtIntensity, 0, 1, Preferences.Default.crtIntensity)
+        preferences.crtIntensity = Self.clamp(crtIntensity, in: limits.unitInterval,
+                                              fallback: Preferences.Default.crtIntensity)
     }
 
     // MARK: Validation (mirrors Preferences' own load-time validation)
 
-    private static func clamp(_ value: Double, _ lower: Double, _ upper: Double, _ fallback: Double) -> Double {
+    private static func clamp(_ value: Double, in range: ClosedRange<Double>, fallback: Double) -> Double {
         guard value.isFinite else { return fallback }
-        return Swift.min(Swift.max(value, lower), upper)
+        return Swift.min(Swift.max(value, range.lowerBound), range.upperBound)
     }
 
     private static func validColor(_ hex: String, default fallback: String) -> String {
@@ -108,27 +116,42 @@ extension AppearancePreset {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Preferences.Default.self
-        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Imported"
+        // Every field decodes through `field`, which tolerates a *wrong JSON
+        // type* as well as a missing key — `"gradientAngle": "30"` in a
+        // hand-edited file must not fail the whole import.
+        func field<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
+            (try? c.decodeIfPresent(type, forKey: key)) ?? nil
+        }
+        name = Self.importedName(field(String.self, .name), fallback: "Imported")
         // Tolerate an *unknown* enum raw value, not just a missing key: a material
         // a future build adds would otherwise throw `dataCorrupted` and fail the
         // whole import with a misleading "not a theme" error.
-        material = ((try? c.decodeIfPresent(PanelMaterial.self, forKey: .material)) ?? nil) ?? d.panelMaterial
-        tintHex = try c.decodeIfPresent(String.self, forKey: .tintHex) ?? d.tintHex
-        gradientHex = try c.decodeIfPresent(String.self, forKey: .gradientHex) ?? d.gradientHex
-        gradientAngle = try c.decodeIfPresent(Double.self, forKey: .gradientAngle) ?? d.gradientAngle
-        backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? d.backgroundOpacity
-        highlightHex = try c.decodeIfPresent(String.self, forKey: .highlightHex) ?? d.highlightHex
-        highlightOpacity = try c.decodeIfPresent(Double.self, forKey: .highlightOpacity) ?? d.highlightOpacity
-        labelHex = try c.decodeIfPresent(String.self, forKey: .labelHex) ?? d.labelHex
-        cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? d.panelCornerRadius
-        highlightCornerRadius = try c.decodeIfPresent(Double.self, forKey: .highlightCornerRadius) ?? d.highlightCornerRadius
-        adaptiveAccent = try c.decodeIfPresent(Bool.self, forKey: .adaptiveAccent) ?? d.adaptiveAccent
-        decorationStyle = try c.decodeIfPresent(String.self, forKey: .decorationStyle) ?? d.decorationStyle.rawValue
-        decorationPosition = try c.decodeIfPresent(String.self, forKey: .decorationPosition) ?? d.decorationPosition.rawValue
-        decorationOpacity = try c.decodeIfPresent(Double.self, forKey: .decorationOpacity) ?? d.decorationOpacity
-        decorationSize = try c.decodeIfPresent(Double.self, forKey: .decorationSize) ?? d.decorationSize
-        crtEnabled = try c.decodeIfPresent(Bool.self, forKey: .crtEnabled) ?? d.crtEnabled
-        crtIntensity = try c.decodeIfPresent(Double.self, forKey: .crtIntensity) ?? d.crtIntensity
+        material = field(PanelMaterial.self, .material) ?? d.panelMaterial
+        tintHex = field(String.self, .tintHex) ?? d.tintHex
+        gradientHex = field(String.self, .gradientHex) ?? d.gradientHex
+        gradientAngle = field(Double.self, .gradientAngle) ?? d.gradientAngle
+        backgroundOpacity = field(Double.self, .backgroundOpacity) ?? d.backgroundOpacity
+        highlightHex = field(String.self, .highlightHex) ?? d.highlightHex
+        highlightOpacity = field(Double.self, .highlightOpacity) ?? d.highlightOpacity
+        labelHex = field(String.self, .labelHex) ?? d.labelHex
+        cornerRadius = field(Double.self, .cornerRadius) ?? d.panelCornerRadius
+        highlightCornerRadius = field(Double.self, .highlightCornerRadius) ?? d.highlightCornerRadius
+        adaptiveAccent = field(Bool.self, .adaptiveAccent) ?? d.adaptiveAccent
+        decorationStyle = field(String.self, .decorationStyle) ?? d.decorationStyle.rawValue
+        decorationPosition = field(String.self, .decorationPosition) ?? d.decorationPosition.rawValue
+        decorationOpacity = field(Double.self, .decorationOpacity) ?? d.decorationOpacity
+        decorationSize = field(Double.self, .decorationSize) ?? d.decorationSize
+        crtEnabled = field(Bool.self, .crtEnabled) ?? d.crtEnabled
+        crtIntensity = field(Double.self, .crtIntensity) ?? d.crtIntensity
+    }
+
+    /// A usable imported name: trimmed and non-empty, else `fallback` — presets
+    /// are identified (and de-duplicated in menus) by name, so an empty string
+    /// can't stand. Used by every decode lens, not just the native one.
+    fileprivate static func importedName(_ raw: String?, fallback: String) -> String {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return fallback }
+        return trimmed
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -158,11 +181,13 @@ extension AppearancePreset {
     static func decode(from data: Data) -> AppearancePreset? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
 
-        // Only format-*unique* keys discriminate: `highlightOpacity`,
-        // `cornerRadius`, `gradientAngle`, `decoration*`/`crt*` exist in all
-        // three schemas, and `iconSize` exists in both siblings — none of
-        // them can pick a format. Invoque's own export always carries
-        // labelHex/highlightHex/adaptiveAccent, so those prove native.
+        // Only format-*unique* keys discriminate. `cornerRadius`,
+        // `gradientAngle`, `decoration*`/`crt*` exist in all three schemas;
+        // `highlightOpacity`/`highlightCornerRadius` exist in Invoque *and*
+        // Zap (Jetty has no selection styling); `iconSize` exists in both
+        // siblings — none of them can pick a format. Invoque's own export
+        // always carries labelHex/highlightHex/adaptiveAccent, so those
+        // prove native.
         let hasInvoqueKeys = obj["labelHex"] != nil || obj["highlightHex"] != nil
             || obj["adaptiveAccent"] != nil
         let hasZapKeys = obj["backgroundColorHex"] != nil || obj["useGradientBackground"] != nil
@@ -200,6 +225,12 @@ extension AppearancePreset {
 /// The fields of a **Jetty** theme file Invoque maps. `DockMaterial`'s raw
 /// values are identical to `PanelMaterial`'s, so it crosses over directly;
 /// Jetty has no per-row highlight/label — those fall to Invoque defaults.
+///
+/// `highlightOpacity`/`highlightCornerRadius` aren't Jetty keys — they exist
+/// only in Invoque and Zap files. They're carried anyway so a *partial
+/// Invoque file* holding no native discriminator (`labelHex`/`highlightHex`/
+/// `adaptiveAccent`) routes through this lens on its `material`/`tintHex`
+/// keys without silently dropping them.
 private struct JettyTheme: Codable {
     var name: String?
     var material: String?
@@ -208,6 +239,8 @@ private struct JettyTheme: Codable {
     var gradientAngle: Double?
     var backgroundOpacity: Double?
     var cornerRadius: Double?
+    var highlightOpacity: Double?
+    var highlightCornerRadius: Double?
     var accentGlow: Bool?
     var decorationStyle: String?
     var decorationPosition: String?
@@ -216,20 +249,45 @@ private struct JettyTheme: Codable {
     var crtEnabled: Bool?
     var crtIntensity: Double?
 
+    /// Per-field tolerant like the native decoder: a wrong-typed value falls
+    /// back to "absent" rather than failing the whole import.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func field<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
+            (try? c.decodeIfPresent(type, forKey: key)) ?? nil
+        }
+        name = field(String.self, .name)
+        material = field(String.self, .material)
+        tintHex = field(String.self, .tintHex)
+        gradientHex = field(String.self, .gradientHex)
+        gradientAngle = field(Double.self, .gradientAngle)
+        backgroundOpacity = field(Double.self, .backgroundOpacity)
+        cornerRadius = field(Double.self, .cornerRadius)
+        highlightOpacity = field(Double.self, .highlightOpacity)
+        highlightCornerRadius = field(Double.self, .highlightCornerRadius)
+        accentGlow = field(Bool.self, .accentGlow)
+        decorationStyle = field(String.self, .decorationStyle)
+        decorationPosition = field(String.self, .decorationPosition)
+        decorationOpacity = field(Double.self, .decorationOpacity)
+        decorationSize = field(Double.self, .decorationSize)
+        crtEnabled = field(Bool.self, .crtEnabled)
+        crtIntensity = field(Double.self, .crtIntensity)
+    }
+
     var asInvoquePreset: AppearancePreset {
         let d = Preferences.Default.self
         return AppearancePreset(
-            name: name ?? "Jetty Theme",
+            name: AppearancePreset.importedName(name, fallback: "Jetty Theme"),
             material: material.flatMap(PanelMaterial.init(rawValue:)) ?? d.panelMaterial,
             tintHex: tintHex ?? d.tintHex,
             gradientHex: gradientHex ?? d.gradientHex,
             gradientAngle: gradientAngle ?? d.gradientAngle,
             backgroundOpacity: backgroundOpacity ?? d.backgroundOpacity,
             highlightHex: d.highlightHex,
-            highlightOpacity: d.highlightOpacity,
+            highlightOpacity: highlightOpacity ?? d.highlightOpacity,
             labelHex: d.labelHex,
             cornerRadius: cornerRadius ?? d.panelCornerRadius,
-            highlightCornerRadius: d.highlightCornerRadius,
+            highlightCornerRadius: highlightCornerRadius ?? d.highlightCornerRadius,
             adaptiveAccent: accentGlow ?? d.adaptiveAccent,
             decorationStyle: decorationStyle ?? d.decorationStyle.rawValue,
             decorationPosition: decorationPosition ?? d.decorationPosition.rawValue,
@@ -262,10 +320,36 @@ private struct ZapTheme: Codable {
     var crtEnabled: Bool?
     var crtIntensity: Double?
 
+    /// Per-field tolerant like the native decoder: a wrong-typed value falls
+    /// back to "absent" rather than failing the whole import.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func field<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
+            (try? c.decodeIfPresent(type, forKey: key)) ?? nil
+        }
+        name = field(String.self, .name)
+        backgroundColorHex = field(String.self, .backgroundColorHex)
+        useGradientBackground = field(Bool.self, .useGradientBackground)
+        gradientColorHex = field(String.self, .gradientColorHex)
+        gradientAngle = field(Double.self, .gradientAngle)
+        backgroundOpacity = field(Double.self, .backgroundOpacity)
+        highlightColorHex = field(String.self, .highlightColorHex)
+        highlightOpacity = field(Double.self, .highlightOpacity)
+        labelColorHex = field(String.self, .labelColorHex)
+        cornerRadius = field(Double.self, .cornerRadius)
+        highlightCornerRadius = field(Double.self, .highlightCornerRadius)
+        decorationStyle = field(String.self, .decorationStyle)
+        decorationPosition = field(String.self, .decorationPosition)
+        decorationOpacity = field(Double.self, .decorationOpacity)
+        decorationSize = field(Double.self, .decorationSize)
+        crtEnabled = field(Bool.self, .crtEnabled)
+        crtIntensity = field(Double.self, .crtIntensity)
+    }
+
     var asInvoquePreset: AppearancePreset {
         let d = Preferences.Default.self
         return AppearancePreset(
-            name: name ?? "Zap Theme",
+            name: AppearancePreset.importedName(name, fallback: "Zap Theme"),
             material: useGradientBackground == true ? .gradient : .solid,
             tintHex: backgroundColorHex ?? d.tintHex,
             gradientHex: gradientColorHex ?? d.gradientHex,
@@ -332,8 +416,8 @@ extension AppearancePreset {
         cornerRadius: 16,
         highlightCornerRadius: 10,
         adaptiveAccent: true,
-        decorationStyle: "none",
-        decorationPosition: "topTrailing",
+        decorationStyle: DecorationStyle.none.rawValue,
+        decorationPosition: DecorationPosition.topTrailing.rawValue,
         decorationOpacity: 1,
         decorationSize: 10,
         crtEnabled: false,
@@ -353,8 +437,8 @@ extension AppearancePreset {
         cornerRadius: 16,
         highlightCornerRadius: 8,
         adaptiveAccent: false,
-        decorationStyle: "none",
-        decorationPosition: "topTrailing",
+        decorationStyle: DecorationStyle.none.rawValue,
+        decorationPosition: DecorationPosition.topTrailing.rawValue,
         decorationOpacity: 1,
         decorationSize: 10,
         crtEnabled: false,

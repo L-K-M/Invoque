@@ -109,51 +109,83 @@ final class Preferences: ObservableObject {
     /// The card's tint — the fill for `solid`, the start of `gradient`, and
     /// the tint wash for `glassTinted`.
     @Published var tintHex: String {
-        didSet { defaults.set(tintHex, forKey: Key.tintHex) }
+        didSet {
+            tintHex = Self.validColor(tintHex, default: Default.tintHex)
+            defaults.set(tintHex, forKey: Key.tintHex)
+        }
     }
 
     /// The end color of the card gradient when `panelMaterial == .gradient`.
     @Published var gradientHex: String {
-        didSet { defaults.set(gradientHex, forKey: Key.gradientHex) }
+        didSet {
+            gradientHex = Self.validColor(gradientHex, default: Default.gradientHex)
+            defaults.set(gradientHex, forKey: Key.gradientHex)
+        }
     }
 
-    /// The direction the card gradient runs, in degrees clockwise from
-    /// straight down (0° = top→bottom). Matches `AngleDial`.
+    /// The direction the card gradient runs, in degrees from straight down
+    /// (0° = top→bottom), increasing counterclockwise on screen — 90° runs
+    /// left→right. Matches `AngleDial` and `PanelBackground`.
     @Published var gradientAngle: Double {
-        didSet { defaults.set(gradientAngle, forKey: Key.gradientAngle) }
+        didSet {
+            gradientAngle = Self.normalizedAngle(gradientAngle)
+            defaults.set(gradientAngle, forKey: Key.gradientAngle)
+        }
     }
 
     /// Opacity of the tint/gradient (and the glass-tint wash).
     @Published var backgroundOpacity: Double {
-        didSet { defaults.set(backgroundOpacity, forKey: Key.backgroundOpacity) }
+        didSet {
+            backgroundOpacity = Self.clamp(backgroundOpacity, in: Limit.unitInterval,
+                                           fallback: Default.backgroundOpacity)
+            defaults.set(backgroundOpacity, forKey: Key.backgroundOpacity)
+        }
     }
 
     /// The selection fill color — or its fallback when `adaptiveAccent` is on
     /// and the selected row's icon supplies one.
     @Published var highlightHex: String {
-        didSet { defaults.set(highlightHex, forKey: Key.highlightHex) }
+        didSet {
+            highlightHex = Self.validColor(highlightHex, default: Default.highlightHex)
+            defaults.set(highlightHex, forKey: Key.highlightHex)
+        }
     }
 
     /// Opacity of the selection fill.
     @Published var highlightOpacity: Double {
-        didSet { defaults.set(highlightOpacity, forKey: Key.highlightOpacity) }
+        didSet {
+            highlightOpacity = Self.clamp(highlightOpacity, in: Limit.unitInterval,
+                                          fallback: Default.highlightOpacity)
+            defaults.set(highlightOpacity, forKey: Key.highlightOpacity)
+        }
     }
 
     /// Text color for row titles (secondary text derives from it at reduced
     /// opacity). Applies only on materials where the theme owns the
     /// background — see `PanelMaterial.usesThemeTextColor`.
     @Published var labelHex: String {
-        didSet { defaults.set(labelHex, forKey: Key.labelHex) }
+        didSet {
+            labelHex = Self.validColor(labelHex, default: Default.labelHex)
+            defaults.set(labelHex, forKey: Key.labelHex)
+        }
     }
 
     /// The card's corner radius.
     @Published var panelCornerRadius: Double {
-        didSet { defaults.set(panelCornerRadius, forKey: Key.panelCornerRadius) }
+        didSet {
+            panelCornerRadius = Self.clamp(panelCornerRadius, in: Limit.radius,
+                                           fallback: Default.panelCornerRadius)
+            defaults.set(panelCornerRadius, forKey: Key.panelCornerRadius)
+        }
     }
 
     /// The selection highlight's corner radius.
     @Published var highlightCornerRadius: Double {
-        didSet { defaults.set(highlightCornerRadius, forKey: Key.highlightCornerRadius) }
+        didSet {
+            highlightCornerRadius = Self.clamp(highlightCornerRadius, in: Limit.radius,
+                                               fallback: Default.highlightCornerRadius)
+            defaults.set(highlightCornerRadius, forKey: Key.highlightCornerRadius)
+        }
     }
 
     /// Whether the selected row's icon bleeds its dominant color into the
@@ -174,12 +206,20 @@ final class Preferences: ObservableObject {
 
     /// Opacity of the corner decoration.
     @Published var decorationOpacity: Double {
-        didSet { defaults.set(decorationOpacity, forKey: Key.decorationOpacity) }
+        didSet {
+            decorationOpacity = Self.clamp(decorationOpacity, in: Limit.unitInterval,
+                                           fallback: Default.decorationOpacity)
+            defaults.set(decorationOpacity, forKey: Key.decorationOpacity)
+        }
     }
 
     /// Thickness of the corner decoration's stripes / the boing ball's diameter.
     @Published var decorationSize: Double {
-        didSet { defaults.set(decorationSize, forKey: Key.decorationSize) }
+        didSet {
+            decorationSize = Self.clamp(decorationSize, in: Limit.decorationSize,
+                                        fallback: Default.decorationSize)
+            defaults.set(decorationSize, forKey: Key.decorationSize)
+        }
     }
 
     /// Whether the CRT scanline/vignette overlay draws over the card.
@@ -189,7 +229,11 @@ final class Preferences: ObservableObject {
 
     /// Strength of the CRT overlay, 0...1.
     @Published var crtIntensity: Double {
-        didSet { defaults.set(crtIntensity, forKey: Key.crtIntensity) }
+        didSet {
+            crtIntensity = Self.clamp(crtIntensity, in: Limit.unitInterval,
+                                      fallback: Default.crtIntensity)
+            defaults.set(crtIntensity, forKey: Key.crtIntensity)
+        }
     }
 
     // MARK: Init
@@ -217,27 +261,27 @@ final class Preferences: ObservableObject {
         gradientAngle = Self.normalizedAngle(defaults.object(forKey: Key.gradientAngle) as? Double
             ?? Default.gradientAngle)
         backgroundOpacity = Self.clamp(defaults.object(forKey: Key.backgroundOpacity) as? Double
-            ?? Default.backgroundOpacity, 0, 1, Default.backgroundOpacity)
+            ?? Default.backgroundOpacity, in: Limit.unitInterval, fallback: Default.backgroundOpacity)
         highlightHex = Self.validColor(defaults.string(forKey: Key.highlightHex), default: Default.highlightHex)
         highlightOpacity = Self.clamp(defaults.object(forKey: Key.highlightOpacity) as? Double
-            ?? Default.highlightOpacity, 0, 1, Default.highlightOpacity)
+            ?? Default.highlightOpacity, in: Limit.unitInterval, fallback: Default.highlightOpacity)
         labelHex = Self.validColor(defaults.string(forKey: Key.labelHex), default: Default.labelHex)
         panelCornerRadius = Self.clamp(defaults.object(forKey: Key.panelCornerRadius) as? Double
-            ?? Default.panelCornerRadius, 0, 32, Default.panelCornerRadius)
+            ?? Default.panelCornerRadius, in: Limit.radius, fallback: Default.panelCornerRadius)
         highlightCornerRadius = Self.clamp(defaults.object(forKey: Key.highlightCornerRadius) as? Double
-            ?? Default.highlightCornerRadius, 0, 32, Default.highlightCornerRadius)
+            ?? Default.highlightCornerRadius, in: Limit.radius, fallback: Default.highlightCornerRadius)
         adaptiveAccent = defaults.object(forKey: Key.adaptiveAccent) as? Bool ?? Default.adaptiveAccent
         decorationStyle = DecorationStyle(rawValue: defaults.string(forKey: Key.decorationStyle) ?? "")
             ?? Default.decorationStyle
         decorationPosition = DecorationPosition(rawValue: defaults.string(forKey: Key.decorationPosition) ?? "")
             ?? Default.decorationPosition
         decorationOpacity = Self.clamp(defaults.object(forKey: Key.decorationOpacity) as? Double
-            ?? Default.decorationOpacity, 0, 1, Default.decorationOpacity)
+            ?? Default.decorationOpacity, in: Limit.unitInterval, fallback: Default.decorationOpacity)
         decorationSize = Self.clamp(defaults.object(forKey: Key.decorationSize) as? Double
-            ?? Default.decorationSize, 4, 30, Default.decorationSize)
+            ?? Default.decorationSize, in: Limit.decorationSize, fallback: Default.decorationSize)
         crtEnabled = defaults.object(forKey: Key.crtEnabled) as? Bool ?? Default.crtEnabled
         crtIntensity = Self.clamp(defaults.object(forKey: Key.crtIntensity) as? Double
-            ?? Default.crtIntensity, 0, 1, Default.crtIntensity)
+            ?? Default.crtIntensity, in: Limit.unitInterval, fallback: Default.crtIntensity)
     }
 
     // MARK: Summon hotkey
@@ -262,13 +306,50 @@ final class Preferences: ObservableObject {
         return combination
     }
 
+    // MARK: Reset
+
+    /// Restores every appearance preference to its factory value. The source
+    /// of truth is `Default` itself — not a preset's copy of it, which could
+    /// drift or lack a field added later.
+    func resetAppearanceToDefaults() {
+        panelMaterial = Default.panelMaterial
+        tintHex = Default.tintHex
+        gradientHex = Default.gradientHex
+        gradientAngle = Default.gradientAngle
+        backgroundOpacity = Default.backgroundOpacity
+        highlightHex = Default.highlightHex
+        highlightOpacity = Default.highlightOpacity
+        labelHex = Default.labelHex
+        panelCornerRadius = Default.panelCornerRadius
+        highlightCornerRadius = Default.highlightCornerRadius
+        adaptiveAccent = Default.adaptiveAccent
+        decorationStyle = Default.decorationStyle
+        decorationPosition = Default.decorationPosition
+        decorationOpacity = Default.decorationOpacity
+        decorationSize = Default.decorationSize
+        crtEnabled = Default.crtEnabled
+        crtIntensity = Default.crtIntensity
+    }
+
     // MARK: Validation helpers
 
-    /// Clamps `value` into `[lower, upper]`, falling back to `fallback` for
-    /// non-finite (NaN/inf) input from corrupted defaults.
-    private static func clamp(_ value: Double, _ lower: Double, _ upper: Double, _ fallback: Double) -> Double {
+    /// Accepted ranges for the clamped appearance knobs — shared with
+    /// `AppearancePreset.apply(to:)` so an import and a load can never
+    /// disagree about what's in range.
+    enum Limit {
+        /// Opacities and effect intensities.
+        static let unitInterval = 0.0...1.0
+        /// Panel and selection-highlight corner radii.
+        static let radius = 0.0...32.0
+        /// Decoration stripe thickness / ball diameter.
+        static let decorationSize = 4.0...30.0
+    }
+
+    /// Clamps `value` into `range`, falling back to `fallback` for non-finite
+    /// (NaN/inf) input from corrupted defaults.
+    private static func clamp(_ value: Double, in range: ClosedRange<Double>, fallback: Double) -> Double {
         guard value.isFinite else { return fallback }
-        return Swift.min(Swift.max(value, lower), upper)
+        return Swift.min(Swift.max(value, range.lowerBound), range.upperBound)
     }
 
     /// Returns `hex` if it parses to a valid color, otherwise `default`.

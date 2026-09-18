@@ -125,6 +125,61 @@ final class AppearancePresetTests: XCTestCase {
         XCTAssertNil(AppearancePreset.decode(from: Data("not json".utf8)))
     }
 
+    /// A wrong-typed field (`"gradientAngle": "30"` — a common hand-edit slip)
+    /// must fall back per-field, not fail the whole import.
+    func testTypeMismatchedFieldFallsToDefault() throws {
+        let decoded = AppearancePreset.decode(from: try json([
+            "name": "Slip", "tintHex": "#112233", "gradientAngle": "30",
+        ]))
+        XCTAssertEqual(decoded?.name, "Slip")
+        XCTAssertEqual(decoded?.tintHex, "#112233")
+        XCTAssertEqual(decoded?.gradientAngle, Preferences.Default.gradientAngle)
+    }
+
+    /// An empty (or whitespace) name can't be a preset's identity — presets
+    /// are de-duplicated by name in the menu. The guard applies on every
+    /// decode lens, not just the native one.
+    func testEmptyNameFallsBackToLensDefault() throws {
+        for name in ["", "   "] {
+            let native = AppearancePreset.decode(from: try json([
+                "name": name, "labelHex": "#FFFFFF",
+            ]))
+            XCTAssertEqual(native?.name, "Imported")
+            let jetty = AppearancePreset.decode(from: try json([
+                "name": name, "tintHex": "#112233",
+            ]))
+            XCTAssertEqual(jetty?.name, "Jetty Theme")
+        }
+    }
+
+    /// A partial Invoque file carrying no native discriminator
+    /// (labelHex/highlightHex/adaptiveAccent) routes through the Jetty lens on
+    /// its shared keys — the Invoque/Zap-shared `highlightOpacity` and
+    /// `highlightCornerRadius` must survive that trip, not drop to defaults.
+    func testPartialInvoqueFileThroughJettyLensKeepsSharedFields() throws {
+        let decoded = AppearancePreset.decode(from: try json([
+            "material": "solid", "tintHex": "#112233",
+            "highlightOpacity": 0.31, "highlightCornerRadius": 9, "cornerRadius": 12,
+        ]))
+        XCTAssertEqual(decoded?.material, .solid)
+        XCTAssertEqual(decoded?.tintHex, "#112233")
+        XCTAssertEqual(decoded?.highlightOpacity, 0.31)
+        XCTAssertEqual(decoded?.highlightCornerRadius, 9)
+        XCTAssertEqual(decoded?.cornerRadius, 12)
+    }
+
+    /// Every built-in's decoration fields must resolve through the enums — a
+    /// raw-value typo would silently fall back to the default decoration in
+    /// `apply(to:)`.
+    func testBuiltInDecorationsResolveThroughEnums() {
+        for preset in AppearancePreset.builtIns {
+            XCTAssertNotNil(DecorationStyle(rawValue: preset.decorationStyle),
+                            "\(preset.name) decorationStyle")
+            XCTAssertNotNil(DecorationPosition(rawValue: preset.decorationPosition),
+                            "\(preset.name) decorationPosition")
+        }
+    }
+
     // MARK: apply() validation
 
     func testApplyClampsAndValidates() throws {
