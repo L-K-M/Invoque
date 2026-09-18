@@ -49,6 +49,39 @@ final class AppCatalogTests: XCTestCase {
         return (url, entry(path: realPath))
     }
 
+    // MARK: Path targets
+
+    /// `~/Applications` is the catalog's first scan directory, so a `~`
+    /// path target must expand before the .app/existence/membership checks —
+    /// `URL(fileURLWithPath:)` treats `~` as a literal component.
+    func testResolveByTildePath() throws {
+        let dirName = "AppCatalogTests.\(UUID().uuidString)"
+        let dir = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(dirName, isDirectory: true)
+        let app = dir.appendingPathComponent("Home App.app")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let realPath = app.resolvingSymlinksInPath().path
+        let e = entry(name: "Home App", path: realPath, fileName: "Home App")
+        XCTAssertEqual(AppCatalog.resolve("~/\(dirName)/Home App.app", in: [e])?.path,
+                       realPath)
+    }
+
+    /// Tilde expansion adds reachability, not privilege: an existing `~` path
+    /// outside the catalog still resolves to nil.
+    func testResolveTildePathStillConfinedToCatalog() throws {
+        let dirName = "AppCatalogTests.\(UUID().uuidString)"
+        let dir = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(dirName, isDirectory: true)
+        let app = dir.appendingPathComponent("Stray.app")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        XCTAssertNil(AppCatalog.resolve("~/\(dirName)/Stray.app", in: catalog))
+        XCTAssertNil(AppCatalog.resolve("~/\(dirName)/Missing.app", in: catalog))
+    }
+
     // MARK: Name / bundle-id matching
 
     func testResolveByExactName() {

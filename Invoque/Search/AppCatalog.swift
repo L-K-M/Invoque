@@ -72,11 +72,13 @@ enum AppCatalog {
         if trimmed.contains("/") || trimmed.hasPrefix("file://") {
             // URL(string:) fails on unencoded spaces, which app paths
             // routinely contain — fall back to treating the remainder as a
-            // plain path.
+            // plain path. `~` expands explicitly — `URL(fileURLWithPath:)`
+            // treats it as a literal component, so `~/Applications` (the first
+            // scan directory) would be unreachable by path without this.
             let path = trimmed.hasPrefix("file://")
                 ? URL(string: trimmed)?.path ?? String(trimmed.dropFirst("file://".count))
                 : trimmed
-            var standardized = URL(fileURLWithPath: path)
+            var standardized = URL(fileURLWithPath: (path as NSString).expandingTildePath)
                 .standardizedFileURL.resolvingSymlinksInPath().path
             // A file:// URL built for a directory carries a trailing slash
             // ("…/Foo.app/") — drop it or the .app check can never pass.
