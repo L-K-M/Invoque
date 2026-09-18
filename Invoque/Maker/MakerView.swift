@@ -163,11 +163,15 @@ struct MakerView: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // The consent row replaces the action controls while pending —
+            // same "card replaces content" pattern as the panel, so
+            // "Allow & Test" is the only resume path.
             if let request = model.permissionRequest {
                 permissionRow(request)
+            } else {
+                feedbackRow
+                actionRow
             }
-            feedbackRow
-            actionRow
         }
     }
 
@@ -223,9 +227,10 @@ struct MakerView: View {
         HStack(spacing: 8) {
             Image(systemName: "lock.shield")
                 .foregroundStyle(.secondary)
-            Text("Wants to: " + request.permissions
-                .map { CommandPermissionGrants.consentLine(for: $0) }
-                .joined(separator: "; "))
+            Text("Invoque command · \(request.command.name) wants to: "
+                + request.permissions
+                    .map { CommandPermissionGrants.consentLine(for: $0) }
+                    .joined(separator: "; "))
                 .font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)

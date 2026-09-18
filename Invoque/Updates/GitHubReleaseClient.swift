@@ -51,9 +51,15 @@ struct GitHubReleaseClient {
     }
 
     private func fetch<T: Decodable>(_ type: T.Type, path: String) async throws -> T {
-        guard let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/\(path)") else {
-            // A malformed owner/repo must throw, not crash — this type is
-            // documented reusable and callers aren't guaranteed URL-safe.
+        // A malformed owner/repo must throw, not crash — this type is
+        // documented reusable and callers aren't guaranteed URL-safe.
+        // Percent-encode each component to GitHub's naming alphabet so a
+        // "?", "#" or "/" can't redirect the request to another path.
+        var nameAllowed = CharacterSet.alphanumerics
+        nameAllowed.insert(charactersIn: "-._")
+        guard let encodedOwner = owner.addingPercentEncoding(withAllowedCharacters: nameAllowed),
+              let encodedRepo = repo.addingPercentEncoding(withAllowedCharacters: nameAllowed),
+              let url = URL(string: "https://api.github.com/repos/\(encodedOwner)/\(encodedRepo)/\(path)") else {
             throw URLError(.badURL)
         }
         var request = URLRequest(url: url)
