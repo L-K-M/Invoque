@@ -20,6 +20,10 @@ final class PanelController: NSObject {
     private let commandRunner: CommandRunner
     /// Sequencing for overlapping command runs — only the newest delivers.
     private var commandRunGeneration = 0
+    /// Bumped on every `hide()` — distinguishes "still the same summon"
+    /// from "dismissed and re-summoned" when deciding whether an in-flight
+    /// command run may still deliver `.items` rows.
+    private var panelSession = 0
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
 
@@ -103,6 +107,7 @@ final class PanelController: NSObject {
     }
 
     func hide() {
+        panelSession += 1
         panel?.orderOut(nil)
     }
 
@@ -124,6 +129,7 @@ final class PanelController: NSObject {
         commandRunGeneration += 1
         let generation = commandRunGeneration
         let submittedQuery = model.query
+        let submittedPanelSession = panelSession
         let runner = commandRunner
         Task {
             let result = await runner.run(command: command, args: args)
@@ -142,9 +148,12 @@ final class PanelController: NSObject {
                 case .items(let items):
                     // Dropped when the panel was dismissed mid-run or the
                     // query moved on — stale rows must not greet the next
-                    // summon or stomp fresh search results.
+                    // summon or stomp fresh search results. The session
+                    // check catches dismiss-then-resummon, where visibility
+                    // and query can both match again.
                     if self.panel?.isVisible == true,
-                       self.model.query == submittedQuery {
+                       self.model.query == submittedQuery,
+                       self.panelSession == submittedPanelSession {
                         self.model.showCommandResults(
                             PanelModel.commandRows(command: command, items: items))
                     }
