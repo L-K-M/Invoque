@@ -54,6 +54,8 @@ enum GenerationParser {
         case missingEntryFile
         /// Two or more candidate entry files and no `main.js` to disambiguate.
         case multipleEntryFiles([String])
+        /// The entry block (`main.js`) appeared more than once.
+        case duplicateEntry
         /// A filename was explicitly rejected: escapes the directory or is
         /// not a plausible relative path.
         case invalidFileName(String)
@@ -70,6 +72,8 @@ enum GenerationParser {
                 return "no entry file found — expected a `--- main.js ---` block or a ```javascript fence"
             case .multipleEntryFiles(let names):
                 return "multiple candidate entry files (\(names.sorted().joined(separator: ", "))) — name the entry main.js"
+            case .duplicateEntry:
+                return "main.js was emitted more than once — merge the blocks into a single file"
             case .invalidFileName(let name):
                 return "invalid file name '\(name)' — files must be relative paths inside the command directory"
             }
@@ -90,8 +94,32 @@ enum GenerationParser {
             throw Failure.empty
         }
 
-        let files = try collectFiles(from: normalized)
-        return try assemble(files)
+        let lines = normalized.components(separatedBy: "\n")
+        // A stray `--- name ---`-shaped prose line (say `--- 1 ---`) must
+        // not force delimiter mode for a fence-formatted response: when the
+        // delimited pass can't produce the required pair, retry as fences
+        // before failing.
+        if lines.contains(where: { delimiterName(in: $0) != nil }) {
+            do {
+                return try assemble(try collectDelimited(lines))
+            } catch let error as Failure {
+                switch error {
+                case .missingManifest, .missingEntryFile:
+                    // The header-like line was probably prose — retry as
+                    // fences. If that fails too, the delimited error is the
+                    // better report (a real `--- command.json ---` header
+                    // that lacks an entry stays a missingEntryFile).
+                    do {
+                        return try assemble(try collectFenced(lines))
+                    } catch {
+                        throw error
+                    }
+                default:
+                    throw error
+                }
+            }
+        }
+        return try assemble(try collectFenced(lines))
     }
 
     /// Builds the `GeneratedCommand` from the collected name → contents map:
@@ -123,17 +151,6 @@ enum GenerationParser {
     }
 
     // MARK: Block collection
-
-    /// Dispatches on format: if any `--- name ---` header exists the output
-    /// is delimiter-style (fences inside a block are literal file content);
-    /// otherwise markdown fences are extracted.
-    private static func collectFiles(from text: String) throws -> [String: String] {
-        let lines = text.components(separatedBy: "\n")
-        if lines.contains(where: { delimiterName(in: $0) != nil }) {
-            return try collectDelimited(lines)
-        }
-        return try collectFenced(lines)
-    }
 
     /// The name inside a `--- name ---` line, or nil when the line is not a
     /// block header (horizontal rules, prose, `--- name` without a closing
@@ -196,7 +213,7 @@ enum GenerationParser {
         flush()
 
         if duplicateManifest { throw Failure.multipleManifests }
-        if duplicateEntry { throw Failure.multipleEntryFiles(["main.js"]) }
+        if duplicateEntry { throw Failure.duplicateEntry }
         return files
     }
 
@@ -228,6 +245,9 @@ enum GenerationParser {
                 guard trimmed.hasPrefix("```") else { continue }
                 let info = String(trimmed.dropFirst(3))
                     .trimmingCharacters(in: .whitespaces)
+                // A fence that closes on the same line (```main.js``` …) is
+                // an inline code span in prose, not a block opener.
+                if info.contains("```") { continue }
                 inFence = true
                 currentName = try fileName(forInfo: info)
                 currentLines = []
@@ -245,7 +265,7 @@ enum GenerationParser {
         if inFence { flush() }
 
         if duplicateManifest { throw Failure.multipleManifests }
-        if duplicateEntry { throw Failure.multipleEntryFiles(["main.js"]) }
+        if duplicateEntry { throw Failure.duplicateEntry }
         return files
     }
 

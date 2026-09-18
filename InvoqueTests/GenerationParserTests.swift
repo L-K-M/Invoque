@@ -79,7 +79,27 @@ final class GenerationParserTests: XCTestCase {
         """
         XCTAssertThrowsError(try GenerationParser.parse(output)) { error in
             XCTAssertEqual(error as? GenerationParser.Failure,
-                           .multipleEntryFiles(["main.js"]))
+                           .duplicateEntry)
+        }
+    }
+
+    /// Two `main.js` fences hit the same distinct failure — the model
+    /// emitted the entry twice, not two candidates.
+    func testFencedDuplicateEntryThrows() {
+        let output = """
+        ```json
+        \(manifestJSON)
+        ```
+        ```js
+        \(mainJS)
+        ```
+        ```javascript
+        \(mainJS)
+        ```
+        """
+        XCTAssertThrowsError(try GenerationParser.parse(output)) { error in
+            XCTAssertEqual(error as? GenerationParser.Failure,
+                           .duplicateEntry)
         }
     }
 
@@ -261,6 +281,51 @@ final class GenerationParserTests: XCTestCase {
         \(manifestJSON)
         --- main.js ---
         \(mainJS)
+        """
+        let parsed = try GenerationParser.parse(output)
+        XCTAssertEqual(parsed.entrySource, mainJS)
+    }
+
+    // MARK: Mixed output
+
+    /// A prose separator like `--- 1 ---` looks like a delimiter header —
+    /// when the delimited pass can't produce the pair, fences get a shot.
+    func testFenceFallbackWhenProseLineLooksLikeHeader() throws {
+        let output = """
+        --- 1 ---
+        ```json
+        \(manifestJSON)
+        ```
+        ```js
+        \(mainJS)
+        ```
+        """
+        let parsed = try GenerationParser.parse(output)
+        XCTAssertEqual(parsed.entrySource, mainJS)
+    }
+
+    /// A genuinely delimited response missing its entry reports the
+    /// delimiter-mode error, not whatever the fence retry produced.
+    func testDelimitedMissingEntryKeepsOriginalError() {
+        XCTAssertThrowsError(
+            try GenerationParser.parse("--- command.json ---\n\(manifestJSON)")
+        ) { error in
+            XCTAssertEqual(error as? GenerationParser.Failure,
+                           .missingEntryFile)
+        }
+    }
+
+    /// A triple-backtick span that closes on the same line is inline code
+    /// in prose, not a fence opener — the real fences still parse.
+    func testInlineCodeSpanAtLineStartIsNotAFence() throws {
+        let output = """
+        ```main.js``` is the entry point
+        ```json
+        \(manifestJSON)
+        ```
+        ```javascript
+        \(mainJS)
+        ```
         """
         let parsed = try GenerationParser.parse(output)
         XCTAssertEqual(parsed.entrySource, mainJS)

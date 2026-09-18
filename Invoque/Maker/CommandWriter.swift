@@ -22,6 +22,14 @@ struct CommandWriter {
         /// already rejects these; the writer re-checks because it is the last
         /// thing between a generated string and the filesystem.
         case unsafeFileName(String)
+        /// The manifest text being persisted failed to decode or validate —
+        /// distinct from `manifestNotObject` (a re-serialization failure):
+        /// a caller's `manifest` argument can drift from
+        /// `generation.manifestJSON`, so the persisted text is what counts.
+        case manifestInvalid(String)
+        /// The manifest's `entry` isn't among the generated files — checked
+        /// pre-flight so nothing is written at all in this state.
+        case entryNotPresent(String)
 
         var errorDescription: String? {
             switch self {
@@ -29,6 +37,10 @@ struct CommandWriter {
                 return "command.json isn't a JSON object"
             case .unsafeFileName(let name):
                 return "refusing to write '\(name)' — not a safe relative path"
+            case .manifestInvalid(let detail):
+                return "generated command.json isn't a valid manifest: \(detail)"
+            case .entryNotPresent(let entry):
+                return "manifest entry '\(entry)' isn't among the generated files"
             }
         }
     }
@@ -58,12 +70,44 @@ struct CommandWriter {
               prompt: String,
               model: String,
               fileManager: FileManager = .default) throws -> URL {
-        // Last-line defense: re-run the structural checks so an unsafe
-        // `name`/`entry` can't reach the filesystem even if a caller skipped
-        // the validator. The slug rule means `name` cannot traverse.
-        try manifest.validateStructure()
-        let directory = rootURL.appendingPathComponent(manifest.name, isDirectory: true)
+        // Last-line defense: validate the manifest text that will actually
+        // be persisted — the `manifest` argument is a second source that
+        // can drift from `generation.manifestJSON`. The slug rule means
+        // `name` cannot traverse.
+        let persisted: CommandManifest
+        do {
+            persisted = try JSONDecoder().decode(
+                CommandManifest.self, from: Data(generation.manifestJSON.utf8))
+            try persisted.validateStructure()
+        } catch let saveError as SaveError {
+            throw saveError
+        } catch {
+            throw SaveError.manifestInvalid(error.localizedDescription)
+        }
+        let directory = rootURL.appendingPathComponent(persisted.name, isDirectory: true)
         let manifestURL = directory.appendingPathComponent("command.json")
+
+        // Pre-flight every file name before anything is written — an unsafe
+        // or reserved name surfacing after the history snapshot or the
+        // manifest write would leave a half-written command behind.
+        // `data`/`history` are the command's own directories; `command.json`
+        // is written from the normalized manifest, so a generated file that
+        // only differs in case would silently overwrite it on APFS — the
+        // comparison is case-insensitive for the same reason.
+        for name in generation.files.keys {
+            let firstComponent = name.components(separatedBy: "/")
+                .first?.lowercased()
+            guard Self.isSafeRelativePath(name),
+                  firstComponent != "data", firstComponent != "history",
+                  name == "command.json" || name.lowercased() != "command.json" else {
+                throw SaveError.unsafeFileName(name)
+            }
+        }
+        // The manifest's entry must be among the generated files — without
+        // it the saved command fails to load at scan time.
+        guard generation.files[persisted.entry] != nil else {
+            throw SaveError.entryNotPresent(persisted.entry)
+        }
 
         let previousRevision = try snapshotExisting(in: directory,
                                                     fileManager: fileManager)
@@ -73,7 +117,8 @@ struct CommandWriter {
 
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         try manifestData.write(to: manifestURL, options: .atomic)
-        for (name, contents) in generation.files where name != "command.json" {
+        for (name, contents) in generation.files
+        where name.lowercased() != "command.json" {
             guard Self.isSafeRelativePath(name) else {
                 throw SaveError.unsafeFileName(name)
             }
@@ -126,8 +171,10 @@ struct CommandWriter {
     }
 
     /// Same rules the parser enforces: a relative path with no `..`, no
-    /// backslashes, no absolute or hidden components.
-    private static func isSafeRelativePath(_ name: String) -> Bool {
+    /// backslashes, no absolute or hidden components. Internal rather than
+    /// private — `MakerModel.stage` reuses it as a second gate on the way
+    /// to executing a draft.
+    static func isSafeRelativePath(_ name: String) -> Bool {
         !name.isEmpty
             && !name.hasPrefix("/")
             && !name.hasPrefix(".")

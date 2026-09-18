@@ -110,7 +110,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.maker = MakerModel(
             client: { MakerSettings.shared.makeClient() },
             runner: commandRunner,
-            writer: CommandWriter(),
+            // The writer saves into the same root the store scans — a saved
+            // command is visible to the launcher immediately.
+            writer: CommandWriter(rootURL: commandStore.primaryRootURL),
             store: commandStore)
         // Kick the initial scan only after the model is fully wired — an
         // unstructured Task starts immediately and can outrun the lines

@@ -32,7 +32,12 @@ final class MakerModelTests: XCTestCase {
 
         func complete(messages: [LLMMessage]) async throws -> String {
             calls.append(messages)
-            guard !responses.isEmpty else { return "" }
+            guard !responses.isEmpty else {
+                // An unexpected extra call must fail loudly — returning ""
+                // would surface as a confusing parse failure downstream.
+                XCTFail("StubClient.complete called with no canned response queued")
+                return ""
+            }
             switch responses.removeFirst() {
             case .success(let text): return text
             case .failure(let error): throw error
@@ -200,6 +205,60 @@ final class MakerModelTests: XCTestCase {
         XCTAssertEqual(phase, .draft)  // unchanged — not saved
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: root.appendingPathComponent("gen-demo").path))
+    }
+
+    /// A failed write keeps the draft saveable — the retry must not cost
+    /// another LLM round-trip.
+    func testSaveFailureKeepsDraftSaveable() async throws {
+        // A writer whose root is a plain file — every save throws until
+        // the file is removed.
+        let blocker = root.appendingPathComponent("blocker")
+        try "x".write(to: blocker, atomically: true, encoding: .utf8)
+        let client = StubClient()
+        client.responses = [.success(generationOutput())]
+        let model = MakerModel(client: { client },
+                               runner: CommandRunner(),
+                               writer: CommandWriter(rootURL: blocker),
+                               store: nil)
+
+        await model.start(prompt: "demo")
+        await model.save()
+        var phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+        XCTAssertNotNil(await model.lastError)
+        XCTAssertNotNil(await model.draft)
+
+        try FileManager.default.removeItem(at: blocker)
+        await model.save()
+        phase = await model.phase
+        XCTAssertEqual(phase, .saved)
+        // One LLM call total — the save retry never re-generated.
+        XCTAssertEqual(client.calls.count, 1)
+    }
+
+    /// Feedback after a failed regeneration must not re-append the same
+    /// assistant turn — `lastRawOutput` is consumed when appended.
+    func testFeedbackAfterFailedRoundDoesNotDuplicateAssistantTurn() async {
+        let client = StubClient()
+        client.responses = [
+            .success(generationOutput()),
+            .failure(LLMError.missingAPIKey),
+            .success(generationOutput()),
+        ]
+        let model = makeModel(client)
+
+        await model.start(prompt: "demo")
+        await model.sendFeedback("first fix")
+        let failedPhase = await model.phase
+        XCTAssertEqual(failedPhase, .failed)
+        await model.sendFeedback("second fix")
+
+        // Third call's transcript: sys + user + assistant + user + user —
+        // exactly one assistant turn, not two copies of the same output.
+        let transcript = client.calls[2]
+        XCTAssertEqual(transcript.filter { $0.role == .assistant }.count, 1)
+        XCTAssertEqual(transcript.last?.role, .user)
+        XCTAssertEqual(transcript.last?.content, "second fix")
     }
 
     // MARK: Discard

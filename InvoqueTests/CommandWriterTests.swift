@@ -85,6 +85,9 @@ final class CommandWriterTests: XCTestCase {
               let schemaIndex = written.range(of: "\"schemaVersion\"") else {
             return XCTFail("manifest keys missing: \(written)")
         }
+        // name < schemaVersion is the discriminating pair — it fails for
+        // declaration-order output, which the title comparisons can't.
+        XCTAssertTrue(nameIndex.lowerBound < schemaIndex.lowerBound)
         XCTAssertTrue(nameIndex.lowerBound < titleIndex.lowerBound)
         XCTAssertTrue(schemaIndex.lowerBound < titleIndex.lowerBound)
         XCTAssertTrue(written.hasSuffix("\n"))
@@ -142,11 +145,13 @@ final class CommandWriterTests: XCTestCase {
     }
 
     /// Saving is pure file I/O — generated code is never executed (AGENTS.md).
-    /// A top-level side effect that would create a marker file if the code
-    /// ran must not run on save.
+    /// A top-level infinite loop hangs the test the moment `save` ever
+    /// evaluates the source — the proof is in the fixture, not the absence
+    /// of a marker.
     func testSaveNeverRunsGeneratedCode() throws {
         let source = """
-        // If this executed, it would leave a marker in the command dir.
+        // If this executed, save would hang — proving generated code never runs.
+        while (true) {}
         async function run() {}
         """
         let (generation, manifest) = try generation(source: source)
@@ -166,5 +171,76 @@ final class CommandWriterTests: XCTestCase {
         store.scan()
         XCTAssertEqual(store.commands.map(\.name), ["fresh-cmd"])
         XCTAssertTrue(store.scanErrors.isEmpty)
+    }
+
+    // MARK: Defense
+
+    /// An unsafe name on a later file must abort the save before anything
+    /// lands — no manifest, no snapshot, no directory.
+    func testUnsafeExtraFileNameWritesNothing() throws {
+        let (generation, manifest) = try generation(
+            extraFiles: ["../escape.txt": "x"])
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, manifest: manifest, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertEqual(error as? CommandWriter.SaveError,
+                           .unsafeFileName("../escape.txt"))
+        }
+        XCTAssertEqual(try FileManager.default
+            .contentsOfDirectory(atPath: root.path), [])
+    }
+
+    /// Reserved command-owned names can't arrive as generated files either.
+    func testReservedFileNameWritesNothing() throws {
+        let (generation, manifest) = try generation(
+            extraFiles: ["data/seed.json": "{}"])
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, manifest: manifest, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertEqual(error as? CommandWriter.SaveError,
+                           .unsafeFileName("data/seed.json"))
+        }
+        XCTAssertEqual(try FileManager.default
+            .contentsOfDirectory(atPath: root.path), [])
+    }
+
+    /// APFS is case-insensitive: a `Command.JSON` extra file would silently
+    /// overwrite the normalized manifest — it's rejected like any other
+    /// unsafe name, before anything lands.
+    func testCaseVariantOfCommandJSONIsRejected() throws {
+        let (generation, manifest) = try generation(
+            extraFiles: ["Command.JSON": "{\"evil\": true}"])
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, manifest: manifest, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertEqual(error as? CommandWriter.SaveError,
+                           .unsafeFileName("Command.JSON"))
+        }
+        XCTAssertEqual(try FileManager.default
+            .contentsOfDirectory(atPath: root.path), [])
+    }
+
+    /// A manifest entry that isn't among the generated files fails before
+    /// a single byte lands.
+    func testMissingEntryWritesNothing() throws {
+        let json = manifestJSON().replacingOccurrences(of: "\"main.js\"",
+                                                       with: "\"index.js\"")
+        let manifest = try JSONDecoder().decode(
+            CommandManifest.self, from: Data(json.utf8))
+        let generation = GeneratedCommand(
+            manifestJSON: json, entryName: "main.js",
+            entrySource: "async function run() {}", extraFiles: [:])
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, manifest: manifest, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertEqual(error as? CommandWriter.SaveError,
+                           .entryNotPresent("index.js"))
+        }
+        XCTAssertEqual(try FileManager.default
+            .contentsOfDirectory(atPath: root.path), [])
     }
 }

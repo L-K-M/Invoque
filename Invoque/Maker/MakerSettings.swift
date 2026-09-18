@@ -20,6 +20,7 @@ final class MakerSettings: ObservableObject {
         static let baseURL = "https://api.openai.com/v1"
         static let anthropicBaseURL = "https://api.anthropic.com"
         static let model = "gpt-4o-mini"
+        static let anthropicModel = "claude-sonnet-4-5"
     }
 
     private enum Key {
@@ -41,12 +42,16 @@ final class MakerSettings: ObservableObject {
         didSet {
             defaults.set(provider.rawValue, forKey: Key.provider)
             // Swap a stock base URL for the other provider's — a URL the
-            // user customized is left alone.
+            // user customized is left alone. The model gets the same
+            // treatment: a stock model id sent to the other provider is a
+            // guaranteed 400 (e.g. "gpt-4o-mini" at api.anthropic.com).
             if provider == .anthropic && baseURL == Default.baseURL {
                 baseURL = Default.anthropicBaseURL
+                if model == Default.model { model = Default.anthropicModel }
             } else if provider == .openAICompatible
                         && baseURL == Default.anthropicBaseURL {
                 baseURL = Default.baseURL
+                if model == Default.anthropicModel { model = Default.model }
             }
         }
     }
@@ -63,10 +68,14 @@ final class MakerSettings: ObservableObject {
 
     /// The API key. Read/write goes straight to Keychain; assigning "" or
     /// nil-equivalent clears it. Not `@Published` — nothing renders the key
-    /// itself, only whether one is set.
+    /// itself, only whether one is set — so the setter must still notify or
+    /// `hasAPIKey`-driven UI goes stale.
     var apiKey: String {
         get { keychain.get(account: Self.apiKeyAccount) ?? "" }
-        set { keychain.set(newValue, account: Self.apiKeyAccount) }
+        set {
+            keychain.set(newValue, account: Self.apiKeyAccount)
+            objectWillChange.send()
+        }
     }
 
     var hasAPIKey: Bool { !apiKey.isEmpty }

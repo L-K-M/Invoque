@@ -54,11 +54,16 @@ struct SettingsView: View {
 
             HStack(spacing: 8) {
                 SecureField("API key", text: $apiKeyDraft)
-                Button("Save") {
-                    makerSettings.apiKey = apiKeyDraft
-                    apiKeyDraft = ""
+                    .onSubmit(saveAPIKeyDraft)
+                Button("Save", action: saveAPIKeyDraft)
+                    .disabled(apiKeyDraft.isEmpty)
+                // Clearing a stale secret needs an in-app path — assigning
+                // "" deletes the Keychain item.
+                if makerSettings.hasAPIKey {
+                    Button("Remove", role: .destructive) {
+                        makerSettings.apiKey = ""
+                    }
                 }
-                .disabled(apiKeyDraft.isEmpty)
             }
             Text(makerSettings.hasAPIKey ? "API key stored in Keychain" : "No API key set")
                 .font(.caption)
@@ -84,7 +89,16 @@ struct SettingsView: View {
         }
     }
 
+    private func saveAPIKeyDraft() {
+        guard !apiKeyDraft.isEmpty else { return }
+        makerSettings.apiKey = apiKeyDraft
+        apiKeyDraft = ""
+    }
+
     private func testConnection() {
+        // The field is the truth: an unsaved draft is saved first so the
+        // test exercises exactly the key the user sees.
+        saveAPIKeyDraft()
         connectionTestRunning = true
         connectionTestResult = nil
         let client = makerSettings.makeClient()

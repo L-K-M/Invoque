@@ -66,6 +66,24 @@ final class GeneratedCommandValidatorTests: XCTestCase {
         XCTAssertTrue(outcome.issues.contains { $0.contains("index.js") })
     }
 
+    func testChecksRunOnManifestEntryNotParserEntry() {
+        // manifest.entry names a generated file that isn't the parser's
+        // pick — checks must run on the file the runtime will execute, so
+        // index.js's broken source lands while main.js's clean one is only
+        // syntax-checked as an extra file.
+        let manifest = manifestJSON().replacingOccurrences(of: "\"main.js\"",
+                                                           with: "\"index.js\"")
+        let outcome = GeneratedCommandValidator.validate(GeneratedCommand(
+            manifestJSON: manifest,
+            entryName: "main.js",
+            entrySource: "async function run() {}",
+            extraFiles: ["index.js": "const broken ="]))
+        XCTAssertTrue(outcome.issues.contains {
+            $0.contains("index.js") && $0.contains("parse") })
+        XCTAssertTrue(outcome.issues.contains {
+            $0.contains("index.js") && $0.contains("entry point") })
+    }
+
     // MARK: JavaScript
 
     func testJSSyntaxErrorIsAnIssue() {

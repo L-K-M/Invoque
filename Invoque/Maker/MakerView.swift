@@ -143,6 +143,14 @@ struct MakerView: View {
             if let result = model.testResult {
                 testResultView(result)
             }
+            // A failed save leaves the phase at readyToSave — the error
+            // shows here, and Save/⏎ retries.
+            if let error = model.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             feedbackRow
             actionRow
         }
@@ -265,7 +273,10 @@ struct MakerView: View {
     }
 
     private func sendFeedback() {
-        let text = feedback
+        let text = feedback.trimmingCharacters(in: .whitespaces)
+        // Return in the field must not bypass the Regenerate button's
+        // disabled-when-empty guard — an empty turn still costs a call.
+        guard !text.isEmpty else { return }
         feedback = ""
         Task { await model.sendFeedback(text) }
     }

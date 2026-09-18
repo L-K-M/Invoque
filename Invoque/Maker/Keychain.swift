@@ -60,6 +60,10 @@ struct Keychain {
         if status == errSecItemNotFound {
             var insert = query
             insert[kSecValueData as String] = data
+            // Readable once the device has been unlocked; the key must not
+            // silently migrate to other devices via backups.
+            insert[kSecAttrAccessible as String] =
+                kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             let addStatus = SecItemAdd(insert as CFDictionary, nil)
             if addStatus != errSecSuccess {
                 NSLog("Invoque: Keychain add failed (\(addStatus)) for account \(account)")

@@ -64,6 +64,8 @@ final class MakerModel: ObservableObject {
 
     /// The conversation sent to the model: system prompt, the original
     /// request, then alternating assistant outputs and user feedback.
+    /// Not `@Published` — nothing renders the raw turns; `sessionHistory`
+    /// is the published projection for the view.
     private(set) var transcript: [LLMMessage] = []
 
     private let clientProvider: () -> LLMClientServing
@@ -146,6 +148,9 @@ final class MakerModel: ObservableObject {
               phase != .generating, phase != .testing else { return }
         if let lastRawOutput {
             transcript.append(LLMMessage(.assistant, lastRawOutput))
+            // Consumed — a failed regeneration must not re-append the same
+            // assistant turn on the next feedback call.
+            self.lastRawOutput = nil
         }
         transcript.append(LLMMessage(.user, trimmed))
         draft = nil
@@ -226,6 +231,12 @@ final class MakerModel: ObservableObject {
         try FileManager.default.createDirectory(at: directory,
                                                 withIntermediateDirectories: true)
         for (name, contents) in draft.generation.files {
+            // The validator already rejects unsafe names — this is a second
+            // gate because stage() is also what feeds the code to the
+            // runner.
+            guard CommandWriter.isSafeRelativePath(name) else {
+                throw CocoaError(.fileWriteInvalidFileName)
+            }
             let url = directory.appendingPathComponent(name)
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -248,10 +259,13 @@ final class MakerModel: ObservableObject {
             try writer.save(draft.generation, manifest: manifest,
                             prompt: prompt, model: lastUsedModel ?? "")
         } catch {
+            // The draft is still valid — a transient write error must not
+            // burn it. Stay saveable: the error surfaces next to the draft
+            // and ⏎ (primarySubmit → save) retries without a new LLM call.
             lastError = error.localizedDescription
-            phase = .failed
             return
         }
+        lastError = nil
         // The watcher would rescan within ~0.3 s anyway; the explicit pass
         // makes the new command usable the instant the state flips.
         store?.scan()

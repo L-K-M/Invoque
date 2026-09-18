@@ -449,6 +449,38 @@ final class PanelModelTests: XCTestCase {
         }
         let phase = await maker.phase
         XCTAssertEqual(phase, .readyToSave)
+        // Even after the async generation settled, onSubmit must never
+        // have fired — the maker owns the submit while it's active.
+        XCTAssertFalse(submitted, "submit must route to the maker, not onSubmit")
+    }
+
+    func testBackspacingPromptExitsMakerAndRestoresSearch() {
+        // Editing back to a bare `make` hands the panel back to search.
+        let model = makeModel(items: [Self.appItem(id: "app:maker", title: "Maker")])
+        model.maker = makeMaker()
+        model.query = "make thing"
+        XCTAssertTrue(model.makerIsActive)
+        model.query = "make"
+        XCTAssertFalse(model.makerIsActive)
+        XCTAssertEqual(model.results.map(\.id), ["app:maker"])
+    }
+
+    func testGarbageLLMOutputNeverBecomesSavable() async {
+        // The unhappy path: output with no manifest/entry blocks must not
+        // reach a phase where Save is enabled.
+        let model = makeModel(items: [])
+        let maker = makeMaker(responding: "sorry, I cannot generate that")
+        model.maker = maker
+        model.query = "make something"
+        model.submit()
+        for _ in 0..<100 {
+            let phase = await maker.phase
+            if phase == .failed || phase == .draft { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let phase = await maker.phase
+        XCTAssertNotEqual(phase, .readyToSave)
+        XCTAssertNotEqual(phase, .saved)
     }
 
     // MARK: Helpers

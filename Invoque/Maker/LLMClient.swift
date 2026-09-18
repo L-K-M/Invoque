@@ -184,7 +184,10 @@ final class LLMClient: LLMClientServing {
             .map { ["role": $0.role.rawValue, "content": $0.content] }
         var body: [String: Any] = [
             "model": configuration.model,
-            "max_tokens": 8192,
+            // The Claude 3 family rejects anything above its 4096 output
+            // cap with a 400 — 4096 is valid for every Anthropic model and
+            // comfortably covers a command.json + main.js generation.
+            "max_tokens": 4096,
             "messages": turns,
         ]
         if !system.isEmpty { body["system"] = system }

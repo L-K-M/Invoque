@@ -182,4 +182,23 @@ final class LLMClientTests: XCTestCase {
                        "https://api.test/v1/models")
         XCTAssertEqual(transport.request?.httpMethod, "GET")
     }
+
+    func testTestConnectionHitsAnthropicModelsEndpoint() async throws {
+        let transport = StubTransport()
+        transport.response = .success((
+            jsonData(["data": [["id": "claude-sonnet-4-5"]]]),
+            httpResponse(status: 200)))
+        let client = makeClient(provider: .anthropic,
+                                baseURL: "https://api.anthropic.com",
+                                transport: transport)
+
+        let status = try await client.testConnection()
+        XCTAssertTrue(status.contains("OK"))
+        // Anthropic's base has no /v1 — the endpoint path carries it.
+        XCTAssertEqual(transport.request?.url?.absoluteString,
+                       "https://api.anthropic.com/v1/models")
+        XCTAssertEqual(transport.request?.httpMethod, "GET")
+        XCTAssertEqual(transport.request?
+            .value(forHTTPHeaderField: "x-api-key"), "sk-test")
+    }
 }

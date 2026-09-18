@@ -37,11 +37,24 @@ enum GeneratedCommandValidator {
         }
         validateStructure(manifest, issues: &issues)
         validateEntryPresent(generation, manifest: manifest, issues: &issues)
-        validateJavaScript(generation.entrySource, name: generation.entryName,
-                           issues: &issues)
-        validateEntryPoint(generation.entrySource, name: generation.entryName,
-                           issues: &issues)
-        validatePermissions(generation: generation, manifest: manifest,
+        // The runtime executes `manifest.entry` — when the parser resolved a
+        // different file (e.g. main.js exists but the manifest names
+        // index.js), every check must run on the file that will actually
+        // run, not the one the parser picked.
+        let entryName = generation.files[manifest.entry] != nil
+            ? manifest.entry : generation.entryName
+        let entrySource = generation.files[manifest.entry]
+            ?? generation.entrySource
+        validateJavaScript(entrySource, name: entryName, issues: &issues)
+        validateEntryPoint(entrySource, name: entryName, issues: &issues)
+        // Extra .js files get the same syntax gate — the runtime only loads
+        // `manifest.entry`, so a broken helper is dead weight the model
+        // should fix or drop before saving.
+        for (name, contents) in generation.files
+        where name.hasSuffix(".js") && name != entryName {
+            validateJavaScript(contents, name: name, issues: &issues)
+        }
+        validatePermissions(source: entrySource, manifest: manifest,
                             issues: &issues)
         return Outcome(manifest: manifest, issues: issues)
     }
@@ -54,7 +67,10 @@ enum GeneratedCommandValidator {
             return try JSONDecoder().decode(CommandManifest.self,
                                             from: Data(json.utf8))
         } catch {
-            issues.append("command.json isn't a valid manifest: \(error.localizedDescription)")
+            // String(describing:) keeps the DecodingError's coding path and
+            // key — localizedDescription strips both, and this text is fed
+            // back to the model as actionable context.
+            issues.append("command.json isn't a valid manifest: \(String(describing: error))")
             return nil
         }
     }
@@ -94,6 +110,10 @@ enum GeneratedCommandValidator {
         }
         context.globalObject.setValue(JSRuntime.preprocess(source),
                                       forProperty: "__invoque_check_source")
+        // `new Function` parses as a function body — JSRuntime instead
+        // evaluates the preprocessed source as a Program. The gap is narrow
+        // (a top-level `return` parses here but not at run time); keep the
+        // two in sync if either changes.
         _ = context.evaluateScript("new Function(__invoque_check_source)")
         if let exception = context.exception {
             issues.append("\(name) doesn't parse: \(exception.toString() ?? "syntax error")")
@@ -145,10 +165,10 @@ enum GeneratedCommandValidator {
     /// unused-permission check — `invoque.notify` is its only consumer.
     private static let notificationModule = "notify"
 
-    private static func validatePermissions(generation: GeneratedCommand,
+    private static func validatePermissions(source entrySource: String,
                                             manifest: CommandManifest,
                                             issues: inout [String]) {
-        let source = maskedSource(generation.entrySource)
+        let source = maskedSource(entrySource)
         let declared = manifest.grantedPermissions
         var required = Set<CommandManifest.Permission>()
         var usedModules = Set<String>()
@@ -194,6 +214,8 @@ enum GeneratedCommandValidator {
         // JSRuntime withholds side-effect modules from filter-mode commands
         // even when declared — a filter that needs them can never work.
         if manifest.mode == .filter {
+            // Keep this list in sync with the modules JSRuntime strips in
+            // its filter-mode branch (currently shell + paste).
             for permission: CommandManifest.Permission in [.shell, .paste]
             where required.contains(permission) || declared.contains(permission) {
                 issues.append(
@@ -229,6 +251,11 @@ enum GeneratedCommandValidator {
     /// Distinct `invoque.<token>`/`ctx.<token>` module names referenced by
     /// the script — `run(args, ctx)` receives the same object, so both names
     /// are the API surface.
+    ///
+    /// Limitation: aliasing (`const inv = invoque`) and destructuring
+    /// (`const { fetch } = invoque`) aren't detected — the system prompt
+    /// steers away from both, and JSRuntime's runtime gating is the actual
+    /// permission enforcement regardless.
     private static func moduleTokens(in source: String) -> Set<String> {
         var tokens = Set<String>()
         for match in source.matches(
@@ -261,6 +288,10 @@ enum GeneratedCommandValidator {
                 required.insert(.clipboardWrite)
                 used.insert("clipboard.write")
             default:
+                // Counted as used — like the stub modules — so a declared
+                // clipboard permission isn't also reported unused alongside
+                // the unknown-method issue (one clear issue beats two).
+                used.insert("clipboard")
                 issues.append(
                     "script calls 'invoque.clipboard.\(match.1)' — "
                     + "the only clipboard methods are read() and write()")
