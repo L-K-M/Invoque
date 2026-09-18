@@ -139,9 +139,9 @@ final class CommandPermissionGrantsTests: XCTestCase {
 
         // Inject a malformed sibling entry under the store key.
         let defaults = UserDefaults(suiteName: suiteName)!
-        var store = defaults.dictionary(forKey: "commandPermissionGrants") ?? [:]
+        var store = defaults.dictionary(forKey: CommandPermissionGrants.defaultsKey) ?? [:]
         store["corrupt"] = "not-an-array"
-        defaults.set(store, forKey: "commandPermissionGrants")
+        defaults.set(store, forKey: CommandPermissionGrants.defaultsKey)
 
         XCTAssertTrue(grants.ungranted(for: command).isEmpty,
                       "the valid grant must survive a malformed sibling")

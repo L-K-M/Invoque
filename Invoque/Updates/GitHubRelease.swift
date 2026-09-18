@@ -3,7 +3,9 @@ import Foundation
 /// The subset of GitHub's Releases API we care about.
 /// See <https://docs.github.com/en/rest/releases/releases>.
 ///
-/// Reusable across apps — depends only on Foundation.
+/// Reusable across macOS apps — Rosetta detection calls Darwin's
+/// `sysctlbyname`, so this file isn't portable off Apple platforms as
+/// written.
 struct GitHubRelease: Decodable {
     /// Shared and thread-safe — a 30-release page shouldn't allocate 30
     /// ICU-backed formatters.

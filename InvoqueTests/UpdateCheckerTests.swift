@@ -202,6 +202,10 @@ final class UpdateCheckerTests: XCTestCase {
 
         let done = await waitFor { !checker.isChecking }
         XCTAssertTrue(done)
+        // The run must have fetched at all — the leak poll alone can't
+        // distinguish "consumed" from "dropped".
+        let fetchedOnce = await waitFor { client.calls >= 1 }
+        XCTAssertTrue(fetchedOnce, "the user-initiated run must fetch")
         // The flag must be consumed-and-cleared at the read site: if it
         // leaked, the defer would queue a second user-initiated run.
         // Poll for that failure rather than sampling once after a fixed

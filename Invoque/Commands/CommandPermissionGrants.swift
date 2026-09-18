@@ -25,7 +25,9 @@ final class CommandPermissionGrants {
 
     /// `{grantKey: [permissionRawValue]}` — unioned on each grant, so a
     /// manifest that gains a risky permission re-asks only for the new one.
-    private static let defaultsKey = "commandPermissionGrants"
+    /// Internal (not private) so tests can inject malformed entries under
+    /// the real key instead of duplicating the literal.
+    static let defaultsKey = "commandPermissionGrants"
 
     private let defaults: UserDefaults
 
