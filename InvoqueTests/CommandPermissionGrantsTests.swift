@@ -131,6 +131,22 @@ final class CommandPermissionGrantsTests: XCTestCase {
         XCTAssertTrue(grants.ungranted(for: two).isEmpty)
     }
 
+    /// One malformed entry — schema drift or a hand-edited `defaults
+    /// write` — must not discard every stored grant.
+    func testMalformedEntryDoesNotWipeStore() throws {
+        let command = try makeCommand(permissions: ["shell"])
+        try grantShell(to: command)
+
+        // Inject a malformed sibling entry under the store key.
+        let defaults = UserDefaults(suiteName: suiteName)!
+        var store = defaults.dictionary(forKey: "commandPermissionGrants") ?? [:]
+        store["corrupt"] = "not-an-array"
+        defaults.set(store, forKey: "commandPermissionGrants")
+
+        XCTAssertTrue(grants.ungranted(for: command).isEmpty,
+                      "the valid grant must survive a malformed sibling")
+    }
+
     /// The supersede prefix "a@" can never collide with another command's
     /// keys: names are slug-validated, so "a@b" is rejected as a command name
     /// before it can run — pinning the invariant the supersede relies on.

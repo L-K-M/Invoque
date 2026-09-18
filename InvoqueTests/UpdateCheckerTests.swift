@@ -203,10 +203,12 @@ final class UpdateCheckerTests: XCTestCase {
         let done = await waitFor { !checker.isChecking }
         XCTAssertTrue(done)
         // The flag must be consumed-and-cleared at the read site: if it
-        // leaked, the defer would queue a second user-initiated run —
-        // settle, then require exactly one fetch.
-        try? await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(client.calls, 1)
+        // leaked, the defer would queue a second user-initiated run.
+        // Poll for that failure rather than sampling once after a fixed
+        // delay — a loaded runner can schedule the queued task late.
+        let leakedSecondFetch = await waitFor { client.calls > 1 }
+        XCTAssertFalse(leakedSecondFetch,
+                       "the user-request flag must be consumed at the read site")
         XCTAssertTrue(probe.calls.isEmpty,
                       "a run requested mid-flight must present, not queue")
     }

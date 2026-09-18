@@ -114,7 +114,10 @@ final class CommandPermissionGrants {
     }
 
     private func loadStore() -> [String: [String]] {
-        defaults.dictionary(forKey: Self.defaultsKey) as? [String: [String]] ?? [:]
+        // Per-entry cast: one malformed value (schema drift, a hand-edited
+        // `defaults write`) must not discard every stored grant.
+        (defaults.dictionary(forKey: Self.defaultsKey) ?? [:])
+            .compactMapValues { $0 as? [String] }
     }
 }
 
