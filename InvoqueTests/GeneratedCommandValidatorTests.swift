@@ -219,12 +219,24 @@ final class GeneratedCommandValidatorTests: XCTestCase {
         XCTAssertTrue(undeclared.issues.contains { $0.contains("clipboard.read") })
     }
 
+    /// `apps.launch` per keystroke is the same footgun class as shell/paste —
+    /// and even `apps.list()` is a disk scan outside the keystroke budget.
+    /// The assertion matches the rejection's own phrasing — a bare "apps"
+    /// substring could pass on a declaration-echo message while usage
+    /// detection is broken.
+    func testFilterModeRejectsApps() {
+        let outcome = GeneratedCommandValidator.validate(generation(
+            manifest: manifestJSON(mode: "filter", permissions: ["apps"]),
+            entry: "async function run(args, ctx) { ctx.apps.list(); }"))
+        XCTAssertTrue(outcome.issues.contains { $0.contains("can't use \"apps\"") })
+    }
+
     /// Filter mode withholds side-effect modules even when declared.
     func testFilterModeRejectsShell() {
         let outcome = GeneratedCommandValidator.validate(generation(
             manifest: manifestJSON(mode: "filter", permissions: ["shell"]),
             entry: "async function run(args, ctx) { ctx.shell.run(\"ls\"); }"))
-        XCTAssertTrue(outcome.issues.contains { $0.contains("shell") })
+        XCTAssertTrue(outcome.issues.contains { $0.contains("can't use \"shell\"") })
     }
 
     /// Always-available modules need no permission and count as used.

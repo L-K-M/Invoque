@@ -140,12 +140,13 @@ final class JSRuntime {
 
         // A filter command re-runs on every keystroke, so side-effectful
         // modules are withheld even when declared — a keystroke-driven side
-        // effect is a footgun (PLAN §11). `paste` is in the same class and is
-        // only a stub anyway.
+        // effect is a footgun (PLAN §11). `paste` is in the same class: a
+        // simulated ⌘V per keystroke would spray text into the frontmost app.
+        // `apps` too — a launch per keystroke is the same footgun, and even
+        // `apps.list()` is a full disk scan far outside the keystroke budget.
         var permissions = command.permissions
         if command.manifest.mode == .filter {
-            permissions.remove(.shell)
-            permissions.remove(.paste)
+            permissions.subtract(CommandManifest.Permission.filterWithheld)
         }
         let contextObject = InvoqueBridge.install(in: context, command: command, args: args,
                                                   permissions: permissions, logs: logs,

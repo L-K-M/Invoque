@@ -153,17 +153,13 @@ enum GeneratedCommandValidator {
     /// this table and not in `alwaysAvailable` are unknown — likely a
     /// hallucinated API, which is itself an issue.
     private static let modulePermissions: [String: CommandManifest.Permission] = [
+        "apps": .apps,
         "fetch": .network,
         "fs": .files,
         "open": .open,
+        "paste": .paste,
         "shell": .shell,
     ]
-
-    /// Modules the bridge installs only as throwing stubs — declaring the
-    /// permission makes `typeof invoque.paste` truthy but every method fails
-    /// at runtime. A script that calls one can never work, so it's an issue
-    /// outright rather than a permission requirement (PLAN §4.2 stubs).
-    private static let stubModules: Set<String> = ["paste", "apps"]
 
     /// Modules injected regardless of permissions: `args`, `log`, `notify`,
     /// `storage` (see InvoqueBridge). `notify` is always present — the
@@ -193,13 +189,6 @@ enum GeneratedCommandValidator {
                 checkClipboard(in: source, declared: declared,
                                required: &required, used: &usedModules,
                                issues: &issues)
-            } else if stubModules.contains(module) {
-                // Counted as "used" so a matching declaration isn't also
-                // flagged unused — one clear issue beats two contradictory.
-                usedModules.insert(module)
-                issues.append(
-                    "script uses 'invoque.\(module)', which is only a stub — "
-                    + "every method throws 'not implemented yet' at runtime; remove it")
             } else if let permission = modulePermissions[module] {
                 required.insert(permission)
                 usedModules.insert(module)
@@ -207,7 +196,7 @@ enum GeneratedCommandValidator {
                 issues.append(
                     "script uses 'invoque.\(module)', which isn't a known module — "
                     + "the available modules are: \(alwaysAvailable.sorted().joined(separator: ", ")), "
-                    + "clipboard, and the permission-gated fetch/fs/shell")
+                    + "clipboard, and the permission-gated \(modulePermissions.keys.sorted().joined(separator: "/"))")
             }
         }
 
@@ -227,9 +216,8 @@ enum GeneratedCommandValidator {
         // JSRuntime withholds side-effect modules from filter-mode commands
         // even when declared — a filter that needs them can never work.
         if manifest.mode == .filter {
-            // Keep this list in sync with the modules JSRuntime strips in
-            // its filter-mode branch (currently shell + paste).
-            for permission: CommandManifest.Permission in [.shell, .paste]
+            // Same set JSRuntime strips — sorted for stable issue order.
+            for permission in CommandManifest.Permission.filterWithheld.sorted(by: permissionOrder)
             where required.contains(permission) || declared.contains(permission) {
                 issues.append(
                     "filter-mode commands can't use \"\(permission.rawValue)\" — "
