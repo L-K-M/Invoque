@@ -32,17 +32,19 @@ final class UpdateCheckerTests: XCTestCase {
         return try JSONDecoder().decode(GitHubRelease.self, from: Data(json.utf8))
     }
 
-    private final class StubReleaseClient: UpdateChecker.ReleaseFetching {
+    private final class StubReleaseClient: UpdateChecker.ReleaseFetching, @unchecked Sendable {
         var release: GitHubRelease
-        var calls = 0
+        private let lock = NSLock()
+        private var storage = 0
+        var calls: Int { lock.lock(); defer { lock.unlock() }; return storage }
         init(release: GitHubRelease) { self.release = release }
         func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease {
-            calls += 1
+            lock.lock(); storage += 1; lock.unlock()
             return release
         }
     }
 
-    private func makeChecker(client: StubReleaseClient) -> UpdateChecker {
+    private func makeChecker(client: any UpdateChecker.ReleaseFetching) -> UpdateChecker {
         UpdateChecker(
             configuration: .init(owner: "test", repo: "test",
                                  appName: "Test", currentVersion: "1.0"),
@@ -61,9 +63,15 @@ final class UpdateCheckerTests: XCTestCase {
 
     /// Records every `onPendingUpdateChanged` emission so tests can tell
     /// "never fired" apart from "fired with nil".
-    private final class PendingProbe {
-        var calls: [String?] = []
-        var handler: (String?) -> Void { { [weak self] tag in self?.calls.append(tag) } }
+    private final class PendingProbe: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [String?] = []
+        var calls: [String?] { lock.lock(); defer { lock.unlock() }; return storage }
+        var handler: (String?) -> Void { { [weak self] tag in self?.record(tag) } }
+        private func record(_ tag: String?) {
+            lock.lock(); defer { lock.unlock() }
+            storage.append(tag)
+        }
     }
 
     /// A newer release found in the background while Invoque is inactive must
@@ -77,7 +85,7 @@ final class UpdateCheckerTests: XCTestCase {
         checker.checkInBackground()
         let queued = await waitFor { !probe.calls.isEmpty }
         XCTAssertTrue(queued, "background check should surface a pending update")
-        XCTAssertEqual(probe.calls.first!, "v9.9.9")
+        XCTAssertEqual(probe.calls.first, "v9.9.9")
         XCTAssertEqual(client.calls, 1)
     }
 
@@ -92,6 +100,10 @@ final class UpdateCheckerTests: XCTestCase {
         checker.onPendingUpdateChanged = probe.handler
 
         checker.checkInBackground()
+        // Wait for the fetch before treating isChecking as a completion
+        // signal — the negative assertion must not race the check itself.
+        let reached = await waitFor { client.calls == 1 }
+        XCTAssertTrue(reached, "the check should reach the client")
         let done = await waitFor { !checker.isChecking }
         XCTAssertTrue(done)
         XCTAssertTrue(probe.calls.isEmpty,
@@ -110,7 +122,7 @@ final class UpdateCheckerTests: XCTestCase {
         checker.checkInBackground()
         let queued = await waitFor { !probe.calls.isEmpty }
         XCTAssertTrue(queued)
-        XCTAssertEqual(probe.calls.first!, "9.9.10")
+        XCTAssertEqual(probe.calls.first, "9.9.10")
     }
 
     /// A second background check inside the throttle window must not hit the
@@ -120,13 +132,39 @@ final class UpdateCheckerTests: XCTestCase {
         let checker = makeChecker(client: client)
 
         checker.checkInBackground()
-        let first = await waitFor { client.calls == 1 }
+        let first = await waitFor { client.calls == 1 && !checker.isChecking }
         XCTAssertTrue(first, "first background check should reach the client")
 
         checker.checkInBackground()
         try? await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertEqual(client.calls, 1,
                        "the throttle window must suppress repeat checks")
+    }
+
+    /// A suspending stub: `latestRelease` parks on a continuation so a test
+    /// can act while a check is in flight, then releases it.
+    private final class SuspendedReleaseClient: UpdateChecker.ReleaseFetching, @unchecked Sendable {
+        private let release: GitHubRelease
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<GitHubRelease, Never>?
+        private var released = false
+        init(release: GitHubRelease) { self.release = release }
+        func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease {
+            await withCheckedContinuation { c in
+                lock.lock()
+                if released { lock.unlock(); c.resume(returning: release) }
+                else { continuation = c; lock.unlock() }
+            }
+        }
+        /// Releases the suspended fetch — also valid if the fetch hasn't
+        /// reached its suspension point yet (the Task hop is async).
+        func resume() {
+            lock.lock()
+            released = true
+            let c = continuation; continuation = nil
+            lock.unlock()
+            c?.resume(returning: release)
+        }
     }
 
     /// Remote <= current reports nothing and queues nothing.
@@ -137,8 +175,31 @@ final class UpdateCheckerTests: XCTestCase {
         checker.onPendingUpdateChanged = probe.handler
 
         checker.checkInBackground()
+        let reached = await waitFor { client.calls == 1 }
+        XCTAssertTrue(reached, "the check should reach the client")
         let done = await waitFor { !checker.isChecking }
         XCTAssertTrue(done)
         XCTAssertTrue(probe.calls.isEmpty)
+    }
+
+    /// A checkNow() that arrives while a background fetch is in flight must be
+    /// consumed by THAT run — not at task start (which drops the click and
+    /// leaks the flag into the next automatic check). For a newer release,
+    /// "reported" means presented rather than queued, so the pending-update
+    /// callback must not fire.
+    func testCheckNowDuringInFlightCheckIsConsumedByThatRun() async throws {
+        let client = SuspendedReleaseClient(release: try release(tag: "9.9.9"))
+        let checker = makeChecker(client: client)
+        let probe = PendingProbe()
+        checker.onPendingUpdateChanged = probe.handler
+
+        checker.checkInBackground()        // fetch suspends mid-flight
+        checker.checkNow()                 // marks this run user-requested
+        client.resume()
+
+        let done = await waitFor { !checker.isChecking }
+        XCTAssertTrue(done)
+        XCTAssertTrue(probe.calls.isEmpty,
+                      "a run requested mid-flight must present, not queue")
     }
 }

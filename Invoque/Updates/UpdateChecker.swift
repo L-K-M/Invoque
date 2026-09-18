@@ -167,12 +167,16 @@ final class UpdateChecker: ObservableObject {
         isChecking = true
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let report = userInitiated || self.pendingUserInitiatedCheck
-            self.pendingUserInitiatedCheck = false
             defer { self.isChecking = false }
             do {
                 let release = try await self.client.latestRelease(
                     includePrereleases: self.configuration.allowPrereleases)
+                // Consume after the await: a checkNow() that arrived while this
+                // request was in flight must have THIS run's outcome reported —
+                // reading the flag earlier would drop the click and leak the
+                // flag into a future automatic check.
+                let report = userInitiated || self.pendingUserInitiatedCheck
+                self.pendingUserInitiatedCheck = false
                 self.lastCheckDate = Date()
                 self.defaults.set(self.lastCheckDate, forKey: self.key("lastCheck"))
 
@@ -200,6 +204,10 @@ final class UpdateChecker: ObservableObject {
                     self.presentUpToDate()
                 }
             } catch {
+                // Same consumption on the failure path — a mid-flight click
+                // must surface this error, not seed a later automatic check.
+                let report = userInitiated || self.pendingUserInitiatedCheck
+                self.pendingUserInitiatedCheck = false
                 if report { self.presentError(error) }
                 else { NSLog("UpdateChecker: background check failed: %@", error.localizedDescription) }
             }
@@ -210,6 +218,9 @@ final class UpdateChecker: ObservableObject {
     /// status menu gets an "Update Available" item now, and the alert itself is
     /// presented the next time Invoque legitimately owns focus — never as a
     /// focus-stealing modal on a timer.
+    /// `@MainActor` so `onPendingUpdateChanged` is guaranteed main-thread —
+    /// its consumer mutates AppKit menu items.
+    @MainActor
     private func queuePendingUpdate(_ release: GitHubRelease) {
         pendingUpdate = release
         onPendingUpdateChanged?(release.tagName)
@@ -225,10 +236,18 @@ final class UpdateChecker: ObservableObject {
     @MainActor
     private func presentPendingUpdateIfAny() {
         guard let release = pendingUpdate else { return }
+        // Validate before clearing — a queued tag can't fail this (queueing
+        // already required a successful parse), but if that ever changes the
+        // update must surface as unparseable rather than vanish.
+        guard let remote = SemanticVersion(release.tagName),
+              let current = SemanticVersion(configuration.currentVersion) else {
+            pendingUpdate = nil
+            onPendingUpdateChanged?(nil)
+            presentUnparseable(tag: release.tagName)
+            return
+        }
         pendingUpdate = nil
         onPendingUpdateChanged?(nil)
-        guard let remote = SemanticVersion(release.tagName),
-              let current = SemanticVersion(configuration.currentVersion) else { return }
         presentUpdateAvailable(release: release, remote: remote, current: current)
     }
 
@@ -236,9 +255,12 @@ final class UpdateChecker: ObservableObject {
 
     @MainActor
     private func presentUpdateAvailable(release: GitHubRelease, remote: SemanticVersion, current: SemanticVersion) {
-        // A user-initiated check that presents the same release a background
-        // check queued retires the pending entry and its menu item.
-        if SemanticVersion(pendingUpdate?.tagName ?? "") == remote {
+        // Presenting a release (e.g. a user-initiated check) retires a queued
+        // update that is the same or older — otherwise a stale "Update
+        // Available" would resurface on the next activation after the user
+        // already saw the newer alert.
+        if let pendingRemote = pendingUpdate?.tagName.flatMap(SemanticVersion.init),
+           pendingRemote <= remote {
             pendingUpdate = nil
             onPendingUpdateChanged?(nil)
         }
@@ -325,6 +347,9 @@ final class UpdateChecker: ObservableObject {
     /// with no Dock icon to click.
     @MainActor
     private func runModal(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        // Under XCTest a real modal would block the run loop forever — answer
+        // "Remind Me Later" so check flows can still be exercised end-to-end.
+        guard !TestEnvironment.isRunningTests else { return .alertSecondButtonReturn }
         let handoff = ActivationHandoff()
         AppActivator.activateSelfForOwnWindow()
         alert.window.level = .floating

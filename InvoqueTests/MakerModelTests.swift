@@ -309,9 +309,14 @@ final class MakerModelTests: XCTestCase {
                                runner: CommandRunner(),
                                writer: CommandWriter(rootURL: blocker),
                                store: nil,
-                               permissionGrants: CommandPermissionGrants(
-                                   defaults: UserDefaults(
-                                       suiteName: "MakerModelTests-\(UUID().uuidString)")!))
+                               permissionGrants: {
+                                   let suite = "MakerModelTests-\(UUID().uuidString)"
+                                   let defaults = UserDefaults(suiteName: suite)!
+                                   addTeardownBlock {
+                                       defaults.removePersistentDomain(forName: suite)
+                                   }
+                                   return CommandPermissionGrants(defaults: defaults)
+                               }())
 
         await model.start(prompt: "demo")
         await model.save()

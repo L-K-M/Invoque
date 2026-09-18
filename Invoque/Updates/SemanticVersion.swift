@@ -55,14 +55,24 @@ struct SemanticVersion: Comparable, Equatable, CustomStringConvertible {
         case (nil, _?):  return false   // final > pre-release
         case (_?, nil):  return true    // pre-release < final
         case let (l?, r?):
-            // Both pre-release: compare dot-separated identifiers — numeric
-            // fields numerically ("beta.10" > "beta.2"), everything else
-            // lexically. ASCII puts digits before letters, so mixed pairs
-            // sort numeric-first per semver.
+            // Both pre-release: compare dot-separated identifiers per semver
+            // §11 — numeric fields numerically ("beta.10" > "beta.2"), and a
+            // numeric identifier always ranks below an alphanumeric one. A
+            // lexical fallback for mixed pairs would be non-transitive
+            // ("beta.2" < "beta.10" < "beta.1a" < "beta.2" — a cycle).
+            func isNumeric(_ s: Substring) -> Bool {
+                s.allSatisfy { $0.isASCII && $0.isNumber }
+            }
             return l.split(separator: ".").lexicographicallyPrecedes(
                 r.split(separator: ".")) { a, b in
-                    if let x = Int(a), let y = Int(b) { return x < y }
-                    return a < b
+                    if isNumeric(a) && isNumeric(b), let x = Int(a), let y = Int(b) {
+                        return x < y
+                    }
+                    switch (isNumeric(a), isNumeric(b)) {
+                    case (true, false): return true    // numeric < alphanumeric
+                    case (false, true): return false
+                    default: return a < b
+                    }
                 }
         }
     }

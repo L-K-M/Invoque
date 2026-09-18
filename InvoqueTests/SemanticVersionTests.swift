@@ -42,6 +42,25 @@ final class SemanticVersionTests: XCTestCase {
         XCTAssertTrue(SemanticVersion("1.2.0-1")! < SemanticVersion("1.2.0-alpha")!)
     }
 
+    /// Semver §11: a numeric identifier always ranks below an alphanumeric
+    /// one — even when the alphanumeric starts with a digit or a hyphen.
+    /// A mixed-pair lexical fallback breaks strict weak ordering
+    /// (beta.2 < beta.10 < beta.1a < beta.2 — a cycle).
+    func testPrereleaseMixedIdentifiersKeepStrictOrdering() {
+        let beta2 = SemanticVersion("1.0.0-beta.2")!
+        let beta10 = SemanticVersion("1.0.0-beta.10")!
+        let beta1a = SemanticVersion("1.0.0-beta.1a")!
+        XCTAssertTrue(beta2 < beta10)   // numeric < numeric
+        XCTAssertTrue(beta2 < beta1a)   // numeric < alphanumeric
+        XCTAssertTrue(beta10 < beta1a)
+        // No cycle: a < b and b < c implies a < c.
+        XCTAssertTrue(beta2 < beta1a && beta10 < beta1a)
+        // A hyphen-led identifier is alphanumeric — still outranks numeric.
+        XCTAssertTrue(SemanticVersion("1.0.0-beta.1")! < SemanticVersion("1.0.0-beta.-rc")!)
+        // Prefix rule unchanged: shorter identifier set ranks first.
+        XCTAssertTrue(SemanticVersion("1.0.0-beta")! < SemanticVersion("1.0.0-beta.1")!)
+    }
+
     func testNewerThanCurrentDetection() {
         let current = SemanticVersion("1.0")!
         XCTAssertTrue(SemanticVersion("1.0.1")! > current)
