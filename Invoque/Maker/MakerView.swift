@@ -292,18 +292,24 @@ struct MakerView: View {
         var args: [String] = []
         var current = ""
         var quote: Character?
+        // A quoted empty string is still an argument — `--text ""` must
+        // arrive as "" rather than being dropped at the flush points.
+        var sawQuote = false
         for ch in raw {
             if let q = quote {
                 if ch == q { quote = nil } else { current.append(ch) }
             } else if ch == "\"" || ch == "'" {
                 quote = ch
+                sawQuote = true
             } else if ch.isWhitespace {
-                if !current.isEmpty { args.append(current); current = "" }
+                if !current.isEmpty || sawQuote {
+                    args.append(current); current = ""; sawQuote = false
+                }
             } else {
                 current.append(ch)
             }
         }
-        if !current.isEmpty { args.append(current) }
+        if !current.isEmpty || sawQuote { args.append(current) }
         return args
     }
 

@@ -25,6 +25,13 @@ final class MakerViewTests: XCTestCase {
         XCTAssertEqual(MakerView.parseArgs("   "), [])
     }
 
+    /// A quoted empty string is an argument, matching shell semantics —
+    /// `--text ""` distinguishes "blank" from "flag absent".
+    func testParseArgsKeepsEmptyQuotedArg() {
+        XCTAssertEqual(MakerView.parseArgs("--text \"\" tail"),
+                       ["--text", "", "tail"])
+    }
+
     /// An unmatched quote swallows the remainder — the user's intent is
     /// unambiguous, and a silent third token would be more surprising.
     func testParseArgsUnmatchedQuoteSwallowsRest() {
