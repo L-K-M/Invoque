@@ -54,11 +54,13 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.scanWatchTargets.count, 11)
         // The nested targets span four distinct command directories — a
         // greedy first-come allocation would land both of cmd0's files
-        // instead and starve the rest. A nested target's parent is a
-        // command dir, i.e. a directory whose own parent is the root.
+        // instead and starve the rest. Compared on paths: URL equality
+        // trips on trailing-slash differences between enumerated and
+        // hand-built URLs.
+        let rootPath = root.standardizedFileURL.path
         let nestedCommandDirs = Set(store.scanWatchTargets
-            .map { $0.deletingLastPathComponent() }
-            .filter { $0.deletingLastPathComponent() == root })
+            .map { $0.deletingLastPathComponent().standardizedFileURL.path }
+            .filter { $0 != rootPath && $0.hasPrefix(rootPath + "/") })
         XCTAssertEqual(nestedCommandDirs.count, 4)
     }
 
