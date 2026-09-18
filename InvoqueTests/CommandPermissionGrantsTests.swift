@@ -66,9 +66,11 @@ final class CommandPermissionGrantsTests: XCTestCase {
     /// silently under an old Allow.
     func testChangedEntryReAsksUnderTheSameName() throws {
         let v1 = try makeCommandOnDisk(name: "demo",
-                                       entry: "return { title: \"v1\" };")
+                                       entry: "return { title: \"v1\" };",
+                                       directoryName: "v1")
         let v2 = try makeCommandOnDisk(name: "demo",
-                                       entry: "return { title: \"v2\" };")
+                                       entry: "return { title: \"v2\" };",
+                                       directoryName: "v2")
         grants.grant([.shell], for: v1)
         XCTAssertTrue(grants.ungranted(for: v1).isEmpty)
         XCTAssertEqual(grants.ungranted(for: v2), [.shell],

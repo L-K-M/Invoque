@@ -235,9 +235,13 @@ final class MakerModelTests: XCTestCase {
         let cleared = await model.permissionRequest
         XCTAssertNil(cleared)
         // Allow must persist the grant, not just resume this run — a
-        // regression here re-prompts on every test.
-        let command = try XCTUnwrap(paused?.command)
-        XCTAssertTrue(grants.ungranted(for: command).isEmpty)
+        // regression here re-prompts on every test. `paused.command`'s
+        // staging dir was deleted by the re-run's stage(), so check the
+        // installed command: identical entry bytes → same grant key.
+        await model.save()
+        let installed = try Command(
+            directory: root.appendingPathComponent("gen-demo"))
+        XCTAssertTrue(grants.ungranted(for: installed).isEmpty)
     }
 
     func testDismissPermissionRequestLeavesDraftUntested() async {
