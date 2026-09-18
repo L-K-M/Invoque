@@ -36,7 +36,7 @@ final class CommandStore {
     private let watchTargetLimit: Int
     private var _commands: [Command] = []
     private var _errors: [ScanError] = []
-    private var _watchTargetCount = 0
+    private var _scanWatchTargets: [URL] = []
     private var sources: [DispatchSourceFileSystemObject] = []
     private var watchedTargets: [URL] = []
     private var pendingRescan: DispatchWorkItem?
@@ -62,9 +62,9 @@ final class CommandStore {
     /// Directories that failed to load in the most recent scan.
     var scanErrors: [ScanError] { stateQueue.sync { _errors } }
 
-    /// How many watch targets the most recent scan collected — the fd
-    /// budget in action, exposed for tests.
-    var watchTargetCount: Int { stateQueue.sync { _watchTargetCount } }
+    /// The watch targets the most recent scan collected — the fd budget in
+    /// action, exposed for tests.
+    var scanWatchTargets: [URL] { stateQueue.sync { _scanWatchTargets } }
 
     deinit {
         // Cancel handlers close the watched descriptors.
@@ -176,7 +176,7 @@ final class CommandStore {
         let changed = outcome.commands != _commands
         _commands = outcome.commands
         _errors = outcome.errors
-        _watchTargetCount = outcome.watchTargets.count
+        _scanWatchTargets = outcome.watchTargets
         if watching, outcome.watchTargets != watchedTargets {
             rebuildWatchers(outcome.watchTargets)
         }

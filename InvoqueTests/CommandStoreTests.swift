@@ -51,7 +51,15 @@ final class CommandStoreTests: XCTestCase {
 
         XCTAssertEqual(store.commands.count, 6)
         // 1 root + 6 command dirs + exactly 4 nested targets.
-        XCTAssertEqual(store.watchTargetCount, 11)
+        XCTAssertEqual(store.scanWatchTargets.count, 11)
+        // The nested targets span four distinct command directories — a
+        // greedy first-come allocation would land both of cmd0's files
+        // instead and starve the rest. A nested target's parent is a
+        // command dir, i.e. a directory whose own parent is the root.
+        let nestedCommandDirs = Set(store.scanWatchTargets
+            .map { $0.deletingLastPathComponent() }
+            .filter { $0.deletingLastPathComponent() == root })
+        XCTAssertEqual(nestedCommandDirs.count, 4)
     }
 
     func testMissingRootYieldsNoCommandsAndNoError() {
