@@ -130,6 +130,14 @@ final class PanelController: NSObject {
             await MainActor.run { [weak self] in
                 guard let self,
                       self.commandRunGeneration == generation else { return }
+                // A failure surfaces as a one-line HUD regardless of the
+                // output shape — today errors always carry .void, but a
+                // future runner could pair partial output with an error.
+                if let error = result.error {
+                    self.hide()
+                    HUD.show(error.localizedDescription)
+                    return
+                }
                 switch result.output {
                 case .items(let items):
                     // Dropped when the panel was dismissed mid-run or the
@@ -142,12 +150,9 @@ final class PanelController: NSObject {
                     }
                 case .title(let title):
                     self.hide()
-                    HUD.show(result.error?.localizedDescription ?? title)
+                    HUD.show(title)
                 case .void:
                     self.hide()
-                    if let error = result.error {
-                        HUD.show(error.localizedDescription)
-                    }
                 }
             }
         }
