@@ -146,9 +146,7 @@ final class JSRuntime {
         // `apps.list()` is a full disk scan far outside the keystroke budget.
         var permissions = command.permissions
         if command.manifest.mode == .filter {
-            permissions.remove(.shell)
-            permissions.remove(.paste)
-            permissions.remove(.apps)
+            permissions.subtract(CommandManifest.Permission.filterWithheld)
         }
         let contextObject = InvoqueBridge.install(in: context, command: command, args: args,
                                                   permissions: permissions, logs: logs,

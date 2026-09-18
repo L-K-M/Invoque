@@ -56,6 +56,13 @@ struct CommandManifest: Codable, Equatable {
         case paste
         case shell
         case notification
+
+        /// Permissions withheld from filter-mode commands even when
+        /// declared: side-effecting modules (`shell`, `paste`, `apps.launch`)
+        /// or work far outside the ~80 ms keystroke budget (`apps.list`).
+        /// Single source for JSRuntime's stripping and the generator
+        /// validator's mirror check — keep both pointed here.
+        static let filterWithheld: Set<Permission> = [.shell, .paste, .apps]
     }
 
     struct Argument: Codable, Equatable {

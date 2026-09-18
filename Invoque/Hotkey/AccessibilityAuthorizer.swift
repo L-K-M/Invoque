@@ -11,10 +11,18 @@ enum AccessibilityAuthorizer {
         AXIsProcessTrusted()
     }
 
+    /// Whether `prompt()` has already run this session. The system alert
+    /// only appears on the first call — later calls are silently denied, so
+    /// a caller can read this *before* prompting to know whether the user
+    /// will see a dialog or whether opening Settings itself is the only
+    /// prompt they'll get.
+    private(set) static var hasPrompted = false
+
     /// Prompts the user to grant Accessibility access (shows the system dialog
     /// the first time). Returns the current trust state.
     @discardableResult
     static func prompt() -> Bool {
+        hasPrompted = true
         // Value of `kAXTrustedCheckOptionPrompt`; used as a literal to avoid
         // cross-SDK differences in how that symbol is imported into Swift.
         let promptKey = "AXTrustedCheckOptionPrompt"

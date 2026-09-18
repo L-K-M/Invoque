@@ -420,11 +420,17 @@ enum InvoqueBridge {
         guard let paste = JSValue(newObjectIn: context) else { return }
 
         let text: @convention(block) (String) -> Bool = { contents in
+            // `hasPrompted` is read *before* prompt() runs: it tells whether
+            // the system dialog will actually appear this call — it only
+            // shows once. On a repeat denial there's no dialog, so opening
+            // the pane directly is the only prompt the user gets; on the
+            // first denial the dialog (with its own Settings button) is
+            // already up and stacking the pane on top of it is worse.
+            let promptedBefore = AccessibilityAuthorizer.hasPrompted
             guard AccessibilityAuthorizer.isTrusted || AccessibilityAuthorizer.prompt() else {
-                // The AX prompt offers its own Settings button, but when it
-                // was already shown once the system suppresses it — opening
-                // the pane directly keeps the failure actionable.
-                AccessibilityAuthorizer.openSystemSettings()
+                if promptedBefore {
+                    AccessibilityAuthorizer.openSystemSettings()
+                }
                 throwError("invoque.paste.text: Accessibility access required — grant Invoque in System Settings → Privacy & Security → Accessibility")
                 return false
             }

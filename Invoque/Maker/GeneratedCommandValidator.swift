@@ -216,9 +216,8 @@ enum GeneratedCommandValidator {
         // JSRuntime withholds side-effect modules from filter-mode commands
         // even when declared — a filter that needs them can never work.
         if manifest.mode == .filter {
-            // Keep this list in sync with the modules JSRuntime strips in
-            // its filter-mode branch (currently shell + paste + apps).
-            for permission: CommandManifest.Permission in [.shell, .paste, .apps]
+            // Same set JSRuntime strips — sorted for stable issue order.
+            for permission in CommandManifest.Permission.filterWithheld.sorted(by: permissionOrder)
             where required.contains(permission) || declared.contains(permission) {
                 issues.append(
                     "filter-mode commands can't use \"\(permission.rawValue)\" — "
