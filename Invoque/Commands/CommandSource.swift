@@ -68,10 +68,14 @@ final class CommandSource: ItemSource {
 
     /// The filter-mode command claiming `keyword`, if any. The first token
     /// of a query is looked up here; a hit switches the panel into that
-    /// command's live list.
+    /// command's live list. A keywordless filter command is claimed by its
+    /// name — the same fallback `items(matching:)` uses for its
+    /// `.enterFilter` keyword, so entry and routing stay symmetric.
     func filterCommand(forKeyword keyword: String) -> Command? {
         store.commands.first {
-            $0.manifest.mode == .filter && $0.manifest.keywords.contains(keyword)
+            $0.manifest.mode == .filter
+                && ($0.manifest.keywords.contains(keyword)
+                    || $0.manifest.name == keyword)
         }
     }
 }

@@ -47,6 +47,10 @@ final class CommandSourceTests: XCTestCase {
         let source = CommandSource(store: store(), autoReload: false)
         XCTAssertEqual(source.items(matching: "").first?.action,
                        .enterFilter(keyword: "picker"))
+        // Routing must honor the same fallback — otherwise submitting the
+        // row expands to "picker " that resolves to nothing.
+        XCTAssertEqual(source.filterCommand(forKeyword: "picker")?.manifest.name,
+                       "picker")
     }
 
     func testActionCommandIsNotAFilterCommand() throws {
