@@ -142,12 +142,13 @@ private struct PermissionRequestCard: View {
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 2) {
                     // The title is command-authored and could pose as a
-                    // system prompt — attribute the card to the command.
-                    Text(request.command.manifest.title)
-                        .font(.headline)
+                    // system prompt — the trusted attribution leads, the
+                    // untrusted title follows it.
                     Text("Invoque command · \(request.command.name)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    Text(request.command.manifest.title)
+                        .font(.headline)
                     Text("wants to:")
                         .font(.caption)
                         .foregroundStyle(.secondary)

@@ -91,10 +91,13 @@ struct GitHubRelease: Decodable {
 
     /// A trimmed, length-capped form of the release body, suitable for an alert's
     /// informative text (markdown is shown as-is — GitHub bodies are mostly plain).
+    /// `maxLength` bounds the returned string — the ellipsis counts against it.
     func releaseNotes(maxLength: Int = 600) -> String? {
         guard let body = body?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty else { return nil }
         guard body.count > maxLength else { return body }
-        let end = body.index(body.startIndex, offsetBy: maxLength)
+        // An ellipsis alone is 1 char — below maxLength 2 nothing fits.
+        guard maxLength > 1 else { return nil }
+        let end = body.index(body.startIndex, offsetBy: maxLength - 1)
         return String(body[..<end]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 }

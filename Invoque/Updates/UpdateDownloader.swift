@@ -48,7 +48,11 @@ struct UpdateDownloader {
     private static func applyQuarantine(to url: URL) {
         // Timestamp field is hex seconds — the format Safari/Chromium write.
         let timestamp = String(Int(Date().timeIntervalSince1970), radix: 16)
-        let value = "0002;\(timestamp);Invoque;\(UUID().uuidString)"
+        // The agent field is provenance metadata — derive it from the
+        // embedding app's bundle, not a hardcoded name (reusable type).
+        let agent = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "Invoque"
+        let value = "0002;\(timestamp);\(agent);\(UUID().uuidString)"
         value.withCString { cValue in
             "com.apple.quarantine".withCString { name in
                 _ = setxattr(url.path, name, cValue, strlen(cValue), 0, 0)

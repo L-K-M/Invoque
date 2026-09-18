@@ -153,7 +153,8 @@ final class GitHubReleaseTests: XCTestCase {
         { "tag_name": "1.0", "html_url": "https://example.com", "prerelease": false, "draft": false, "assets": [], "body": "  \(long)  " }
         """)
         let notes = release.releaseNotes(maxLength: 100)
-        XCTAssertEqual(notes?.count, 101)             // 100 chars + the ellipsis
+        XCTAssertEqual(notes?.first, "x")             // leading whitespace trimmed
+        XCTAssertEqual(notes?.count, 100)             // maxLength bounds the result, "…" included
         XCTAssertEqual(notes?.last, "…")
     }
 }
