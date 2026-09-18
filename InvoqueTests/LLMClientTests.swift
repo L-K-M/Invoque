@@ -118,6 +118,8 @@ final class LLMClientTests: XCTestCase {
             }
             XCTAssertEqual(code, 401)
             XCTAssertTrue(body.contains("bad key"))
+        } catch {
+            XCTFail("expected LLMError, got \(error)")
         }
     }
 
@@ -160,6 +162,8 @@ final class LLMClientTests: XCTestCase {
             guard case .transport = error else {
                 return XCTFail("expected transport, got \(error)")
             }
+        } catch {
+            XCTFail("expected LLMError, got \(error)")
         }
     }
 
