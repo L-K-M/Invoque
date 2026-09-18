@@ -37,20 +37,43 @@ final class CommandSourceTests: XCTestCase {
         let source = CommandSource(store: store(), autoReload: false)
         let item = source.items(matching: "").first
 
-        XCTAssertEqual(item?.action, .enterFilter(keyword: "em"))
+        XCTAssertEqual(item?.action, .enterFilter(keyword: "em", commandName: "emoji"))
         XCTAssertEqual(source.filterCommand(forKeyword: "em")?.manifest.name, "emoji")
         XCTAssertNil(source.filterCommand(forKeyword: "nope"))
+    }
+
+    func testOnlyFirstKeywordTriggersFilterMode() throws {
+        // PLAN §3: the first keywords entry is the trigger word — later
+        // entries are search words only.
+        try writeCommand("emoji-picker", title: "Emoji Picker", mode: "filter",
+                         keywords: ["em", "emoji"])
+        let source = CommandSource(store: store(), autoReload: false)
+        XCTAssertEqual(source.filterCommand(forKeyword: "em")?.manifest.name,
+                       "emoji-picker")
+        XCTAssertNil(source.filterCommand(forKeyword: "emoji"))
+    }
+
+    func testNameMatchWinsOverKeywordCollision() throws {
+        // Command A is *named* "go"; command B only claims "go" as a
+        // keyword. The name is the stronger identity — it wins.
+        try writeCommand("go", title: "Go", mode: "filter", keywords: [])
+        try writeCommand("b-cmd", title: "B", mode: "filter", keywords: ["go"])
+        let source = CommandSource(store: store(), autoReload: false)
+        XCTAssertEqual(source.filterCommand(forKeyword: "go")?.manifest.name, "go")
     }
 
     func testKeywordlessFilterCommandFallsBackToName() throws {
         try writeCommand("picker", title: "Picker", mode: "filter", keywords: [])
         let source = CommandSource(store: store(), autoReload: false)
-        XCTAssertEqual(source.items(matching: "").first?.action,
-                       .enterFilter(keyword: "picker"))
+        let item = source.items(matching: "").first
+        XCTAssertEqual(item?.action,
+                       .enterFilter(keyword: "picker", commandName: "picker"))
         // Routing must honor the same fallback — otherwise submitting the
         // row expands to "picker " that resolves to nothing.
         XCTAssertEqual(source.filterCommand(forKeyword: "picker")?.manifest.name,
                        "picker")
+        // And the name must be searchable — it is the visible trigger word.
+        XCTAssertTrue(item?.matchText.contains("picker") ?? false)
     }
 
     func testActionCommandIsNotAFilterCommand() throws {
@@ -72,16 +95,14 @@ final class CommandSourceTests: XCTestCase {
                               keywords: [String] = []) throws {
         let directory = root.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let keywordJSON = keywords.map { "\"\($0)\"" }.joined(separator: ", ")
-        let manifest = """
-        {
-          "schemaVersion": 1, "name": "\(name)", "title": "\(title)",
-          "runtime": "js", "entry": "main.js", "mode": "\(mode)",
-          "keywords": [\(keywordJSON)]
-        }
-        """
-        try manifest.write(to: directory.appendingPathComponent("command.json"),
-                           atomically: true, encoding: .utf8)
+        let manifest: [String: Any] = [
+            "schemaVersion": 1, "name": name, "title": title,
+            "runtime": "js", "entry": "main.js", "mode": mode,
+            "keywords": keywords,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: manifest)
+        try data.write(to: directory.appendingPathComponent("command.json"),
+                       options: .atomic)
         try "async function run() {}".write(
             to: directory.appendingPathComponent("main.js"),
             atomically: true, encoding: .utf8)

@@ -18,6 +18,8 @@ final class PanelController: NSObject {
     private let model: PanelModel
     private let commandStore: CommandStore
     private let commandRunner: CommandRunner
+    /// Sequencing for overlapping command runs — only the newest delivers.
+    private var commandRunGeneration = 0
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
 
@@ -117,18 +119,30 @@ final class PanelController: NSObject {
             HUD.show("Unknown command: \(name)")
             return
         }
+        // Only the newest run may deliver — a slow earlier command must not
+        // overwrite a newer run's results (or fire a second stale HUD).
+        commandRunGeneration += 1
+        let generation = commandRunGeneration
+        let submittedQuery = model.query
         let runner = commandRunner
         Task {
             let result = await runner.run(command: command, args: args)
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self,
+                      self.commandRunGeneration == generation else { return }
                 switch result.output {
                 case .items(let items):
-                    self.model.showCommandResults(
-                        PanelModel.commandRows(command: command, items: items))
+                    // Dropped when the panel was dismissed mid-run or the
+                    // query moved on — stale rows must not greet the next
+                    // summon or stomp fresh search results.
+                    if self.panel?.isVisible == true,
+                       self.model.query == submittedQuery {
+                        self.model.showCommandResults(
+                            PanelModel.commandRows(command: command, items: items))
+                    }
                 case .title(let title):
                     self.hide()
-                    HUD.show(title)
+                    HUD.show(result.error?.localizedDescription ?? title)
                 case .void:
                     self.hide()
                     if let error = result.error {

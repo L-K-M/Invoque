@@ -109,11 +109,11 @@ final class SearchModel {
     /// `recordSelection` by id alone — the panel's rows carry the id, not
     /// the whole `Item`.
     func recordSelection(itemID: String) {
-        guard !itemID.hasPrefix(Item.webIDPrefix),
-              !itemID.hasPrefix(Item.calculatorIDPrefix),
-              // Filter rows embed a per-run index — recording them would
-              // persist meaningless ids and slowly evict real history.
-              !itemID.hasPrefix(Item.filterRowIDPrefix) else { return }
+        // Opt-in: only durable, user-meaningful namespaces train frecency.
+        // Transient ids (web/calc query rows, per-keystroke filter rows)
+        // would persist meaningless keys and slowly evict real history.
+        let eligible = [Item.appIDPrefix, Item.commandIDPrefix, Item.systemIDPrefix]
+        guard eligible.contains(where: { itemID.hasPrefix($0) }) else { return }
         frecency.record(itemID)
     }
 }

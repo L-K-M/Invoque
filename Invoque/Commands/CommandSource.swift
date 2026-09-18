@@ -39,7 +39,8 @@ final class CommandSource: ItemSource {
             let action: Item.Action = manifest.mode == .filter
                 // First keyword is the filter trigger; a keywordless filter
                 // command falls back to its own name as the trigger word.
-                ? .enterFilter(keyword: manifest.keywords.first ?? manifest.name)
+                ? .enterFilter(keyword: manifest.keywords.first ?? manifest.name,
+                               commandName: manifest.name)
                 : .runCommand(manifest.name, [])
             return Item(
                 id: Item.commandIDPrefix + manifest.name,
@@ -47,7 +48,10 @@ final class CommandSource: ItemSource {
                 subtitle: manifest.description ?? "Command",
                 icon: .symbol(manifest.icon ?? "terminal"),
                 action: action,
+                // The name doubles as the fallback trigger word for
+                // keywordless filters, so it must be matchable too.
                 matchText: manifest.title + " " + manifest.keywords.joined(separator: " ")
+                    + " " + manifest.name
             )
         }
     }
@@ -68,14 +72,16 @@ final class CommandSource: ItemSource {
 
     /// The filter-mode command claiming `keyword`, if any. The first token
     /// of a query is looked up here; a hit switches the panel into that
-    /// command's live list. A keywordless filter command is claimed by its
-    /// name — the same fallback `items(matching:)` uses for its
-    /// `.enterFilter` keyword, so entry and routing stay symmetric.
+    /// command's live list.
+    ///
+    /// An exact manifest `name` match wins over a `keywords.first` match on
+    /// a different command — a name is a command's own identity, a keyword
+    /// can collide. Only `keywords.first` routes (PLAN §3: the first entry
+    /// is the trigger word); a keywordless command is claimed by its name,
+    /// the same fallback `items(matching:)` uses for `.enterFilter`.
     func filterCommand(forKeyword keyword: String) -> Command? {
-        store.commands.first {
-            $0.manifest.mode == .filter
-                && ($0.manifest.keywords.contains(keyword)
-                    || $0.manifest.name == keyword)
-        }
+        let filters = store.commands.filter { $0.manifest.mode == .filter }
+        return filters.first { $0.manifest.name == keyword }
+            ?? filters.first { $0.manifest.keywords.first == keyword }
     }
 }

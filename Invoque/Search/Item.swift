@@ -56,8 +56,10 @@ struct Item: Identifiable, Equatable {
         case runCommand(String, [String])
         /// Enter a filter-mode command: the panel expands the query to
         /// `"<keyword> "` rather than dismissing. `PanelModel.submit`
-        /// intercepts this case, so performers never see it.
-        case enterFilter(keyword: String)
+        /// intercepts this case, so performers never see it. `commandName`
+        /// pins the session to this exact command — two commands can claim
+        /// the same trigger word, and the picked row must win.
+        case enterFilter(keyword: String, commandName: String)
         case system(SystemAction)
     }
 

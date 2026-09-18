@@ -54,9 +54,16 @@ final class PanelModel: ObservableObject {
         didSet { refreshResults() }
     }
 
+    /// Resolves a command by manifest name — used when a picked `.enterFilter`
+    /// row pins the session to that exact command, so a shared trigger word
+    /// can't reroute the query into a different command's list.
+    var commandLookup: ((String) -> Command?)?
+
     /// Runs filter-mode commands. Injected for the same reason as
     /// `filterLookup`; a real `CommandRunner` works in tests too.
-    var commandRunner: CommandRunner?
+    var commandRunner: CommandRunner? {
+        didSet { refreshResults() }
+    }
 
     @Published var query = "" {
         didSet {
@@ -88,13 +95,18 @@ final class PanelModel: ObservableObject {
     /// landing after the panel opened must fill the visible list without
     /// waiting for the next keystroke.
     func refreshResults() {
-        if let (command, text) = activeFilter() {
-            scheduleFilter(command, text: text)
+        if let resolved = activeFilter() {
+            scheduleFilter(resolved.command, keyword: resolved.keyword,
+                           text: resolved.text)
             return
         }
         filterTask?.cancel()
         filterTask = nil
-        activeFilterName = nil
+        activeFilterKeyword = nil
+        // A filter task awaiting runner.query ignores cancellation
+        // cooperatively — bump the generation so its late completion is
+        // discarded rather than stamped over the fresh search rows.
+        filterGeneration += 1
         let newResults = (searchModel?.results(for: query) ?? []).map(ResultRow.init)
         // A background rescan landing identical rows must not yank the
         // selection back to the top (results' didSet resets it) or fire a
@@ -111,28 +123,47 @@ final class PanelModel: ObservableObject {
     private var filterTask: Task<Void, Never>?
     /// Stale-drop: a result arriving for an older keystroke is discarded.
     private var filterGeneration = 0
-    /// The command currently owning the list, so entering/leaving filter
-    /// mode can clear rows that don't belong to it.
-    private var activeFilterName: String?
+    /// The trigger word owning the list right now, so entering/leaving a
+    /// filter session can clear rows that don't belong to it. Keyed by the
+    /// keyword, not the command name — two commands can share a display
+    /// name, and switching between them must clear the old rows.
+    private var activeFilterKeyword: String?
+    /// The command a picked `.enterFilter` row pinned this session to.
+    /// Keyword routing is ambiguous when two commands claim the same
+    /// trigger; the pin keeps the session on the command the user chose.
+    /// Cleared as soon as the query's first token no longer matches.
+    private var pinnedFilter: (keyword: String, commandName: String)?
 
-    /// The `(command, remainder)` when `query` is `<keyword> <rest>` for a
+    /// The resolved session when `query` is `<keyword> <rest>` for a
     /// filter-mode command. The bare keyword (no space) stays a normal
     /// search — that's how the user picks the command to enter its mode.
-    private func activeFilter() -> (Command, String)? {
-        guard let filterLookup,
-              let spaceIndex = query.firstIndex(of: " ") else { return nil }
+    /// A pinned row-pick resolves by name, bypassing keyword collisions.
+    private func activeFilter() -> (command: Command, keyword: String, text: String)? {
+        guard let spaceIndex = query.firstIndex(of: " ") else {
+            pinnedFilter = nil
+            return nil
+        }
         let keyword = String(query[..<spaceIndex])
-        guard let command = filterLookup(keyword) else { return nil }
-        return (command, String(query[spaceIndex...].dropFirst()))
+        let text = String(query[spaceIndex...].dropFirst())
+        if let pinned = pinnedFilter {
+            if pinned.keyword == keyword,
+               let command = commandLookup?(pinned.commandName),
+               command.manifest.mode == .filter {
+                return (command, keyword, text)
+            }
+            pinnedFilter = nil
+        }
+        guard let command = filterLookup?(keyword) else { return nil }
+        return (command, keyword, text)
     }
 
     /// Debounced per-keystroke run (PLAN §4.1). Results replace the list on
     /// arrival; a generation counter drops responses for stale queries.
-    private func scheduleFilter(_ command: Command, text: String) {
-        // Entering a different command's filter session clears the previous
-        // list — otherwise the old command's rows linger during the debounce.
-        if activeFilterName != command.manifest.name {
-            activeFilterName = command.manifest.name
+    private func scheduleFilter(_ command: Command, keyword: String, text: String) {
+        // Entering a different trigger's filter session clears the previous
+        // list — otherwise the old session's rows linger during the debounce.
+        if activeFilterKeyword != keyword {
+            activeFilterKeyword = keyword
             results = []
         }
         filterGeneration += 1
@@ -144,7 +175,9 @@ final class PanelModel: ObservableObject {
             let rows = await Self.filterRows(command: command, text: text,
                                              runner: commandRunner)
             await MainActor.run {
-                guard generation == filterGeneration else { return }
+                // Identical rows must not re-assign: results' didSet resets
+                // the selection, so a no-op refresh would yank it to the top.
+                guard generation == filterGeneration, rows != results else { return }
                 results = rows
             }
         }
@@ -186,7 +219,9 @@ final class PanelModel: ObservableObject {
     func showCommandResults(_ rows: [ResultRow]) {
         filterTask?.cancel()
         filterTask = nil
-        activeFilterName = nil
+        activeFilterKeyword = nil
+        // Replacing the list resets the selection to the top row via the
+        // results didSet — a fresh command output is a new result set.
         results = rows
     }
 
@@ -244,7 +279,11 @@ final class PanelModel: ObservableObject {
     /// mode instead of dismissing.
     func submit() {
         if let row = selectedRow,
-           case .enterFilter(let keyword) = row.action {
+           case .enterFilter(let keyword, let commandName) = row.action {
+            // Pin the session to the picked command — its trigger word may
+            // collide with another command's, and the row the user chose
+            // must be the one that owns the expanded query.
+            pinnedFilter = (keyword, commandName)
             query = keyword + " "
             return
         }

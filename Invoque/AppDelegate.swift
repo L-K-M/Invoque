@@ -92,12 +92,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = PanelModel()
         let commandStore = CommandStore()
         commandStore.startWatching()
-        let commandSource = CommandSource(store: commandStore)
+        // autoReload off: the initial scan must not fire onChange before
+        // onReload is wired — wire first, then kick the scan explicitly.
+        let commandSource = CommandSource(store: commandStore, autoReload: false)
         commandSource.onReload = { [weak model] in model?.refreshResults() }
+        Task { await commandSource.reload() }
         let commandRunner = CommandRunner()
         model.commandRunner = commandRunner
         model.filterLookup = { [commandSource] keyword in
             commandSource.filterCommand(forKeyword: keyword)
+        }
+        model.commandLookup = { [commandStore] name in
+            commandStore.command(named: name)
         }
         let sources: [ItemSource] = [
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
