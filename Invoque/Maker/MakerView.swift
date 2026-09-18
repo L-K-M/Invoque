@@ -198,7 +198,7 @@ struct MakerView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(resultSummary(result))
                 .font(.callout)
-                .foregroundStyle(result.error == nil ? .primary : .red)
+                .foregroundStyle(result.error == nil ? Color.primary : Color.red)
             if !result.logs.isEmpty {
                 Text(result.logs.suffix(6).joined(separator: "\n"))
                     .font(.system(.caption, design: .monospaced))

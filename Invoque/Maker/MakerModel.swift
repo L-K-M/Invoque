@@ -277,7 +277,7 @@ final class MakerModel: ObservableObject {
         lastRawOutput = nil
         if let stagingDirectory {
             try? FileManager.default.removeItem(at: stagingDirectory)
-            stagingDirectory = nil
+            self.stagingDirectory = nil
         }
     }
 }
