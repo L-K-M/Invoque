@@ -158,28 +158,40 @@ extension AppearancePreset {
     static func decode(from data: Data) -> AppearancePreset? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
 
-        let hasInvoqueKeys = obj["highlightHex"] != nil || obj["labelHex"] != nil
-            || obj["adaptiveAccent"] != nil || obj["highlightOpacity"] != nil
-            || obj["highlightCornerRadius"] != nil
-        // `iconSize` is *not* a Jetty tell — Zap themes carry it too, so
-        // including it here would mis-sniff every Zap file as Jetty's.
-        let hasJettyKeys = obj["material"] != nil || obj["tintHex"] != nil
-            || obj["gradientHex"] != nil || obj["tileSpacing"] != nil
-            || obj["indicatorStyle"] != nil || obj["accentGlow"] != nil
-            || obj["glyphHex"] != nil || obj["clockFace"] != nil
+        // Only format-*unique* keys discriminate: `highlightOpacity`,
+        // `cornerRadius`, `gradientAngle`, `decoration*`/`crt*` exist in all
+        // three schemas, and `iconSize` exists in both siblings — none of
+        // them can pick a format. Invoque's own export always carries
+        // labelHex/highlightHex/adaptiveAccent, so those prove native.
+        let hasInvoqueKeys = obj["labelHex"] != nil || obj["highlightHex"] != nil
+            || obj["adaptiveAccent"] != nil
         let hasZapKeys = obj["backgroundColorHex"] != nil || obj["useGradientBackground"] != nil
-            || obj["highlightColorHex"] != nil || obj["labelColorHex"] != nil
-            || obj["showAppName"] != nil || obj["iconSize"] != nil
+            || obj["gradientColorHex"] != nil || obj["highlightColorHex"] != nil
+            || obj["labelColorHex"] != nil || obj["showAppName"] != nil
             || obj["contentPadding"] != nil
+        let hasJettyKeys = obj["tileSpacing"] != nil || obj["indicatorStyle"] != nil
+            || obj["accentGlow"] != nil || obj["glyphHex"] != nil
+            || obj["clockFace"] != nil || obj["magnificationEnabled"] != nil
+            || obj["indicatorHex"] != nil || obj["dockEdge"] != nil
+            || obj["edge"] != nil || obj["autoHide"] != nil
+            || obj["windowPreviewMode"] != nil || obj["showLabels"] != nil
+            || obj["trashIconStyle"] != nil
 
         if hasInvoqueKeys {
             return try? JSONDecoder().decode(AppearancePreset.self, from: data)
         }
+        if hasZapKeys {
+            return (try? JSONDecoder().decode(ZapTheme.self, from: data))?.asInvoquePreset
+        }
         if hasJettyKeys {
             return (try? JSONDecoder().decode(JettyTheme.self, from: data))?.asInvoquePreset
         }
-        if hasZapKeys {
-            return (try? JSONDecoder().decode(ZapTheme.self, from: data))?.asInvoquePreset
+        // No discriminator at all: `material`/`tintHex`/`gradientHex` are the
+        // only remaining signal — the names Invoque deliberately shares with
+        // Jetty. A minimal Jetty theme maps cleanly through the Jetty lens,
+        // and a partial Invoque file produces the same preset either way.
+        if obj["material"] != nil || obj["tintHex"] != nil || obj["gradientHex"] != nil {
+            return (try? JSONDecoder().decode(JettyTheme.self, from: data))?.asInvoquePreset
         }
         return nil
     }
