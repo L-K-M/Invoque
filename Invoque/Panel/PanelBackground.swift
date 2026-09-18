@@ -6,10 +6,13 @@ import AppKit
 ///
 /// On **macOS 26 (Tahoe)** the glass variants render genuine **Liquid Glass** via
 /// SwiftUI's public `.glassEffect`, honoring the user's Clear/Tinted and
-/// Reduce-Transparency settings automatically. On macOS 13–15 — or when the
-/// material is `solid`/`gradient`, or Reduce Transparency is on — it falls back
-/// to an `NSVisualEffectView` blur (`.popover`, the closest match to the
-/// `.regularMaterial` the panel used to draw) or a flat fill / gradient.
+/// Reduce-Transparency settings automatically — but only when built with the
+/// macOS 26 SDK (`#if compiler(>=6.2)`): older toolchains can't see the `Glass`
+/// type at all, so they compile the blur fallback unconditionally. On
+/// macOS 13–15 — or when the material is `solid`/`gradient`, or Reduce
+/// Transparency is on — the fallback is an `NSVisualEffectView` blur
+/// (`.popover`, the closest match to the `.regularMaterial` the panel used to
+/// draw) or a flat fill / gradient.
 struct PanelBackground: View {
     var material: PanelMaterial
     var tint: Color
@@ -44,6 +47,9 @@ struct PanelBackground: View {
 
     @ViewBuilder
     private func glass(in shape: RoundedRectangle) -> some View {
+        #if compiler(>=6.2)
+        // Xcode 26+ carries the macOS 26 SDK, where `Glass`/`glassEffect`
+        // exist; `#available` then decides at runtime.
         if #available(macOS 26.0, *), !reduceTransparency {
             let glass: Glass = {
                 switch material {
@@ -54,16 +60,25 @@ struct PanelBackground: View {
             }()
             Color.clear.glassEffect(glass, in: shape)
         } else {
-            // Fallback for macOS 13–15 (or Reduce Transparency): a blurred panel
-            // with a faint tint wash, clipped to the same rounded shape.
-            ZStack {
-                VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
-                if material == .glassTinted {
-                    tint.opacity(min(opacity, 0.5))
-                }
-            }
-            .clipShape(shape)
+            fallbackGlass(in: shape)
         }
+        #else
+        fallbackGlass(in: shape)
+        #endif
+    }
+
+    /// Fallback for macOS 13–15, older SDKs, or Reduce Transparency: a
+    /// blurred panel with a faint tint wash, clipped to the same rounded
+    /// shape.
+    @ViewBuilder
+    private func fallbackGlass(in shape: RoundedRectangle) -> some View {
+        ZStack {
+            VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
+            if material == .glassTinted {
+                tint.opacity(min(opacity, 0.5))
+            }
+        }
+        .clipShape(shape)
     }
 
     private var reduceTransparency: Bool {
