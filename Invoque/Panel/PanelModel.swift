@@ -299,7 +299,8 @@ final class PanelModel: ObservableObject {
         let freshByID = Dictionary(freshRows.map { ($0.id, $0) },
                                    uniquingKeysWith: { first, _ in first })
         func isPinned(_ id: String) -> Bool {
-            id.hasPrefix(Item.calculatorIDPrefix)
+            id.hasPrefix(Item.pathIDPrefix)
+                || id.hasPrefix(Item.calculatorIDPrefix)
                 || id.hasPrefix(Item.webIDPrefix)
         }
         var head: [ResultRow] = []
@@ -321,13 +322,14 @@ final class PanelModel: ObservableObject {
         let tail = freshRows.filter {
             !isPinned($0.id) && !headIDs.contains($0.id)
         }
-        let calculator = freshRows.filter {
-            $0.id.hasPrefix(Item.calculatorIDPrefix)
+        let headPins = freshRows.filter {
+            $0.id.hasPrefix(Item.pathIDPrefix)
+                || $0.id.hasPrefix(Item.calculatorIDPrefix)
         }
         let web = freshRows.filter { $0.id.hasPrefix(Item.webIDPrefix) }
         let middleSlots = max(0, SearchModel.maxResults
-            - calculator.count - web.count)
-        return Array((calculator
+            - headPins.count - web.count)
+        return Array((headPins
             + Array((head + tail).prefix(middleSlots)) + web)
             .prefix(SearchModel.maxResults))
     }
@@ -675,6 +677,14 @@ final class PanelModel: ObservableObject {
                 onSubmit?(ResultRow(id: row.id, title: row.title,
                                     subtitle: row.subtitle, icon: row.icon,
                                     action: .revealInFinder(url)))
+                return
+            case .revealInFinder(let url):
+                // The inverse — a pasted file *path* reveals on plain ⏎,
+                // so ⌘⏎ is the open gesture there (only `PathSource`
+                // emits reveal actions).
+                onSubmit?(ResultRow(id: row.id, title: row.title,
+                                    subtitle: row.subtitle, icon: row.icon,
+                                    action: .openFile(url)))
                 return
             default:
                 break

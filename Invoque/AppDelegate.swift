@@ -173,11 +173,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so commands installed later still refresh the open panel.)
         Task { await commandSource.reload() }
         let sources: [ItemSource] = [
+            PathSource(),
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
             commandSource,
             CalculatorSource(),
             SystemSource(),
-            WebSource(),
+            WebSource(engine: { [weak preferences] in
+                preferences?.searchEngine ?? .duckDuckGo
+            }),
         ]
         let searchModel = SearchModel(sources: sources, frecency: Frecency())
         return PanelController(preferences: preferences, model: model,

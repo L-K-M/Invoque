@@ -5,20 +5,29 @@ import Foundation
 /// steals Return from an app or a calculator result.
 final class WebSource: ItemSource {
 
+    /// Reads the configured engine lazily so a Settings change applies on
+    /// the next keystroke — the source is built once at launch.
+    private let engine: () -> SearchEngine
+
+    init(engine: @escaping () -> SearchEngine = { .duckDuckGo }) {
+        self.engine = engine
+    }
+
     // MARK: ItemSource
 
     /// One "Search the web" item for any non-blank query, none for blank.
     func items(matching query: String) -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
+        let engine = engine()
         guard let encoded = Self.encode(trimmed),
-              let url = URL(string: "https://duckduckgo.com/?q=" + encoded) else {
+              let url = engine.url(encodedQuery: encoded) else {
             return []
         }
         return [Item(
             id: Item.webIDPrefix + trimmed,
             title: "Search the web for \"\(trimmed)\"",
-            subtitle: "Search DuckDuckGo in your browser",
+            subtitle: "Search \(engine.label) in your browser",
             icon: .symbol("magnifyingglass"),
             action: .openURL(url),
             matchText: "web search \(trimmed)"

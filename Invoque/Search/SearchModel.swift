@@ -83,6 +83,7 @@ final class SearchModel {
         let trimmed = Self.normalizedQuery(query)
         guard !trimmed.isEmpty else { return [] }
 
+        var pathHits: [Item] = []
         var calculatorHits: [Item] = []
         var webHits: [Item] = []
         // Pinned rows never pass through `bestByID`, so they get their own
@@ -93,7 +94,10 @@ final class SearchModel {
 
         for source in sources {
             for item in source.items(matching: trimmed) {
-                if item.id.hasPrefix(Item.calculatorIDPrefix) {
+                if item.id.hasPrefix(Item.pathIDPrefix) {
+                    guard pinnedIDs.insert(item.id).inserted else { continue }
+                    pathHits.append(item)
+                } else if item.id.hasPrefix(Item.calculatorIDPrefix) {
                     guard pinnedIDs.insert(item.id).inserted else { continue }
                     calculatorHits.append(item)
                 } else if item.id.hasPrefix(Item.webIDPrefix) {
@@ -119,9 +123,12 @@ final class SearchModel {
         // The pinned rows get their slots first: a noisy query that fills the
         // ranked list must not push the web fallback past the cap. The outer
         // clamp keeps the `maxResults` contract even if the pinned sources
-        // alone would overflow it (trailing web rows go first).
-        let rankedSlots = max(0, Self.maxResults - calculatorHits.count - webHits.count)
-        return Array((calculatorHits + Array(ranked.prefix(rankedSlots)) + webHits)
+        // alone would overflow it (trailing web rows go first). `path:` rows
+        // lead — a typed address is a direct intent, ahead of the calculator.
+        let pinnedCount = pathHits.count + calculatorHits.count + webHits.count
+        let rankedSlots = max(0, Self.maxResults - pinnedCount)
+        return Array((pathHits + calculatorHits
+            + Array(ranked.prefix(rankedSlots)) + webHits)
             .prefix(Self.maxResults))
     }
 

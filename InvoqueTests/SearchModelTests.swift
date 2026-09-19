@@ -239,6 +239,35 @@ final class SearchModelTests: XCTestCase {
         XCTAssertEqual(results.last?.id, "web:safari")
     }
 
+    /// A typed/pasted path pins *first* — ahead of the calculator and
+    /// every fuzzy match — because a filesystem address is a direct intent,
+    /// not a search term.
+    func testPathRowPinsFirst() {
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:spoiler", title: "tmp"),
+            Self.appItem(id: "calc:2+2", title: "= 4"),
+        ]
+        let model = makeModel(sources: [source, PathSource()])
+        let results = model.results(for: "/tmp")
+        XCTAssertEqual(results.first?.id, "path:/tmp")
+        XCTAssertEqual(results.first?.action,
+                       .openFile(URL(fileURLWithPath: "/tmp")))
+    }
+
+    /// The path pin reserves its slot the same as calc/web — a noisy ranked
+    /// list can't push it off the page.
+    func testPathRowKeepsSlotWhenRankedFillsCap() {
+        let apps = StubSource()
+        apps.stubbedItems = (0..<60).map { index in
+            Self.appItem(id: "app:item-\(index)", title: "tmp\(index)")
+        }
+        let model = makeModel(sources: [apps, PathSource()])
+        let results = model.results(for: "/tmp")
+        XCTAssertEqual(results.first?.id, "path:/tmp")
+        XCTAssertLessThanOrEqual(results.count, SearchModel.maxResults)
+    }
+
     func testResultsCappedAtFifty() {
         let source = StubSource()
         source.stubbedItems = (0..<60).map { index in
