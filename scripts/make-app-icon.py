@@ -5,8 +5,9 @@
 
 Reads media-sources/icon2.png and writes
 Invoque/Resources/Assets.xcassets/AppIcon.appiconset/*.png plus its
-Contents.json — every size regenerated in step, so the sizes cannot drift
-apart. Re-run it after changing the source art.
+Contents.json and the AccentColor colorset — every size regenerated in
+step, so the sizes cannot drift apart. Re-run it after changing the
+source art.
 
 No dependencies on purpose: no Pillow, no ImageMagick — the PNG is decoded
 and re-encoded here with zlib, and each target size is an area-average
@@ -62,6 +63,11 @@ def decode_png(path):
                                  f"type {color_type}, interlace {interlace}")
         elif kind == b"IDAT":
             idat += payload
+        elif kind == b"tRNS":
+            # A color-type-2 source can still mark pixels transparent —
+            # same policy as RGBA alpha: flatten it deliberately.
+            raise ValueError("source artwork uses a tRNS transparency chunk; "
+                             "flatten it before rendering icons")
         elif kind == b"IEND":
             break
     channels = 4 if color_type == 6 else 3
@@ -177,7 +183,9 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     source_path = os.path.join(root, SOURCE)
     iconset = os.path.join(root, ICONSET)
+    accentset = os.path.join(root, ACCENTSET)
     os.makedirs(iconset, exist_ok=True)
+    os.makedirs(accentset, exist_ok=True)
 
     source = decode_png(source_path)
     print(f"  source {SOURCE}: {source[0]}x{source[1]}")
@@ -205,7 +213,7 @@ def main():
                      '    "version" : 1\n  }\n}\n')
     print("  Contents.json")
 
-    with open(os.path.join(root, ACCENTSET, "Contents.json"), "w") as handle:
+    with open(os.path.join(accentset, "Contents.json"), "w") as handle:
         handle.write(
             '{\n  "colors" : [\n    {\n      "color" : {\n'
             '        "color-space" : "srgb",\n'

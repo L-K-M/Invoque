@@ -473,8 +473,7 @@ Invoque/
 │   │   └── DecorationStyle/Position · AccessibilityDisplaySettings  # (Zap)
 │   └── Resources/Assets.xcassets
 ├── InvoqueTests/                        # matcher, manifest, parser, runtime
-├── scripts/{build.sh,release.sh}        # lkm-build/lkm-release stubs
-│   └── make-app-icon.py                 # icon2.png → appiconset + accent
+├── scripts/{build.sh,release.sh,make-app-icon.py}   # lkm stubs; icon2.png → appiconset + accent
 ├── .github/workflows/{ci,release}.yml   # hardened per family conventions
 ├── AGENTS.md · PLAN.md · RESEARCH.md · README.md · LICENSE
 └── .gitignore                           # Zap's
