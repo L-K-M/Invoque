@@ -66,7 +66,9 @@ final class PathSourceTests: XCTestCase {
                                                 withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: app) }
         let item = try XCTUnwrap(source.items(matching: app.path).first)
-        XCTAssertEqual(item.action, .revealInFinder(app))
+        // The canonical file URL gains a trailing slash for a directory.
+        XCTAssertEqual(item.action,
+                       .revealInFinder(URL(fileURLWithPath: app.path)))
         XCTAssertTrue(item.subtitle.hasPrefix("Reveal in Finder"))
     }
 
