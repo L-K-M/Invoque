@@ -260,12 +260,14 @@ final class SearchModelTests: XCTestCase {
     func testPathRowKeepsSlotWhenRankedFillsCap() {
         let apps = StubSource()
         apps.stubbedItems = (0..<60).map { index in
-            Self.appItem(id: "app:item-\(index)", title: "tmp\(index)")
+            // Titles must contain the query's leading "/" to match at all —
+            // otherwise the ranked list never fills and the test is vacuous.
+            Self.appItem(id: "app:item-\(index)", title: "/tmp\(index)")
         }
         let model = makeModel(sources: [apps, PathSource()])
         let results = model.results(for: "/tmp")
         XCTAssertEqual(results.first?.id, "path:/tmp")
-        XCTAssertLessThanOrEqual(results.count, SearchModel.maxResults)
+        XCTAssertEqual(results.count, SearchModel.maxResults)
     }
 
     func testResultsCappedAtFifty() {
