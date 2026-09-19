@@ -85,6 +85,15 @@ final class PathSourceTests: XCTestCase {
                        source.items(matching: dir.path))
     }
 
+    /// `?`/`#` are legal filename characters — a `file://` URL containing
+    /// them must not be parsed as query/fragment and truncated.
+    func testFileURLKeepsQueryAndFragmentLiterally() {
+        XCTAssertEqual(PathSource.resolve("file:///tmp/a?b"),
+                       URL(fileURLWithPath: "/tmp/a?b"))
+        XCTAssertEqual(PathSource.resolve("file:///tmp/a#b"),
+                       URL(fileURLWithPath: "/tmp/a#b"))
+    }
+
     func testFileURLWithRemoteHostIsNotAPath() {
         XCTAssertTrue(source.items(matching: "file://share.example.com/tmp").isEmpty)
     }

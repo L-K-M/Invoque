@@ -51,7 +51,10 @@ final class PathSource: ItemSource {
     /// empty/`localhost`; anything else isn't a local path.
     static func resolve(_ query: String) -> URL? {
         if query.hasPrefix("file://") {
-            guard let url = URL(string: query), url.isFileURL else {
+            // A parsed `?`/`#` would silently truncate the path — those
+            // inputs take the raw-remainder branch so they stay literal.
+            guard let url = URL(string: query), url.isFileURL,
+                  url.query == nil, url.fragment == nil else {
                 // `URL(string:)` rejects unencoded spaces/non-ASCII. The
                 // remainder is then a raw path (`file:///a b` → `/a b`);
                 // an encoded paste would have parsed above. After the
