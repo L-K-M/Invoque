@@ -134,8 +134,12 @@ enum FileSearch {
                     continue
                 }
             }
-            guard seenPaths.insert(url.standardizedFileURL.path).inserted else { continue }
-            if let score = FuzzyMatcher.score(query, candidate: url.lastPathComponent) {
+            // Dedupe inside the match branch: seenPaths only exists to
+            // keep a twice-yielded path (overlapping roots) out of the
+            // results, so recording non-matches would grow the set to
+            // `visited` size for nothing.
+            if let score = FuzzyMatcher.score(query, candidate: url.lastPathComponent),
+               seenPaths.insert(url.standardizedFileURL.path).inserted {
                 matches.append(Match(url: url, score: score))
                 if matches.count >= maxMatches { return }
             }

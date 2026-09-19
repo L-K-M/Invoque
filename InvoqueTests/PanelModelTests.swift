@@ -575,6 +575,18 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.map(\.title), ["alpha.txt"])
     }
 
+    /// A whitespace-plus-newline rest is blank — the model's trim matches
+    /// `FileSearch.scan`'s `.whitespacesAndNewlines`, so no doomed scan
+    /// is dispatched.
+    func testNewlineOnlyFileTextIsBlank() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("x")] }
+        model.query = "find \n"
+        XCTAssertTrue(model.fileSearchTextIsBlank)
+        try await Task.sleep(nanoseconds: 300_000_000) // past the debounce
+        XCTAssertEqual(model.fileRunsStarted, 0)
+    }
+
     /// Between scheduling and rows landing the scan is pending — the view
     /// reads this to show progress rather than "No matching files".
     func testFileScanIsPendingDuringScan() async throws {

@@ -170,7 +170,7 @@ final class PanelModel: ObservableObject {
         let keyword = String(query[..<spaceIndex])
         guard Self.fileSearchKeywords.contains(keyword) else { return nil }
         let text = String(query[spaceIndex...].dropFirst())
-            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return (keyword, text)
     }
 
@@ -357,7 +357,10 @@ final class PanelModel: ObservableObject {
     /// a directory walk costs more per run than a JS query.
     private static let fileSearchDebounceNanoseconds: UInt64 = 150_000_000
 
-    private var fileTask: Task<Void, Never>?
+    /// @Published so a completion that clears the handle without touching
+    /// `results` (identical rows) still republishes — `fileScanIsPending`
+    /// must flip to false in the view or "Searching files…" sticks.
+    @Published private var fileTask: Task<Void, Never>?
     /// Stale-drop: a scan finishing for an older keystroke is discarded.
     private var fileGeneration = 0
     /// File scans that reached the main-actor completion point — the test
