@@ -56,9 +56,13 @@ final class PathSource: ItemSource {
             as? String) == "APPL" {
             return false
         }
-        let isDirectory = (try? url.resourceValues(
-            forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-        guard !isDirectory else { return true }
+        // `fileExists` follows symlinks — `URL.resourceValues` reports the
+        // link itself, so `/tmp` (→ `/private/tmp`) would look like a file
+        // and then trip `isExecutableFile` (dirs are "executable" = searchable).
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path,
+                                       isDirectory: &isDirectory)
+        guard !isDirectory.boolValue else { return true }
         return !FileManager.default.isExecutableFile(atPath: url.path)
     }
 
