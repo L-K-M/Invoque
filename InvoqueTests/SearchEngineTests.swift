@@ -6,6 +6,8 @@ final class SearchEngineTests: XCTestCase {
     /// Every engine builds a valid https URL carrying the encoded query —
     /// a typo'd template would drop the row silently at search time.
     func testEveryEngineBuildsAQueryURL() {
+        XCTAssertFalse(SearchEngine.allCases.isEmpty,
+                       "allCases empty — the loop body never executes")
         // Reserved characters must survive verbatim — a template that
         // re-encodes or truncates at `?`/`#` would corrupt the query.
         for encodedQuery in ["hello%20world", "a%26b", "50%25%20off%3F", "q%23frag"] {

@@ -47,20 +47,21 @@ final class PathSource: ItemSource {
     /// thing a pasted path must never do. Unsafe: application bundles
     /// (the `.app` extension outright, or any package declaring
     /// `CFBundlePackageType` `APPL`), formats whose default handler runs
-    /// them (`.jar`, `.workflow`, `.terminal`, `.term`, `.command`,
-    /// `.pkg`/`.mpkg` installers, `.saver`/`.prefPane` plugins), and plain
-    /// executables
+    /// them (`.jar`/`.jnlp`, `.workflow`, `.terminal`, `.term`, `.command`,
+    /// `.pkg`/`.mpkg` installers, `.saver`/`.prefPane`/`.menu` plugins),
+    /// and plain executables
     /// (scripts, binaries with the +x bit). Document packages such as
     /// `.xcodeproj` or `.rtfd` open in their editors — no payload runs —
     /// so they stay openable.
     /// `PanelModel` consults the same policy for the ⌘⏎ inverse.
     static func isSafeToOpen(_ url: URL) -> Bool {
-        // `.jar`, `.workflow`, `.terminal`/`.term`, `.command` run via their
-        // default handler on open — no +x bit, no APPL type — `.pkg`/`.mpkg`
-        // start Installer, and `.saver`/`.prefPane` load plugin code via
-        // System Settings.
-        if ["app", "jar", "workflow", "terminal", "term", "command",
-            "pkg", "mpkg", "saver", "prefpane"]
+        // Handler-executed formats run on open with no +x bit and no APPL
+        // type: `.jar`/`.jnlp` via Java, `.workflow` via Automator,
+        // `.terminal`/`.term`/`.command` via Terminal, `.pkg`/`.mpkg` via
+        // Installer, and `.saver`/`.prefPane`/`.menu` load plugin code via
+        // System Settings/SystemUIServer.
+        if ["app", "jar", "jnlp", "workflow", "terminal", "term", "command",
+            "pkg", "mpkg", "saver", "prefpane", "menu"]
             .contains(url.pathExtension.lowercased()) { return false }
         if (Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundlePackageType")
             as? String) == "APPL" {
