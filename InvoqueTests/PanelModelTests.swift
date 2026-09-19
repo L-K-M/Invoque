@@ -774,6 +774,26 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(submitted?.action, .revealInFinder(url))
     }
 
+    /// A pasted executable keeps the reveal too — a +x file runs under
+    /// NSWorkspace.open, so ⌘⏎ must not become the launch gesture.
+    func testCommandModifierKeepsExecutableOnReveal() throws {
+        let script = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-\(UUID().uuidString).sh")
+        FileManager.default.createFile(atPath: script.path, contents: Data())
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: script.path)
+        defer { try? FileManager.default.removeItem(at: script) }
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "path:\(script.path)", title: script.lastPathComponent,
+            subtitle: "/tmp", icon: .fileURL(script),
+            action: .revealInFinder(script))])
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .revealInFinder(script))
+    }
+
     /// Plain ⏎ still opens — the reveal swap must not leak into it.
     func testPlainReturnOpensFileRow() {
         let url = URL(fileURLWithPath: "/tmp/notes.txt")

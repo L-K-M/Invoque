@@ -1,10 +1,11 @@
-import AppKit
 import Foundation
 
 /// When the query *is* an existing filesystem path — pasted or typed — the
 /// top row is that path itself, not a search candidate. The default action
-/// follows the kind: a folder **opens** (in Finder), a file **reveals** —
-/// running an arbitrary pasted file is the one thing Return must never do.
+/// follows the kind: a folder **opens** (in Finder), a file **reveals**,
+/// and anything that could execute — `.app` bundles, +x scripts and
+/// binaries — reveals too. Running a pasted path is the one thing Return
+/// must never do.
 /// `path:` ids pin the row first in `SearchModel`; frecency ignores it
 /// (`recordSelection` is opt-in and paths aren't eligible).
 final class PathSource: ItemSource {
@@ -25,11 +26,10 @@ final class PathSource: ItemSource {
         // swap the identity and the action. The subtitle leads with the
         // verb so ⏎'s behavior is visible before it's committed.
         let base = FileSearch.item(for: url)
-        // Packages (.app, .workflow, …) are directories, but opening one
-        // *launches* it — the one thing Return must never do with a pasted
-        // path — so they reveal like files.
-        let opens = isDirectory.boolValue
-            && !NSWorkspace.shared.isFilePackage(atPath: url.path)
+        // A directory opens — unless opening it runs code (`isSafeToOpen`
+        // covers .app bundles and +x files). Document packages like
+        // .xcodeproj or .rtfd open in their editors, so they open.
+        let opens = isDirectory.boolValue && Self.isSafeToOpen(url)
         let subtitle = opens
             ? "Open — \(base.subtitle)"
             : "Reveal in Finder — \(base.subtitle)"
@@ -41,6 +41,25 @@ final class PathSource: ItemSource {
             action: opens ? .openFile(url) : .revealInFinder(url),
             matchText: base.matchText
         )]
+    }
+
+    /// Whether `NSWorkspace.open` on `url` could execute code — the one
+    /// thing a pasted path must never do. Application bundles (the `.app`
+    /// extension outright, or any package declaring `CFBundlePackageType`
+    /// `APPL`) and plain executables (scripts, binaries with the +x bit)
+    /// are unsafe; document packages such as `.xcodeproj` or `.rtfd` open
+    /// in their editors — no payload runs — so they stay openable.
+    /// `PanelModel` consults the same policy for the ⌘⏎ inverse.
+    static func isSafeToOpen(_ url: URL) -> Bool {
+        if url.pathExtension.lowercased() == "app" { return false }
+        if (Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundlePackageType")
+            as? String) == "APPL" {
+            return false
+        }
+        let isDirectory = (try? url.resourceValues(
+            forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        guard !isDirectory else { return true }
+        return !FileManager.default.isExecutableFile(atPath: url.path)
     }
 
     // MARK: Resolution

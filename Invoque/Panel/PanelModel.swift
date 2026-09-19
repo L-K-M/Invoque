@@ -673,10 +673,9 @@ final class PanelModel: ObservableObject {
             case .revealInFinder(let url):
                 // The inverse — a pasted file *path* reveals on plain ⏎,
                 // so ⌘⏎ is the open gesture there (only `PathSource`
-                // emits reveal actions). Packages stay on reveal even
-                // here: opening an .app launches it, and a pasted bundle
-                // must not run on either gesture.
-                let opens = !NSWorkspace.shared.isFilePackage(atPath: url.path)
+                // emits reveal actions). Executables stay on reveal on
+                // either gesture — opening an .app or a +x file runs it.
+                let opens = PathSource.isSafeToOpen(url)
                 onSubmit?(ResultRow(id: row.id, title: row.title,
                                     subtitle: row.subtitle, icon: row.icon,
                                     action: opens ? .openFile(url) : .revealInFinder(url)))

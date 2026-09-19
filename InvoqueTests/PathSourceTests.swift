@@ -72,6 +72,33 @@ final class PathSourceTests: XCTestCase {
         XCTAssertTrue(item.subtitle.hasPrefix("Reveal in Finder"))
     }
 
+    /// A document package is a directory but opens in its editor — a
+    /// pasted `.xcodeproj` opens in Xcode rather than revealing.
+    func testNonAppPackageOpens() throws {
+        let pkg = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Invoque-\(UUID().uuidString).xcodeproj")
+        try FileManager.default.createDirectory(at: pkg,
+                                                withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: pkg) }
+        let item = try XCTUnwrap(source.items(matching: pkg.path).first)
+        XCTAssertEqual(item.action, .openFile(URL(fileURLWithPath: pkg.path)))
+    }
+
+    /// An executable file carries the +x bit — pasted, it must reveal,
+    /// never run. (The row is a file, so it reveals anyway; this pins
+    /// `isSafeToOpen` so the ⌘⏎ inverse can't open it either.)
+    func testExecutableFileIsNotSafeToOpen() throws {
+        let script = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-\(UUID().uuidString).sh")
+        FileManager.default.createFile(atPath: script.path, contents: Data())
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: script.path)
+        defer { try? FileManager.default.removeItem(at: script) }
+        XCTAssertFalse(PathSource.isSafeToOpen(script))
+        XCTAssertTrue(PathSource.isSafeToOpen(
+            FileManager.default.temporaryDirectory))
+    }
+
     /// `URL(string:)` rejects unencoded characters — a pasted file URL
     /// with a literal space must still resolve to the same row the typed
     /// path produces.
