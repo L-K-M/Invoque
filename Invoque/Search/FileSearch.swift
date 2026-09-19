@@ -57,7 +57,7 @@ enum FileSearch {
     static func scan(query: String, roots: [URL] = defaultRoots,
                      isCancelled: () -> Bool = { false }) -> [Match] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
+        guard !trimmed.isEmpty, !isCancelled() else { return [] }
 
         var visited = 0
         var matches: [Match] = []
