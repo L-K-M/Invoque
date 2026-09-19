@@ -48,17 +48,19 @@ final class PathSource: ItemSource {
     /// (the `.app` extension outright, or any package declaring
     /// `CFBundlePackageType` `APPL`), formats whose default handler runs
     /// them (`.jar`, `.workflow`, `.terminal`, `.term`, `.command`,
-    /// `.saver`, `.prefPane`), and plain executables
+    /// `.pkg`/`.mpkg` installers, `.saver`/`.prefPane` plugins), and plain
+    /// executables
     /// (scripts, binaries with the +x bit). Document packages such as
     /// `.xcodeproj` or `.rtfd` open in their editors — no payload runs —
     /// so they stay openable.
     /// `PanelModel` consults the same policy for the ⌘⏎ inverse.
     static func isSafeToOpen(_ url: URL) -> Bool {
         // `.jar`, `.workflow`, `.terminal`/`.term`, `.command` run via their
-        // default handler on open — no +x bit, no APPL type — and
-        // `.saver`/`.prefPane` load plugin code via System Settings.
+        // default handler on open — no +x bit, no APPL type — `.pkg`/`.mpkg`
+        // start Installer, and `.saver`/`.prefPane` load plugin code via
+        // System Settings.
         if ["app", "jar", "workflow", "terminal", "term", "command",
-            "saver", "prefpane"]
+            "pkg", "mpkg", "saver", "prefpane"]
             .contains(url.pathExtension.lowercased()) { return false }
         if (Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundlePackageType")
             as? String) == "APPL" {

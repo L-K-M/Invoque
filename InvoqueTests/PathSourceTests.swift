@@ -103,7 +103,7 @@ final class PathSourceTests: XCTestCase {
     /// pasted `.jar`/`.command`/`.saver`/`.prefPane` must be unsafe; a
     /// `.txt` control stays safe.
     func testHandlerExecutedFormatsAreNotSafeToOpen() throws {
-        for ext in ["jar", "command", "saver", "prefPane"] {
+        for ext in ["jar", "command", "pkg", "mpkg", "saver", "prefPane"] {
             let file = FileManager.default.temporaryDirectory
                 .appendingPathComponent("invoque-\(UUID().uuidString).\(ext)")
             FileManager.default.createFile(atPath: file.path, contents: Data())
