@@ -12,16 +12,19 @@ enum HUD {
     /// Shows `text` briefly near the screen under the mouse. Re-show
     /// replaces the current overlay rather than stacking. Callable from
     /// any context — the AppKit work always happens on the main queue.
-    static func show(_ text: String) {
-        Task { @MainActor in present(text) }
+    /// `font` defaults to the system face; the panel passes the chosen
+    /// typeface so the toast reads in the launcher's voice.
+    static func show(_ text: String,
+                     font: NSFont = .systemFont(ofSize: 16, weight: .medium)) {
+        Task { @MainActor in present(text, font: font) }
     }
 
     @MainActor
-    private static func present(_ text: String) {
+    private static func present(_ text: String, font: NSFont) {
         dismiss()
 
         let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.font = font
         label.textColor = .labelColor
         label.lineBreakMode = .byTruncatingMiddle
         label.maximumNumberOfLines = 1

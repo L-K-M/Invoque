@@ -44,6 +44,27 @@ final class AppearancePresetTests: XCTestCase {
         XCTAssertEqual(preset.material, .gradient)
         XCTAssertEqual(preset.highlightHex, "#FF6AD5")
         XCTAssertFalse(preset.adaptiveAccent)
+        XCTAssertEqual(preset.typeface, Preferences.Default.panelTypeface.rawValue)
+    }
+
+    /// The typeface rides the preset: captured from preferences, applied
+    /// back through `apply`, and a raw value that isn't a known case falls
+    /// back to the default rather than wedging the setting.
+    func testTypefaceRidesThePreset() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.panelTypeface = .futura
+
+        let preset = AppearancePreset(name: "Snap", from: preferences)
+        XCTAssertEqual(preset.typeface, "futura")
+
+        preferences.panelTypeface = .menlo
+        preset.apply(to: preferences)
+        XCTAssertEqual(preferences.panelTypeface, .futura)
+
+        var bogus = preset
+        bogus.typeface = "comicSans"
+        bogus.apply(to: preferences)
+        XCTAssertEqual(preferences.panelTypeface, Preferences.Default.panelTypeface)
     }
 
     // MARK: Tolerant decode
@@ -53,6 +74,7 @@ final class AppearancePresetTests: XCTestCase {
         let decoded = AppearancePreset.decode(from: try json(["highlightHex": "#123456"]))
         XCTAssertEqual(decoded?.highlightHex, "#123456")
         XCTAssertEqual(decoded?.material, Preferences.Default.panelMaterial)
+        XCTAssertEqual(decoded?.typeface, Preferences.Default.panelTypeface.rawValue)
         XCTAssertEqual(decoded?.name, "Imported")
     }
 
