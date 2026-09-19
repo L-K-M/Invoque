@@ -167,11 +167,19 @@ enum FileSearch {
         let subtitle = parent == home ? "~"
             : parent.hasPrefix(home + "/") ? "~" + parent.dropFirst(home.count)
             : parent
+        // An `.app` package is an app-icon row, not a file-icon row: the
+        // shared-store ladder (Pict override, then un-jailed bundle
+        // artwork) applies to it the same as to an `AppSource` result. The
+        // bundle read runs once per matched app — bounded by the result
+        // cap, not by the walk.
+        let icon: Item.Icon = url.pathExtension.lowercased() == "app"
+            ? .appIcon(path: url.path, bundleID: Bundle(url: url)?.bundleIdentifier)
+            : .fileURL(url)
         return Item(
             id: Item.fileIDPrefix + url.standardizedFileURL.path,
             title: name,
             subtitle: String(subtitle),
-            icon: .fileURL(url),
+            icon: icon,
             action: .openFile(url),
             matchText: name
         )

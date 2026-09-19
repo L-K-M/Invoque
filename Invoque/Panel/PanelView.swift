@@ -1,4 +1,5 @@
 import AppKit
+import PictKit
 import SwiftUI
 
 /// The launcher panel's content: a rounded card with a search field on top, a
@@ -158,13 +159,26 @@ struct PanelView: View {
         NSColor(hex: preferences.highlightHex) ?? .controlAccentColor
     }
 
-    /// The selection fill for a row: the icon's dominant color when adaptive
-    /// accent is on and the row has a bitmap icon, else the theme highlight.
-    private func selectionFill(for row: ResultRow) -> NSColor {
-        if preferences.adaptiveAccent, let accent = AdaptiveAccent.color(for: row.icon) {
+    /// The selection fill for a row: the drawn icon's dominant color when
+    /// adaptive accent is on, else the theme highlight. `image` is what the
+    /// row renders — the shared-store resolution when Pict has one — so a
+    /// custom icon glows with its own colors, not the system icon's.
+    private func selectionFill(for image: NSImage?, key: String?) -> NSColor {
+        if preferences.adaptiveAccent, let accent = AdaptiveAccent.color(for: image, key: key) {
             return accent
         }
         return themeHighlight
+    }
+
+    /// The bitmap to draw for an icon: the shared-store resolution when the
+    /// store (or the bundle's un-jailed artwork) has one, else the
+    /// workspace icon — `nil` is the resolver's "use the system icon"
+    /// contract. `nil` only for `.symbol` rows, which draw vectors. A miss
+    /// still warms the resolver, so a later redraw picks the artwork up.
+    private func iconImage(for icon: Item.Icon) -> NSImage? {
+        guard let path = icon.backingPath else { return nil }
+        return icon.pictTarget.flatMap { model.iconResolver?($0) }
+            ?? NSWorkspace.shared.icon(forFile: path)
     }
 
     /// Text for the selected row, picked by the *composited* fill's luminance:
@@ -239,10 +253,15 @@ struct PanelView: View {
                     } else {
                         ForEach(model.results) { row in
                             let isSelected = model.selectedRow?.id == row.id
-                            // The accent sample (CIAreaAverage on the icon) is
-                            // only worth paying for the row that shows it.
-                            let fill = isSelected ? selectionFill(for: row) : themeHighlight
-                            ResultRowView(row: row,
+                            // Resolved once per row: the shared-store icon
+                            // when there is one, else the workspace icon —
+                            // one lookup feeds the drawn bitmap and, for
+                            // the selected row, the accent sample.
+                            let image = iconImage(for: row.icon)
+                            let fill = isSelected
+                                ? selectionFill(for: image, key: row.icon.backingPath)
+                                : themeHighlight
+                            ResultRowView(row: row, iconImage: image,
                                           isSelected: isSelected,
                                           fill: fill,
                                           fillOpacity: preferences.highlightOpacity,
@@ -368,6 +387,10 @@ private enum Metrics {
 private struct ResultRowView: View {
 
     let row: ResultRow
+    /// The resolved bitmap for `.fileURL`/`.appIcon` rows — the
+    /// shared-store icon when Pict has one, else the workspace icon.
+    /// Unused (nil) on `.symbol` rows.
+    let iconImage: NSImage?
     let isSelected: Bool
     /// The selection fill — the theme highlight or, under adaptive accent,
     /// the icon's dominant color.
@@ -411,8 +434,9 @@ private struct ResultRowView: View {
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
     }
 
-    /// SF Symbols render as vectors; file/app icons come from the
-    /// workspace's icon cache as bitmaps, so they need explicit sizing.
+    /// SF Symbols render as vectors; file/app icons arrive resolved as
+    /// bitmaps, so they need explicit sizing. An empty `iconImage` is the
+    /// unreachable fallback — the workspace always answers for a real path.
     @ViewBuilder
     private var icon: some View {
         switch row.icon {
@@ -420,13 +444,8 @@ private struct ResultRowView: View {
             Image(systemName: name)
                 .font(.title3)
                 .foregroundStyle(isSelected ? titleColor : subtitleColor)
-        case .fileURL(let url):
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-        case .appIcon(let path):
-            Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+        case .fileURL, .appIcon:
+            Image(nsImage: iconImage ?? NSImage())
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)

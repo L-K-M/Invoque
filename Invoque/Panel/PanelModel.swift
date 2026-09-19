@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import PictKit
 
 /// One selectable row in the launcher's results list: the display fields of
 /// an `Item` plus the action picking it performs. The view never sees `Item`
@@ -29,7 +31,8 @@ struct ResultRow: Identifiable, Equatable {
 }
 
 /// View model for the launcher panel: query, results, and the selection
-/// within them. Foundation-only so the selection logic stays unit-testable.
+/// within them. Logic stays unit-testable — every side effect arrives
+/// through an injectable closure or a wired hook.
 ///
 /// The search is synchronous: sources serve cached data (`AppSource` holds
 /// an in-memory scan; calculator/system/web compute in microseconds), so a
@@ -71,6 +74,22 @@ final class PanelModel: ObservableObject {
     /// `filterLookup` and `maker`.
     var fileSearcher: ((_ query: String, _ isCancelled: () -> Bool) -> [Item])? {
         didSet { refreshResults() }
+    }
+
+    /// Shared-store icon lookup: the resolved artwork for a target, or nil
+    /// for "use the system icon" — `PictKit`'s miss contract, which the
+    /// view reads as "draw the workspace icon". Wired to `InvoqueIcons` by
+    /// the AppDelegate; `nil` in tests, where rows draw workspace icons.
+    var iconResolver: ((IconTarget) -> NSImage?)?
+
+    /// Shared-store artwork landed or an external write invalidated it —
+    /// drop the accent cache (it sampled the old icons) and republish so
+    /// rows redraw with the new artwork. `InvoqueIcons.onIconsInvalidated`
+    /// is wired here by the AppDelegate; both of its callbacks arrive on
+    /// the main queue.
+    func noteIconsChanged() {
+        AdaptiveAccent.invalidate()
+        objectWillChange.send()
     }
 
     /// The Maker's state machine — injected at wiring time; `nil` in tests

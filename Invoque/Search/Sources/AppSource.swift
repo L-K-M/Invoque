@@ -85,7 +85,7 @@ final class AppSource: ItemSource {
             id: Item.appIDPrefix + (entry.bundleID.flatMap { $0.isEmpty ? nil : $0 } ?? entry.path),
             title: entry.name,
             subtitle: "Application",
-            icon: .appIcon(entry.path),
+            icon: .appIcon(path: entry.path, bundleID: entry.bundleID),
             action: .openApp(URL(fileURLWithPath: entry.path)),
             matchText: "\(entry.name) \(entry.fileName)"
         )

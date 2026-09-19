@@ -53,7 +53,9 @@ Once the project exists, follow the L-K-M family conventions (same as Zap):
 - Follow standard Swift API Design Guidelines; one type per file, file name
   matches the type, `// MARK:` sections.
 - Keep the search hot path allocation-light — matching runs per keystroke.
-- Don't add heavy dependencies; prefer system frameworks.
+- Don't add heavy dependencies; prefer system frameworks. `PictKit`
+  (https://github.com/L-K-M/Pict) is the one exception — first-party,
+  shared with Zap, Jetty and Top Drawer for the icon store.
 - Generated-command code is untrusted input: everything reachable from JS goes
   through the permission gate; `shell` and `paste` require first-run user
   confirmation. Never run generated code on first save — first run is

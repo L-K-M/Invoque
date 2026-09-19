@@ -20,28 +20,33 @@ enum AdaptiveAccent {
     /// isn't re-rasterized on every selection change.
     private static var cache: [String: NSColor?] = [:]
 
-    static func color(for icon: Item.Icon) -> NSColor? {
-        switch icon {
-        case .symbol:
-            return nil
-        case .fileURL(let url):
-            return dominantColor(forFileAt: url.path)
-        case .appIcon(let path):
-            return dominantColor(forFileAt: path)
-        }
-    }
-
-    private static func dominantColor(forFileAt path: String) -> NSColor? {
+    /// The accent for the image the row actually draws — the shared-store
+    /// resolution when Pict has one, else the workspace icon — keyed by the
+    /// icon's `backingPath`. A Pict override therefore picks up its own
+    /// accent, and `invalidate()` (called when the store changes) is what
+    /// lets a *changed* icon re-sample rather than returning the old
+    /// artwork's color forever.
+    static func color(for image: NSImage?, key: String?) -> NSColor? {
+        guard let image, let key else { return nil }
         cacheLock.lock()
-        let cached = cache[path]
+        let cached = cache[key]
         cacheLock.unlock()
         if let cached { return cached }
 
-        let color = NSWorkspace.shared.icon(forFile: path).dominantAccentColor()
+        let color = image.dominantAccentColor()
         cacheLock.lock()
-        cache[path] = color
+        cache[key] = color
         cacheLock.unlock()
         return color
+    }
+
+    /// Drops every cached accent — the samples were taken from icons that
+    /// may no longer be drawn. Called when the shared store reports a
+    /// change; the next selection recomputes.
+    static func invalidate() {
+        cacheLock.lock()
+        cache.removeAll()
+        cacheLock.unlock()
     }
 }
 
