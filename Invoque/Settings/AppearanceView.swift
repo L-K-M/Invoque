@@ -134,6 +134,12 @@ struct AppearanceView: View {
 
     private var textSection: some View {
         Section("Text") {
+            Picker("Typeface", selection: $preferences.panelTypeface) {
+                // Each option draws in its own face, like a font menu.
+                ForEach(PanelTypeface.allCases) { typeface in
+                    Text(typeface.label).font(typeface.font(.body)).tag(typeface)
+                }
+            }
             ColorPicker("Label", selection: colorBinding(\.labelHex), supportsOpacity: false)
                 .disabled(!preferences.panelMaterial.usesThemeTextColor)
             if !preferences.panelMaterial.usesThemeTextColor {

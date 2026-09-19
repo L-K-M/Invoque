@@ -44,11 +44,13 @@ struct PanelView: View {
                 PermissionRequestCard(request: request,
                                       titleColor: titleColor,
                                       secondaryColor: secondaryColor,
+                                      typeface: preferences.panelTypeface,
                                       onAllow: model.confirmPermissionRequest,
                                       onDecline: model.dismissPermissionRequest)
             } else if model.makerIsActive, let maker = model.maker {
                 MakerView(model: maker, prompt: model.makerPrompt ?? "",
-                          titleColor: titleColor, secondaryColor: secondaryColor)
+                          titleColor: titleColor, secondaryColor: secondaryColor,
+                          typeface: preferences.panelTypeface)
             } else {
                 resultList
             }
@@ -220,6 +222,7 @@ struct PanelView: View {
                 textColor: usesThemeText
                     ? (NSColor(hex: preferences.labelHex) ?? .labelColor)
                     : .labelColor,
+                font: preferences.panelTypeface.nsFont(size: 22),
                 onUp: { model.moveSelection(by: -1) },
                 onDown: { model.moveSelection(by: 1) },
                 onReturn: { model.submit(commandModifier: $0) }
@@ -246,7 +249,7 @@ struct PanelView: View {
                              : model.query.isEmpty
                              ? "Search apps, commands, or the web"
                              : "No results")
-                            .font(.callout)
+                            .font(preferences.panelTypeface.font(.callout))
                             .foregroundStyle(tertiaryColor)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 24)
@@ -270,6 +273,7 @@ struct PanelView: View {
                                           subtitleColor: isSelected
                                               ? selectedForeground(fill: fill).opacity(0.75)
                                               : secondaryColor,
+                                          typeface: preferences.panelTypeface,
                                           glows: isSelected && preferences.adaptiveAccent)
                                 .id(row.id)
                                 .onTapGesture {
@@ -312,7 +316,7 @@ struct PanelView: View {
              : model.fileSearchIsActive
              ? "⏎ open · ⌘⏎ reveal in Finder · esc dismiss"
              : "↑↓ navigate · ⏎ open · esc dismiss")
-            .font(.caption)
+            .font(preferences.panelTypeface.font(.caption))
             .foregroundStyle(tertiaryColor)
             .frame(maxWidth: .infinity)
     }
@@ -326,6 +330,8 @@ private struct PermissionRequestCard: View {
     let request: CommandPermissionRequest
     let titleColor: Color
     let secondaryColor: Color
+    /// The chosen typeface — resolved `Font`s come from `font(_:)`.
+    let typeface: PanelTypeface
     let onAllow: () -> Void
     let onDecline: () -> Void
 
@@ -340,20 +346,20 @@ private struct PermissionRequestCard: View {
                     // system prompt — the trusted attribution leads, the
                     // untrusted title follows it.
                     Text("Invoque command · \(request.command.name)")
-                        .font(.caption2)
+                        .font(typeface.font(.caption2))
                         .foregroundStyle(secondaryColor)
                     Text(request.command.manifest.title)
-                        .font(.headline)
+                        .font(typeface.font(.headline))
                         .foregroundStyle(titleColor)
                     Text("wants to:")
-                        .font(.caption)
+                        .font(typeface.font(.caption))
                         .foregroundStyle(secondaryColor)
                 }
             }
             ForEach(request.permissions, id: \.rawValue) { permission in
                 Label(CommandPermissionGrants.consentLine(for: permission),
                       systemImage: "exclamationmark.triangle")
-                    .font(.callout)
+                    .font(typeface.font(.callout))
                     .foregroundStyle(titleColor)
                     .padding(.leading, 4)
             }
@@ -399,6 +405,8 @@ private struct ResultRowView: View {
     let cornerRadius: Double
     let titleColor: Color
     let subtitleColor: Color
+    /// The chosen typeface — title at `.body`, subtitle at `.caption`.
+    let typeface: PanelTypeface
     /// Whether the selection fill bleeds a soft glow past the row (the
     /// adaptive-accent bloom).
     let glows: Bool
@@ -409,10 +417,11 @@ private struct ResultRowView: View {
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title)
+                    .font(typeface.font(.body))
                     .foregroundStyle(titleColor)
                     .lineLimit(1)
                 Text(row.subtitle)
-                    .font(.caption)
+                    .font(typeface.font(.caption))
                     .foregroundStyle(subtitleColor)
                     .lineLimit(1)
             }
@@ -463,6 +472,8 @@ private struct SearchField: NSViewRepresentable {
     /// The theme's label color on materials that own the background, else the
     /// adaptive `.labelColor`.
     var textColor: NSColor
+    /// The chosen typeface at the query size — resolved in `PanelView`.
+    var font: NSFont
     var onUp: () -> Void
     var onDown: () -> Void
     /// `true` when ⌘ was held — consent cards need ⌘⏎ so a habitual
@@ -476,7 +487,7 @@ private struct SearchField: NSViewRepresentable {
     func makeNSView(context: Context) -> SearchTextField {
         let field = SearchTextField()
         field.placeholderString = "Search"
-        field.font = NSFont.systemFont(ofSize: 22)
+        field.font = font
         field.textColor = textColor
         field.isBordered = false
         field.drawsBackground = false
@@ -493,6 +504,9 @@ private struct SearchField: NSViewRepresentable {
         }
         if field.textColor != textColor {
             field.textColor = textColor
+        }
+        if field.font != font {
+            field.font = font
         }
     }
 

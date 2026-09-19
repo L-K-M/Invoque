@@ -120,7 +120,10 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   highlight.
 - **Text**: `labelHex` applies only where the theme owns the background
   (`solid`/`gradient` — `PanelMaterial.usesThemeTextColor`); glass defers to
-  the system, which adapts `.primary` to the appearance.
+  the system, which adapts `.primary` to the appearance. `panelTypeface`
+  picks the face — four system designs plus bundled macOS families
+  (`PanelTypeface`), applied to every panel text: rows, query field, maker,
+  consent card, footer, HUD. SF Symbol icons keep the system face.
 - **Retro flourishes**: corner `PanelDecoration` (ZX stripes, boing ball) +
   `CRTScreenOverlay`, copied from Zap.
 - **Presets** (`AppearancePreset`): Codable snapshot + built-ins (Classic,
@@ -469,6 +472,7 @@ Invoque/
 │   │   ├── Preferences.swift            #   UserDefaults, validated on load
 │   │   ├── AppearancePreset.swift       #   shareable themes + Zap/Jetty import
 │   │   ├── PanelMaterial.swift          #   background material enum
+│   │   ├── PanelTypeface.swift          #   curated typeface picker values
 │   │   ├── RGBA8.swift · ColorHex.swift #   #RRGGBB[AA] storage + color bridge
 │   │   └── DecorationStyle/Position · AccessibilityDisplaySettings  # (Zap)
 │   └── Resources/Assets.xcassets

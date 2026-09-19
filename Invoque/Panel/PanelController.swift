@@ -131,7 +131,7 @@ final class PanelController: NSObject {
     private func runCommand(named name: String, args: [String]) {
         guard let command = commandStore.command(named: name) else {
             hide()
-            HUD.show("Unknown command: \(name)")
+            HUD.show("Unknown command: \(name)", typeface: preferences.panelTypeface)
             return
         }
         // First-run consent (PLAN §4.3): a command declaring risky
@@ -158,7 +158,7 @@ final class PanelController: NSObject {
                 // future runner could pair partial output with an error.
                 if let error = result.error {
                     self.hide()
-                    HUD.show(error.localizedDescription)
+                    HUD.show(error.localizedDescription, typeface: preferences.panelTypeface)
                     return
                 }
                 switch result.output {
@@ -176,7 +176,7 @@ final class PanelController: NSObject {
                     }
                 case .title(let title):
                     self.hide()
-                    HUD.show(title)
+                    HUD.show(title, typeface: preferences.panelTypeface)
                 case .void:
                     self.hide()
                 }
