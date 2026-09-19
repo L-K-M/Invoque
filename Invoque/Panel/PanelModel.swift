@@ -33,6 +33,15 @@ struct ResultRow: Identifiable, Equatable {
         self.action = action
         self.matchText = matchText ?? title
     }
+
+    /// Equality covers display fields only — `matchText` is derived search
+    /// metadata, and counting it would turn a visually identical rescan
+    /// into a "change" that resets the selection via `results`' didSet.
+    static func == (lhs: ResultRow, rhs: ResultRow) -> Bool {
+        lhs.id == rhs.id && lhs.title == rhs.title
+            && lhs.subtitle == rhs.subtitle && lhs.icon == rhs.icon
+            && lhs.action == rhs.action
+    }
 }
 
 /// View model for the launcher panel: query, results, and the selection
@@ -284,7 +293,9 @@ final class PanelModel: ObservableObject {
               query != anchor, query.hasPrefix(anchor) else {
             return freshRows
         }
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The survivor re-match must use the model's own normalization —
+        // a looser form here would keep rows the model already dropped.
+        let trimmed = SearchModel.normalizedQuery(query)
         let freshByID = Dictionary(freshRows.map { ($0.id, $0) },
                                    uniquingKeysWith: { first, _ in first })
         func isPinned(_ id: String) -> Bool {
@@ -294,12 +305,19 @@ final class PanelModel: ObservableObject {
         var head: [ResultRow] = []
         var headIDs = Set<String>()
         for row in results where !isPinned(row.id) {
-            guard FuzzyMatcher.match(trimmed, candidate: row.matchText) != nil,
+            // Prefer the fresh copy's match surface when one exists — a
+            // rescan that renames what the item matches must not keep
+            // displaying a row that no longer qualifies.
+            let candidate = freshByID[row.id]?.matchText ?? row.matchText
+            guard FuzzyMatcher.match(trimmed, candidate: candidate) != nil,
                   headIDs.insert(row.id).inserted else { continue }
             head.append(freshByID[row.id] ?? row)
         }
         // The pins keep their slots around the ranked middle — a head
-        // survivor must not push a fresh calculator answer off the top.
+        // survivor must not push a fresh calculator answer off the top,
+        // and the cap applies to the middle only or a full page of
+        // survivors would slice the web fallback off the bottom. Same
+        // slot math as SearchModel's own `rankedSlots`.
         let tail = freshRows.filter {
             !isPinned($0.id) && !headIDs.contains($0.id)
         }
@@ -307,7 +325,10 @@ final class PanelModel: ObservableObject {
             $0.id.hasPrefix(Item.calculatorIDPrefix)
         }
         let web = freshRows.filter { $0.id.hasPrefix(Item.webIDPrefix) }
-        return Array((calculator + head + tail + web)
+        let middleSlots = max(0, SearchModel.maxResults
+            - calculator.count - web.count)
+        return Array((calculator
+            + Array((head + tail).prefix(middleSlots)) + web)
             .prefix(SearchModel.maxResults))
     }
 

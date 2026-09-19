@@ -37,10 +37,11 @@ final class PanelModelTests: XCTestCase {
         return model
     }
 
-    private static func appItem(id: String, title: String) -> Item {
+    private static func appItem(id: String, title: String,
+                                matchText: String? = nil) -> Item {
         Item(id: id, title: title, subtitle: "", icon: .symbol("app"),
              action: .openApp(URL(fileURLWithPath: "/Applications/\(title).app")),
-             matchText: title)
+             matchText: matchText ?? title)
     }
 
     // MARK: Query → results
@@ -103,6 +104,32 @@ final class PanelModelTests: XCTestCase {
         model.query = "a"
         model.moveSelection(by: 1)
         XCTAssertEqual(model.selectedRow?.id, "app:two")
+        model.refreshResults()
+        XCTAssertEqual(model.selectedRow?.id, "app:two")
+    }
+
+    /// `matchText` is search metadata, not display state: a rescan that
+    /// changes only it must not count as "changed rows" and reset the
+    /// cursor. The `==` on `ResultRow` deliberately excludes it.
+    func testRefreshWithMatchTextOnlyChangeKeepsSelection() {
+        let source = StubSource(stubbed: [
+            Self.appItem(id: "app:one", title: "Alpha",
+                         matchText: "Alpha one"),
+            Self.appItem(id: "app:two", title: "Amber",
+                         matchText: "Amber two"),
+        ])
+        let model = PanelModel()
+        model.searchModel = SearchModel(sources: [source],
+                                        frecency: Frecency(defaults: defaults))
+        model.query = "a"
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.selectedRow?.id, "app:two")
+        source.stubbed = [
+            Self.appItem(id: "app:one", title: "Alpha",
+                         matchText: "Alpha xxx"),
+            Self.appItem(id: "app:two", title: "Amber",
+                         matchText: "Amber yyy"),
+        ]
         model.refreshResults()
         XCTAssertEqual(model.selectedRow?.id, "app:two")
     }
@@ -895,6 +922,34 @@ final class PanelModelTests: XCTestCase {
         XCTAssertTrue(model.results.contains { $0.id == "app:calc-tool" })
     }
 
+    /// The cap applies to the ranked middle only: a page of survivors
+    /// must not slice the pinned web row off the bottom of the merged
+    /// list — calculator stays first, web stays last.
+    func testPinnedRowsSurviveExtensionAtCap() {
+        var items = (0..<60).map {
+            Self.appItem(id: "app:\($0)", title: "AB\($0)")
+        }
+        items.append(Item(id: Item.calculatorIDPrefix + "sum", title: "42",
+                          subtitle: "", icon: .symbol("plus"),
+                          action: .copyText("42"), matchText: "42"))
+        items.append(Item(id: Item.webIDPrefix + "q",
+                          title: "Search the web", subtitle: "",
+                          icon: .symbol("globe"),
+                          action: .openURL(URL(
+                            string: "https://example.com")!),
+                          matchText: "Search the web"))
+        let model = makeModel(items: items)
+        model.query = "a"
+        XCTAssertEqual(model.results.count, SearchModel.maxResults)
+        // "ab" extends "a" and still prefix-matches every "ABn" — all 48
+        // displayed rows survive, so the merge is at capacity.
+        model.query = "ab"
+        XCTAssertEqual(model.results.count, SearchModel.maxResults)
+        XCTAssertEqual(model.results.first?.id,
+                       Item.calculatorIDPrefix + "sum")
+        XCTAssertEqual(model.results.last?.id, Item.webIDPrefix + "q")
+    }
+
     /// File scans get the same stability: rows that still match the grown
     /// text keep their positions even when the fresh scan re-ranks them.
     func testFileResultsStabilizeOnExtension() async throws {
@@ -917,6 +972,27 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.map(\.title), ["safxa.txt", "safarilong.txt"])
     }
 
+    /// A row that first appears on the extended completion — a streamed
+    /// hit or a refreshed source — joins at its fresh rank *below* the
+    /// survivors, even when the fresh pass outranks them.
+    func testFileNewcomerJoinsBelowSurvivors() async throws {
+        let model = makeModel(items: [])
+        withShortFileDebounce()
+        model.fileSearcher = { text, _ in
+            if text == "saf" { return [Self.fileItem("safxa.txt")] }
+            return [Self.fileItem("safarilong.txt"), Self.fileItem("safxa.txt")]
+        }
+        model.query = "find saf"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["safxa.txt"])
+        model.query = "find safa"
+        await awaitFileCompletions(model, atLeast: 2)
+        // "safarilong.txt" wins the fresh pass on tier but is a newcomer —
+        // it lands below the survivor rather than displacing it.
+        XCTAssertEqual(model.results.map(\.title),
+                       ["safxa.txt", "safarilong.txt"])
+    }
+
     /// A mode change can't leak the last search's stability anchor — rows
     /// from a file session must not head a later normal search's list.
     func testFileToSearchTransitionReranks() async throws {
@@ -924,6 +1000,7 @@ final class PanelModelTests: XCTestCase {
             Self.appItem(id: "app:notes-app", title: "Notes"),
             Self.appItem(id: "app:nope", title: "Nope"),
         ])
+        withShortFileDebounce()
         model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
         model.query = "find notes"
         await awaitFileCompletions(model, atLeast: 1)

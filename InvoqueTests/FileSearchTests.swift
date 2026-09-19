@@ -147,6 +147,29 @@ final class FileSearchTests: XCTestCase {
                        ["abx.txt", "xab.txt", "axxbxx.txt"])
     }
 
+    /// The discriminating case for tier-over-score ordering: "a b.txt"
+    /// out-scores the infix on raw alignment (two word-start bonuses) but
+    /// only fuzzy-matches — the tier key still puts the infix first.
+    func testInfixBeatsHigherScoredFuzzy() throws {
+        try makeFile("a b.txt")        // fuzzy — two word-start bonuses
+        try makeFile("wxyzabq.txt")    // infix — contiguous but gapped
+        // Guard the premise: the fuzzy hit really does score higher.
+        XCTAssertGreaterThan(
+            FuzzyMatcher.score("ab", candidate: "a b.txt") ?? 0,
+            FuzzyMatcher.score("ab", candidate: "wxyzabq.txt") ?? 0)
+        XCTAssertEqual(scannedNames("ab"), ["wxyzabq.txt", "a b.txt"])
+    }
+
+    /// A long prefix still outranks a shorter infix — the tier key
+    /// decides before the length penalty can outweigh the prefix bonus.
+    func testLongPrefixStillBeatsInfix() throws {
+        try makeFile("abzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.txt")
+        try makeFile("xab.txt")
+        XCTAssertEqual(scannedNames("ab"),
+                       ["abzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.txt",
+                        "xab.txt"])
+    }
+
     func testItemShape() {
         let url = root.appendingPathComponent("notes.txt")
         let item = FileSearch.item(for: url)

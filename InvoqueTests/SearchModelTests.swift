@@ -130,16 +130,36 @@ final class SearchModelTests: XCTestCase {
     }
 
     func testRepeatedSelectionsPromoteItem() {
-        // "Notes" and "North" tie on every ranking key for "no" — same
-        // tier (both prefix), same length — so the recorded pick wins.
+        // "Norse" and "North" tie on every ranking key for "no" — same
+        // tier (both prefix), same length — and "Norse" wins the title
+        // tiebreak unaided, so only frecency can flip the order.
         let source = StubSource()
-        let notes = Self.appItem(id: "app:notes", title: "Notes")
+        let norse = Self.appItem(id: "app:norse", title: "Norse")
         let north = Self.appItem(id: "app:north", title: "North")
-        source.stubbedItems = [notes, north]
+        source.stubbedItems = [norse, north]
         let model = makeModel(sources: [source])
+        // No frecency yet: the documented title/id tiebreak is the order.
+        XCTAssertEqual(model.results(for: "no").map(\.id),
+                       ["app:norse", "app:north"])
         model.recordSelection(north)
         model.recordSelection(north)
         XCTAssertEqual(model.results(for: "no").first?.id, "app:north")
+    }
+
+    /// The discriminating case for tier-over-score ordering: "a b" scores
+    /// higher for "ab" on the raw alignment (two word-start bonuses) but
+    /// only fuzzy-matches — the contiguous infix still wins on tier.
+    func testInfixBeatsHigherScoredFuzzy() {
+        let source = StubSource()
+        let fuzzy = Self.appItem(id: "app:fuzzy", title: "a b")
+        let infix = Self.appItem(id: "app:infix", title: "wxyzabq")
+        source.stubbedItems = [fuzzy, infix]
+        // Guard the premise: the fuzzy hit really does out-score the infix.
+        let fuzzyScore = FuzzyMatcher.score("ab", candidate: "a b")
+        let infixScore = FuzzyMatcher.score("ab", candidate: "wxyzabq")
+        XCTAssertGreaterThan(fuzzyScore ?? 0, infixScore ?? 0)
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "ab")
+            .map(\.id), ["app:infix", "app:fuzzy"])
     }
 
     /// Ranking is class-first: an exact prefix beats an infix beats a

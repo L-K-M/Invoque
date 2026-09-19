@@ -161,7 +161,9 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - Stability: extending the query preserves the displayed order of rows
   that still match — a row the user is reaching for never moves under
   them. Non-extension edits (deletion, replacement, mode switches) re-rank
-  fresh. The same holds for `find`/`f` scan completions.
+  fresh. Rows that match for the first time mid-extension (a streamed
+  file hit, a refreshed source) join at their fresh rank below the
+  survivors. The same holds for `find`/`f` scan completions.
 - Icons: result-row bitmaps resolve through `PictKit`'s `IconResolver`
   (`InvoqueIcons`, the `JettyIcons`/`ZapIcons` seam) — a user-set icon in
   Pict (or any family app) wins, then the bundle's own un-jailed artwork,

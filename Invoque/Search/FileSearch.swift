@@ -77,7 +77,7 @@ enum FileSearch {
     /// a blank query: "match everything" floods would defeat the point.
     static func scan(query: String, roots: [URL] = defaultRoots,
                      isCancelled: () -> Bool = { false }) -> [Match] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = SearchModel.normalizedQuery(query)
         guard !trimmed.isEmpty, !isCancelled() else { return [] }
 
         var visited = 0

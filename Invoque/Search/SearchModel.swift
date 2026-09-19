@@ -22,6 +22,14 @@ final class SearchModel {
     /// panel cannot show them, and scoring already ordered the best first.
     static let maxResults = 50
 
+    /// The normalization `results(for:)` applies before matching. Kept as
+    /// the single implementation because `PanelModel`'s stability merge
+    /// re-matches rows against the same form — a divergent trim there
+    /// would let survivors outlive the model's own filter.
+    static func normalizedQuery(_ query: String) -> String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: State
 
     private let sources: [ItemSource]
@@ -41,6 +49,9 @@ final class SearchModel {
         let item: Item
         let match: FuzzyMatcher.Match
         let boost: Double
+        /// `matchText.count`, hoisted: `String.count` walks graphemes, so
+        /// it must not run twice per sort comparison.
+        let matchLength: Int
     }
 
     /// Whether `lhs` sorts before `rhs`: match tier first (exact prefix,
@@ -52,9 +63,9 @@ final class SearchModel {
         if lhs.match.tier != rhs.match.tier {
             return lhs.match.tier < rhs.match.tier
         }
-        let lhsLength = lhs.item.matchText.count
-        let rhsLength = rhs.item.matchText.count
-        if lhsLength != rhsLength { return lhsLength < rhsLength }
+        if lhs.matchLength != rhs.matchLength {
+            return lhs.matchLength < rhs.matchLength
+        }
         if lhs.boost != rhs.boost { return lhs.boost > rhs.boost }
         if lhs.match.score != rhs.match.score {
             return lhs.match.score > rhs.match.score
@@ -69,7 +80,7 @@ final class SearchModel {
     /// receive the trimmed query. Duplicate ids (e.g. the same app found in
     /// two folders) keep only the better-ranked copy.
     func results(for query: String) -> [Item] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = Self.normalizedQuery(query)
         guard !trimmed.isEmpty else { return [] }
 
         var calculatorHits: [Item] = []
@@ -90,7 +101,8 @@ final class SearchModel {
                     webHits.append(item)
                 } else if let match = FuzzyMatcher.match(trimmed, candidate: item.matchText) {
                     let scored = ScoredItem(item: item, match: match,
-                                            boost: frecency.score(item.id))
+                                            boost: frecency.score(item.id),
+                                            matchLength: item.matchText.count)
                     if let existing = bestByID[item.id],
                        !Self.outranks(scored, over: existing) { continue }
                     bestByID[item.id] = scored
