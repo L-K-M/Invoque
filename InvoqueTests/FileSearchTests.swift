@@ -136,6 +136,17 @@ final class FileSearchTests: XCTestCase {
         XCTAssertEqual(names.first, "r-one.txt")
     }
 
+    /// Same ordering as the launcher search: prefix tier beats infix beats
+    /// fuzzy, then the shorter filename. "ab" hits nothing in the fixture,
+    /// so the list is exactly the three planted files.
+    func testRankedByTierThenLength() throws {
+        try makeFile("abx.txt")      // prefix — 7 chars
+        try makeFile("xab.txt")      // infix — 7 chars
+        try makeFile("axxbxx.txt")   // fuzzy only — 10 chars
+        XCTAssertEqual(scannedNames("ab"),
+                       ["abx.txt", "xab.txt", "axxbxx.txt"])
+    }
+
     func testItemShape() {
         let url = root.appendingPathComponent("notes.txt")
         let item = FileSearch.item(for: url)

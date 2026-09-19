@@ -1,14 +1,16 @@
 import Foundation
 
-/// Gathers items from every source, scores them, and returns the top rows.
+/// Gathers items from every source, ranks them, and returns the top rows.
 ///
-/// Source priority: calculator exact results first, then fuzzy matches
-/// ordered by `FuzzyMatcher` score plus the `Frecency` boost, then the web
-/// fallback last. The pins are load-bearing, not cosmetic: the web row's
-/// text always contains the query, so without pinning it would score like a
-/// strong prefix hit and steal Return from real matches. Calculator results
-/// pin to the top for the symmetric reason: `= 4` is an exact answer, not a
-/// guess, and must outrank fuzzy noise.
+/// Source priority: calculator exact results first, then ranked matches,
+/// then the web fallback last. Ranked ordering is class-first — an exact
+/// prefix beats an infix beats a fuzzy subsequence — then shorter match
+/// text wins inside a class, then frecency, alignment score, and title/id
+/// tie-break in that order. The pins are load-bearing, not cosmetic: the
+/// web row's text always contains the query, so without pinning it would
+/// score like a strong prefix hit and steal Return from real matches.
+/// Calculator results pin to the top for the symmetric reason: `= 4` is an
+/// exact answer, not a guess, and must outrank fuzzy noise.
 ///
 /// Empty or blank queries yield no results; what an empty panel shows is a
 /// UI concern for the later panel PR, not the model's.
@@ -34,15 +36,38 @@ final class SearchModel {
 
     // MARK: Searching
 
-    /// An item with its combined ranking score.
+    /// An item with its match classification and frecency boost.
     private struct ScoredItem {
         let item: Item
-        let score: Double
+        let match: FuzzyMatcher.Match
+        let boost: Double
+    }
+
+    /// Whether `lhs` sorts before `rhs`: match tier first (exact prefix,
+    /// then infix, then fuzzy), then the shorter matched text, then the
+    /// frecency boost — a frequent pick wins an otherwise-equal match —
+    /// then the alignment score as the last quality signal, then title and
+    /// id for a total order.
+    private static func outranks(_ lhs: ScoredItem, over rhs: ScoredItem) -> Bool {
+        if lhs.match.tier != rhs.match.tier {
+            return lhs.match.tier < rhs.match.tier
+        }
+        let lhsLength = lhs.item.matchText.count
+        let rhsLength = rhs.item.matchText.count
+        if lhsLength != rhsLength { return lhsLength < rhsLength }
+        if lhs.boost != rhs.boost { return lhs.boost > rhs.boost }
+        if lhs.match.score != rhs.match.score {
+            return lhs.match.score > rhs.match.score
+        }
+        if lhs.item.title != rhs.item.title {
+            return lhs.item.title < rhs.item.title
+        }
+        return lhs.item.id < rhs.item.id
     }
 
     /// Ranked items for `query`, best first, at most `maxResults`. Sources
     /// receive the trimmed query. Duplicate ids (e.g. the same app found in
-    /// two folders) keep only the highest score.
+    /// two folders) keep only the better-ranked copy.
     func results(for query: String) -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -63,27 +88,20 @@ final class SearchModel {
                 } else if item.id.hasPrefix(Item.webIDPrefix) {
                     guard pinnedIDs.insert(item.id).inserted else { continue }
                     webHits.append(item)
-                } else if let matchScore = FuzzyMatcher.score(trimmed, candidate: item.matchText) {
-                    let combined = Double(matchScore) + frecency.score(item.id)
-                    if let existing = bestByID[item.id] {
-                        if combined > existing.score {
-                            bestByID[item.id] = ScoredItem(item: item, score: combined)
-                        }
-                    } else {
-                        bestByID[item.id] = ScoredItem(item: item, score: combined)
-                    }
+                } else if let match = FuzzyMatcher.match(trimmed, candidate: item.matchText) {
+                    let scored = ScoredItem(item: item, match: match,
+                                            boost: frecency.score(item.id))
+                    if let existing = bestByID[item.id],
+                       !Self.outranks(scored, over: existing) { continue }
+                    bestByID[item.id] = scored
                 }
             }
         }
 
-        // Sorting is not guaranteed stable, so ties break on title then id:
-        // identical queries always produce identical lists.
+        // Sorting is not guaranteed stable, so the comparator ends on title
+        // then id: identical queries always produce identical lists.
         let ranked = bestByID.values
-            .sorted { lhs, rhs in
-                if lhs.score != rhs.score { return lhs.score > rhs.score }
-                if lhs.item.title != rhs.item.title { return lhs.item.title < rhs.item.title }
-                return lhs.item.id < rhs.item.id
-            }
+            .sorted { Self.outranks($0, over: $1) }
             .map { $0.item }
 
         // The pinned rows get their slots first: a noisy query that fills the

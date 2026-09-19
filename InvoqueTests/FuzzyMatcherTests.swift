@@ -50,6 +50,38 @@ final class FuzzyMatcherTests: XCTestCase {
         XCTAssertGreaterThan(short, long)
     }
 
+    // MARK: Tiers
+
+    /// `match` classifies the hit: an exact prefix, then a contiguous
+    /// substring elsewhere, then a scattered subsequence. `nil` is no
+    /// match at all — same contract as `score`.
+    func testMatchClassifiesPrefixInfixFuzzy() throws {
+        XCTAssertEqual(FuzzyMatcher.match("saf", candidate: "Safari")?.tier, .prefix)
+        XCTAssertEqual(FuzzyMatcher.match("saf", candidate: "Asafari")?.tier, .infix)
+        XCTAssertEqual(FuzzyMatcher.match("sfr", candidate: "Safari")?.tier, .fuzzy)
+        XCTAssertNil(FuzzyMatcher.match("xyz", candidate: "Safari"))
+    }
+
+    /// The infix probe must not rely on the greedy alignment — the leftmost
+    /// per-character walk aligns "saf" at 0,1,4 in "sasaf" and would miss
+    /// the contiguous hit sitting at index 2.
+    func testInfixDetectedPastGreedyAlignment() throws {
+        XCTAssertEqual(FuzzyMatcher.match("saf", candidate: "sasaf")?.tier, .infix)
+    }
+
+    /// A prefix is also a contiguous substring — the prefix tier wins the
+    /// tiebreak order.
+    func testPrefixDoesNotFallThroughToInfix() throws {
+        XCTAssertEqual(FuzzyMatcher.match("saf", candidate: "SafxSafay")?.tier, .prefix)
+    }
+
+    func testMatchScoreAgreesWithScore() {
+        XCTAssertEqual(FuzzyMatcher.match("saf", candidate: "Safari")?.score,
+                       FuzzyMatcher.score("saf", candidate: "Safari"))
+        XCTAssertEqual(FuzzyMatcher.match("sfr", candidate: "Safari")?.score,
+                       FuzzyMatcher.score("sfr", candidate: "Safari"))
+    }
+
     // MARK: Case
 
     func testCaseInsensitive() {

@@ -64,9 +64,10 @@ enum FileSearch {
     /// responsive, rare enough not to tax the walk.
     private static let cancellationStride = 2_048
 
-    /// A fuzzy hit: the file's URL and its `FuzzyMatcher` score.
+    /// A filename hit: the file's URL plus its match tier and score.
     struct Match {
         let url: URL
+        let tier: FuzzyMatcher.Match.Tier
         let score: Int
     }
 
@@ -87,11 +88,19 @@ enum FileSearch {
                  visited: &visited, matches: &matches, seenPaths: &seenPaths)
             if visited >= maxVisited || isCancelled() { break }
         }
-        // Score desc, then path for a stable tie-break — identical queries
-        // must produce identical lists.
+        // Same ordering the launcher search uses: match tier first (prefix
+        // beats infix beats fuzzy), then the shorter filename, then the
+        // alignment score, then path — the total order keeps identical
+        // queries producing identical lists.
         return matches
-            .sorted { $0.score != $1.score ? $0.score > $1.score
-                                           : $0.url.path < $1.url.path }
+            .sorted { lhs, rhs in
+                if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
+                let lhsLength = lhs.url.lastPathComponent.count
+                let rhsLength = rhs.url.lastPathComponent.count
+                if lhsLength != rhsLength { return lhsLength < rhsLength }
+                if lhs.score != rhs.score { return lhs.score > rhs.score }
+                return lhs.url.path < rhs.url.path
+            }
             .prefix(SearchModel.maxResults)
             .map { $0 }
     }
@@ -138,9 +147,10 @@ enum FileSearch {
             // keep a twice-yielded path (overlapping roots) out of the
             // results, so recording non-matches would grow the set to
             // `visited` size for nothing.
-            if let score = FuzzyMatcher.score(query, candidate: url.lastPathComponent),
+            if let match = FuzzyMatcher.match(query, candidate: url.lastPathComponent),
                seenPaths.insert(url.standardizedFileURL.path).inserted {
-                matches.append(Match(url: url, score: score))
+                matches.append(Match(url: url, tier: match.tier,
+                                     score: match.score))
                 if matches.count >= maxMatches { return }
             }
         }

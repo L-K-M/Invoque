@@ -832,6 +832,108 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(phase, .failed)
     }
 
+    // MARK: Result stability
+
+    /// Typing more letters must not reorder rows that still match.
+    /// "Safxa" prefix-matches "saf" but only *fuzzy*-matches "safa" — a
+    /// plain re-sort would demote it below the still-prefix "SafariLong";
+    /// stability keeps the displayed order.
+    func testExtendingQueryKeepsStillMatchingRowsInPlace() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:degrades", title: "Safxa"),
+            Self.appItem(id: "app:stable", title: "SafariLong"),
+        ])
+        model.query = "saf"
+        // Both prefix-hit; the shorter match text leads.
+        XCTAssertEqual(model.results.map(\.id), ["app:degrades", "app:stable"])
+        model.query = "safa"
+        // A fresh rank would order [stable, degrades] — prefix beats
+        // fuzzy — but the survivor keeps its slot.
+        XCTAssertEqual(model.results.map(\.id), ["app:degrades", "app:stable"])
+    }
+
+    /// Non-extension edits re-rank fresh — deletion gets the shorter
+    /// query's natural order, not the extended query's leftovers.
+    func testShrinkingQueryReranks() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:degrades", title: "Safxa"),
+            Self.appItem(id: "app:stable", title: "SafariLong"),
+        ])
+        model.query = "safa"
+        XCTAssertEqual(model.results.map(\.id), ["app:stable", "app:degrades"])
+        model.query = "saf"
+        XCTAssertEqual(model.results.map(\.id), ["app:degrades", "app:stable"])
+    }
+
+    /// Rows that stop matching drop out on extension — stability protects
+    /// positions, not stale rows.
+    func testExtensionDropsNonMatchingRows() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:keeper", title: "Safari"),
+            Self.appItem(id: "app:gone", title: "SafZ"),
+        ])
+        model.query = "saf"
+        XCTAssertEqual(model.results.map(\.id), ["app:gone", "app:keeper"])
+        model.query = "safa"
+        // "SafZ" has no second 'a' — it's gone, not merely reordered.
+        XCTAssertEqual(model.results.map(\.id), ["app:keeper"])
+    }
+
+    /// An extended query keeps the calculator's top slot — a still-matching
+    /// survivor must not float above the fresh pinned answer.
+    func testExtensionKeepsCalculatorPinOnTop() {
+        let model = PanelModel()
+        model.searchModel = SearchModel(
+            sources: [StubSource(stubbed: [
+                Self.appItem(id: "app:calc-tool", title: "1+1*2 Helper"),
+            ]), CalculatorSource()],
+            frecency: Frecency(defaults: defaults))
+        model.query = "1+1"
+        XCTAssertTrue(model.results.first?.id.hasPrefix("calc:") ?? false)
+        model.query = "1+1*2"
+        XCTAssertTrue(model.results.first?.id.hasPrefix("calc:") ?? false)
+        XCTAssertTrue(model.results.contains { $0.id == "app:calc-tool" })
+    }
+
+    /// File scans get the same stability: rows that still match the grown
+    /// text keep their positions even when the fresh scan re-ranks them.
+    func testFileResultsStabilizeOnExtension() async throws {
+        let model = makeModel(items: [])
+        withShortFileDebounce()
+        model.fileSearcher = { text, _ in
+            // The stub re-ranks per query — "safa" puts the longer,
+            // still-prefix file first and demotes the fuzzy survivor.
+            if text == "saf" {
+                return [Self.fileItem("safxa.txt"), Self.fileItem("safarilong.txt")]
+            }
+            return [Self.fileItem("safarilong.txt"), Self.fileItem("safxa.txt")]
+        }
+        model.query = "find saf"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["safxa.txt", "safarilong.txt"])
+        model.query = "find safa"
+        await awaitFileCompletions(model, atLeast: 2)
+        // "safxa.txt" still fuzzy-matches "safa" — it keeps its slot.
+        XCTAssertEqual(model.results.map(\.title), ["safxa.txt", "safarilong.txt"])
+    }
+
+    /// A mode change can't leak the last search's stability anchor — rows
+    /// from a file session must not head a later normal search's list.
+    func testFileToSearchTransitionReranks() async throws {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:notes-app", title: "Notes"),
+            Self.appItem(id: "app:nope", title: "Nope"),
+        ])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find notes"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["notes.txt"])
+        // "notes" is not an extension of the file text session — a normal
+        // search ranks fresh.
+        model.query = "notes"
+        XCTAssertEqual(model.results.map(\.id), ["app:notes-app"])
+    }
+
     // MARK: Helpers
 
     private final class MakerStubClient: LLMClientServing {

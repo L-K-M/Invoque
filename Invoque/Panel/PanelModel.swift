@@ -12,21 +12,26 @@ struct ResultRow: Identifiable, Equatable {
     let subtitle: String
     let icon: Item.Icon
     let action: Item.Action
+    /// The row's search surface — kept on the row so an extended query can
+    /// re-check "still matches" without going back to the source `Item`.
+    let matchText: String
 
     init(item: Item) {
         self.init(id: item.id, title: item.title, subtitle: item.subtitle,
-                  icon: item.icon, action: item.action)
+                  icon: item.icon, action: item.action,
+                  matchText: item.matchText)
     }
 
     /// Direct construction for rows that aren't `Item`s — filter-mode
     /// results and error rows.
     init(id: String, title: String, subtitle: String,
-         icon: Item.Icon, action: Item.Action) {
+         icon: Item.Icon, action: Item.Action, matchText: String? = nil) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.icon = icon
         self.action = action
+        self.matchText = matchText ?? title
     }
 }
 
@@ -215,6 +220,12 @@ final class PanelModel: ObservableObject {
 
     // MARK: Searching
 
+    /// The normal-search text that produced `results` — the stability
+    /// anchor. Extending it keeps still-matching rows in place (see
+    /// `stabilizedRankedRows`); `nil` while another mode owns the list so
+    /// stability can't leak a foreign session's rows into a fresh search.
+    private var rankedText: String?
+
     /// Re-runs the current query. Called on query changes and by
     /// `AppSource.onReload`/`CommandSource.onReload` — a background scan
     /// landing after the panel opened must fill the visible list without
@@ -223,6 +234,7 @@ final class PanelModel: ObservableObject {
         // The maker owns the panel: `MakerView` replaces the list, and a
         // command source rescan must not refill rows nobody can see.
         if makerIsActive {
+            rankedText = nil
             cancelFileSearch()
             cancelFilterRun()
             if !results.isEmpty { results = [] }
@@ -231,11 +243,13 @@ final class PanelModel: ObservableObject {
         // Built-in keywords win over filter commands claiming them — the
         // `makerKeywords` policy.
         if let resolved = activeFileSearch() {
+            rankedText = nil
             cancelFilterRun()
             scheduleFileSearch(keyword: resolved.keyword, text: resolved.text)
             return
         }
         if let resolved = activeFilter() {
+            rankedText = nil
             cancelFileSearch()
             scheduleFilter(resolved.command, keyword: resolved.keyword,
                            text: resolved.text)
@@ -243,12 +257,58 @@ final class PanelModel: ObservableObject {
         }
         cancelFileSearch()
         cancelFilterRun()
-        let newResults = (searchModel?.results(for: query) ?? []).map(ResultRow.init)
+        let fresh = searchModel?.results(for: query) ?? []
+        let newResults = stabilizedRankedRows(fresh)
+        rankedText = query
         // A background rescan landing identical rows must not yank the
         // selection back to the top (results' didSet resets it) or fire a
         // redundant objectWillChange.
         guard newResults != results else { return }
         results = newResults
+    }
+
+    /// Maps fresh items to rows, preserving the displayed order of rows
+    /// that still match when the query only grew: extending "saf" to "safa"
+    /// must not bounce a still-matching row out of its slot — the user is
+    /// already reaching for it. Re-sorting can't promise that (a prefix
+    /// hit can degrade to infix while still matching, e.g. "saf"→"safa"
+    /// against "SafxSafay"), so survivors keep their relative order and
+    /// newcomers fill the remaining slots by rank. A survivor absent from
+    /// `fresh` but still matching (pushed past the result cap) keeps its
+    /// row; its display fields refresh from the fresh copy when one exists.
+    /// Pinned rows (calculator up top, web fallback at the bottom) keep
+    /// their slots — stability only covers the ranked middle.
+    private func stabilizedRankedRows(_ fresh: [Item]) -> [ResultRow] {
+        let freshRows = fresh.map(ResultRow.init)
+        guard let anchor = rankedText, !anchor.isEmpty,
+              query != anchor, query.hasPrefix(anchor) else {
+            return freshRows
+        }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let freshByID = Dictionary(freshRows.map { ($0.id, $0) },
+                                   uniquingKeysWith: { first, _ in first })
+        func isPinned(_ id: String) -> Bool {
+            id.hasPrefix(Item.calculatorIDPrefix)
+                || id.hasPrefix(Item.webIDPrefix)
+        }
+        var head: [ResultRow] = []
+        var headIDs = Set<String>()
+        for row in results where !isPinned(row.id) {
+            guard FuzzyMatcher.match(trimmed, candidate: row.matchText) != nil,
+                  headIDs.insert(row.id).inserted else { continue }
+            head.append(freshByID[row.id] ?? row)
+        }
+        // The pins keep their slots around the ranked middle — a head
+        // survivor must not push a fresh calculator answer off the top.
+        let tail = freshRows.filter {
+            !isPinned($0.id) && !headIDs.contains($0.id)
+        }
+        let calculator = freshRows.filter {
+            $0.id.hasPrefix(Item.calculatorIDPrefix)
+        }
+        let web = freshRows.filter { $0.id.hasPrefix(Item.webIDPrefix) }
+        return Array((calculator + head + tail + web)
+            .prefix(SearchModel.maxResults))
     }
 
     /// Stops any scheduled or in-flight filter run and bumps the
@@ -268,6 +328,7 @@ final class PanelModel: ObservableObject {
         fileTask = nil
         activeFileKeyword = nil
         activeFileText = nil
+        fileResultText = nil
         fileGeneration += 1
     }
 
@@ -396,6 +457,10 @@ final class PanelModel: ObservableObject {
     /// `refreshResults` re-running the identical query skips a redundant
     /// disk walk.
     private var activeFileText: String?
+    /// The file-search text that produced the current rows — the stability
+    /// anchor for scan completions, mirroring `rankedText`. `nil` whenever
+    /// `results` isn't a file-scan list.
+    private var fileResultText: String?
 
     /// Debounced per-keystroke scan. Rows replace the list on arrival;
     /// `fileGeneration` drops results for stale queries. The scan itself is
@@ -410,6 +475,7 @@ final class PanelModel: ObservableObject {
         // list — otherwise the old session's rows linger during the debounce.
         if activeFileKeyword != keyword {
             activeFileKeyword = keyword
+            fileResultText = nil
             results = []
         }
         activeFileText = text
@@ -422,6 +488,7 @@ final class PanelModel: ObservableObject {
         // `text` arrives pre-trimmed from `activeFileSearch`.
         guard !text.isEmpty, let searcher = fileSearcher else {
             fileTask = nil // cancelled above — drop the dead handle
+            fileResultText = nil
             if !results.isEmpty { results = [] }
             return
         }
@@ -439,12 +506,37 @@ final class PanelModel: ObservableObject {
                 // it, and nil-ing here would break its cancellation.
                 guard generation == fileGeneration else { return }
                 fileTask = nil
+                let merged = stabilizedFileRows(rows, text: text)
+                fileResultText = text
                 // Identical rows must not re-assign: results' didSet resets
                 // the selection, so a no-op refresh would yank it to the top.
-                guard rows != results else { return }
-                results = rows
+                guard merged != results else { return }
+                results = merged
             }
         }
+    }
+
+    /// The `stabilizedRankedRows` twin for file scans: when the scan text
+    /// only grew, rows that still match keep their displayed positions and
+    /// the fresh list fills the remaining slots by rank. There are no pins
+    /// in file mode — every row is a ranked `file:` row.
+    private func stabilizedFileRows(_ freshRows: [ResultRow],
+                                    text: String) -> [ResultRow] {
+        guard let anchor = fileResultText, !anchor.isEmpty,
+              text != anchor, text.hasPrefix(anchor) else {
+            return freshRows
+        }
+        let freshByID = Dictionary(freshRows.map { ($0.id, $0) },
+                                   uniquingKeysWith: { first, _ in first })
+        var head: [ResultRow] = []
+        var headIDs = Set<String>()
+        for row in results {
+            guard FuzzyMatcher.match(text, candidate: row.matchText) != nil,
+                  headIDs.insert(row.id).inserted else { continue }
+            head.append(freshByID[row.id] ?? row)
+        }
+        let tail = freshRows.filter { !headIDs.contains($0.id) }
+        return Array((head + tail).prefix(SearchModel.maxResults))
     }
 
     /// What picking a filter row does. `arg` is the payload: an http(s) URL
@@ -463,6 +555,7 @@ final class PanelModel: ObservableObject {
     /// output (PLAN §4.1) so the user can pick a row. Any in-flight filter
     /// task is cancelled — these rows are the list now.
     func showCommandResults(_ rows: [ResultRow]) {
+        rankedText = nil
         cancelFileSearch()
         cancelFilterRun()
         // Replacing the list resets the selection to the top row via the
