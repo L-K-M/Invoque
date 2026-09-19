@@ -80,6 +80,14 @@ final class FileSearchTests: XCTestCase {
         XCTAssertTrue(scannedNames("scoped-probe").isEmpty)
     }
 
+    /// The manifest list covers C-family builds too — CMake's `build/`
+    /// convention is the most common producer of generic build dirs.
+    func testProjectScopedDirPrunedBesideCMake() throws {
+        try makeFile("proj/CMakeLists.txt")
+        try makeFile("proj/build/cmake-probe.txt")
+        XCTAssertTrue(scannedNames("cmake-probe").isEmpty)
+    }
+
     func testProjectScopedDirWithoutManifestIsSearched() throws {
         try makeFile("docs/build/plain-probe.txt")
         XCTAssertEqual(scannedNames("plain-probe"), ["plain-probe.txt"])

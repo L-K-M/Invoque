@@ -14,8 +14,8 @@ import Foundation
 /// - Package interiors (`.skipsPackageDescendants`), dependency trees
 ///   (`node_modules`, `Pods`, `venv`), and manifest-adjacent build dirs
 ///   (`target`, `build`, `dist`) are never entered — noise for "find a
-///   file" intent. The directory itself still matches; only its contents
-///   are pruned.
+///   file" intent. Pruned directories are excluded from matches entirely:
+///   the walk `continue`s before scoring, so their own names can't hit.
 /// - `maxVisited` bounds the worst case on giant trees; `maxMatches` bounds
 ///   the sort input. Both are `var` so tests can shrink them.
 ///
@@ -48,7 +48,8 @@ enum FileSearch {
     /// marks it as generated output worth skipping.
     private static let projectManifestNames = [
         "package.json", "Cargo.toml", "Podfile", "Package.swift",
-        "pom.xml", "pyproject.toml",
+        "pom.xml", "pyproject.toml", "Makefile", "CMakeLists.txt",
+        "setup.py", "go.mod", "meson.build", "build.gradle",
     ]
 
     /// Hard stop on total entries enumerated across all roots — bounds a
