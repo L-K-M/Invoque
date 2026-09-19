@@ -48,9 +48,10 @@ final class PathSource: ItemSource {
     /// (the `.app` extension outright, or any package declaring
     /// `CFBundlePackageType` `APPL`), formats whose default handler runs
     /// them (`.jar`/`.jnlp`, `.workflow`, `.terminal`, `.term`, `.command`,
-    /// `.pkg`/`.mpkg` installers, `.inetloc`/`.webloc`/`.fileloc`
-    /// trampolines, `.saver`/`.prefPane`/`.menu` plugins), and plain
-    /// executables
+    /// `.pkg`/`.mpkg` installers, location files (`.inetloc`, `.webloc`,
+    /// `.url`, `.fileloc`, `.ftploc`, `.afploc`, `.mailloc`, `.newsloc`,
+    /// `.networkloc` — embedded URL/target trampolines),
+    /// `.saver`/`.prefPane`/`.menu` plugins), and plain executables
     /// (scripts, binaries with the +x bit). Document packages such as
     /// `.xcodeproj` or `.rtfd` open in their editors — no payload runs —
     /// so they stay openable.
@@ -59,12 +60,14 @@ final class PathSource: ItemSource {
         // Handler-executed formats run on open with no +x bit and no APPL
         // type: `.jar`/`.jnlp` via Java, `.workflow` via Automator,
         // `.terminal`/`.term`/`.command` via Terminal, `.pkg`/`.mpkg` via
-        // Installer, `.inetloc`/`.webloc` hand embedded URLs to registered
-        // scheme handlers, `.fileloc` is an alias that opens its target —
-        // which may be an app — and `.saver`/`.prefPane`/`.menu` load
-        // plugin code via System Settings/SystemUIServer.
+        // Installer, and `.saver`/`.prefPane`/`.menu` load plugin code via
+        // System Settings/SystemUIServer. Location files (`.inetloc`,
+        // `.webloc`, `.url`, `.fileloc` and the `ftp`/`afp`/`mail`/`news`/
+        // `network` siblings) hand an embedded URL or target to whatever
+        // handler claims it.
         if ["app", "jar", "jnlp", "workflow", "terminal", "term", "command",
-            "pkg", "mpkg", "inetloc", "webloc", "fileloc", "saver",
+            "pkg", "mpkg", "inetloc", "webloc", "url", "fileloc", "ftploc",
+            "afploc", "mailloc", "newsloc", "networkloc", "saver",
             "prefpane", "menu"]
             .contains(url.pathExtension.lowercased()) { return false }
         if (Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundlePackageType")
