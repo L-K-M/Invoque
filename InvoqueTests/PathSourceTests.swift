@@ -105,8 +105,8 @@ final class PathSourceTests: XCTestCase {
     /// `.txt` control stays safe.
     func testHandlerExecutedFormatsAreNotSafeToOpen() throws {
         for ext in ["app", "jar", "jnlp", "workflow", "terminal", "term",
-                    "command", "pkg", "mpkg", "inetloc", "webloc", "url",
-                    "fileloc", "ftploc", "afploc", "mailloc", "newsloc",
+                    "command", "tool", "pkg", "mpkg", "inetloc", "webloc",
+                    "url", "fileloc", "ftploc", "afploc", "mailloc", "newsloc",
                     "networkloc", "saver", "prefPane", "menu"] {
             let file = FileManager.default.temporaryDirectory
                 .appendingPathComponent("invoque-\(UUID().uuidString).\(ext)")
