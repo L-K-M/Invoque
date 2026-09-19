@@ -99,6 +99,40 @@ final class PathSourceTests: XCTestCase {
             FileManager.default.temporaryDirectory))
     }
 
+    /// Handler-executed formats run on `NSWorkspace.open` with no +x bit —
+    /// a pasted `.jar` must be unsafe; a `.txt` control stays safe.
+    func testHandlerExecutedFormatsAreNotSafeToOpen() throws {
+        let jar = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-\(UUID().uuidString).jar")
+        FileManager.default.createFile(atPath: jar.path, contents: Data())
+        let txt = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-\(UUID().uuidString).txt")
+        FileManager.default.createFile(atPath: txt.path, contents: Data())
+        defer {
+            try? FileManager.default.removeItem(at: jar)
+            try? FileManager.default.removeItem(at: txt)
+        }
+        XCTAssertFalse(PathSource.isSafeToOpen(jar))
+        XCTAssertTrue(PathSource.isSafeToOpen(txt))
+    }
+
+    /// A bundle declaring `CFBundlePackageType` `APPL` under any extension
+    /// is an application — a renamed `.app` must still reveal.
+    func testDisguisedApplicationBundleIsNotSafeToOpen() throws {
+        let pkg = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-\(UUID().uuidString).tool")
+        let contents = pkg.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents,
+                                                withIntermediateDirectories: true)
+        try """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0"><dict><key>CFBundlePackageType</key><string>APPL</string></dict></plist>
+        """.write(to: contents.appendingPathComponent("Info.plist"),
+                  atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: pkg) }
+        XCTAssertFalse(PathSource.isSafeToOpen(pkg))
+    }
+
     /// `URL(string:)` rejects unencoded characters — a pasted file URL
     /// with a literal space must still resolve to the same row the typed
     /// path produces.
