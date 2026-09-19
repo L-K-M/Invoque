@@ -173,7 +173,9 @@ enum FileSearch {
         // bundle read runs once per matched app — bounded by the result
         // cap, not by the walk.
         let icon: Item.Icon = url.pathExtension.lowercased() == "app"
-            ? .appIcon(path: url.path, bundleID: Bundle(url: url)?.bundleIdentifier)
+            ? .appIcon(path: url.path,
+                       bundleID: Bundle(url: url)?.bundleIdentifier
+                           .flatMap { $0.isEmpty ? nil : $0 })
             : .fileURL(url)
         return Item(
             id: Item.fileIDPrefix + url.standardizedFileURL.path,
