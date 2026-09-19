@@ -298,14 +298,9 @@ final class PanelModel: ObservableObject {
         let trimmed = SearchModel.normalizedQuery(query)
         let freshByID = Dictionary(freshRows.map { ($0.id, $0) },
                                    uniquingKeysWith: { first, _ in first })
-        func isPinned(_ id: String) -> Bool {
-            id.hasPrefix(Item.pathIDPrefix)
-                || id.hasPrefix(Item.calculatorIDPrefix)
-                || id.hasPrefix(Item.webIDPrefix)
-        }
         var head: [ResultRow] = []
         var headIDs = Set<String>()
-        for row in results where !isPinned(row.id) {
+        for row in results where !Item.isPinnedID(row.id) {
             // Prefer the fresh copy's match surface when one exists — a
             // rescan that renames what the item matches must not keep
             // displaying a row that no longer qualifies.
@@ -320,12 +315,9 @@ final class PanelModel: ObservableObject {
         // survivors would slice the web fallback off the bottom. Same
         // slot math as SearchModel's own `rankedSlots`.
         let tail = freshRows.filter {
-            !isPinned($0.id) && !headIDs.contains($0.id)
+            !Item.isPinnedID($0.id) && !headIDs.contains($0.id)
         }
-        let headPins = freshRows.filter {
-            $0.id.hasPrefix(Item.pathIDPrefix)
-                || $0.id.hasPrefix(Item.calculatorIDPrefix)
-        }
+        let headPins = freshRows.filter { Item.isHeadPinnedID($0.id) }
         let web = freshRows.filter { $0.id.hasPrefix(Item.webIDPrefix) }
         let middleSlots = max(0, SearchModel.maxResults
             - headPins.count - web.count)

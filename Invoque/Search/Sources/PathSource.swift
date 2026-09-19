@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// When the query *is* an existing filesystem path — pasted or typed — the
@@ -24,7 +25,12 @@ final class PathSource: ItemSource {
         // swap the identity and the action. The subtitle leads with the
         // verb so ⏎'s behavior is visible before it's committed.
         let base = FileSearch.item(for: url)
-        let subtitle = isDirectory.boolValue
+        // Packages (.app, .workflow, …) are directories, but opening one
+        // *launches* it — the one thing Return must never do with a pasted
+        // path — so they reveal like files.
+        let opens = isDirectory.boolValue
+            && !NSWorkspace.shared.isFilePackage(atPath: url.path)
+        let subtitle = opens
             ? "Open — \(base.subtitle)"
             : "Reveal in Finder — \(base.subtitle)"
         return [Item(
@@ -32,7 +38,7 @@ final class PathSource: ItemSource {
             title: base.title,
             subtitle: subtitle,
             icon: base.icon,
-            action: isDirectory.boolValue ? .openFile(url) : .revealInFinder(url),
+            action: opens ? .openFile(url) : .revealInFinder(url),
             matchText: base.matchText
         )]
     }
@@ -45,7 +51,19 @@ final class PathSource: ItemSource {
     /// empty/`localhost`; anything else isn't a local path.
     static func resolve(_ query: String) -> URL? {
         if query.hasPrefix("file://") {
-            guard let url = URL(string: query), url.isFileURL else { return nil }
+            guard let url = URL(string: query), url.isFileURL else {
+                // `URL(string:)` rejects unencoded spaces/non-ASCII. The
+                // remainder is then a raw path (`file:///a b` → `/a b`);
+                // an encoded paste would have parsed above. After the
+                // scheme and an optional `localhost` host, anything not
+                // starting with `/` names a remote share.
+                var rest = query.dropFirst("file://".count)
+                if rest.lowercased().hasPrefix("localhost") {
+                    rest = rest.dropFirst("localhost".count)
+                }
+                guard rest.hasPrefix("/") else { return nil }
+                return URL(fileURLWithPath: String(rest))
+            }
             // `file://host/…` is a remote share, not a local path.
             guard url.host?.isEmpty ?? true || url.host == "localhost" else {
                 return nil

@@ -57,6 +57,32 @@ final class PathSourceTests: XCTestCase {
         XCTAssertTrue(source.items(matching: "file://").isEmpty)
     }
 
+    /// A pasted `.app` path must reveal, never launch — packages are
+    /// directories, so they'd otherwise slip past the file check.
+    func testAppBundleRevealsInsteadOfLaunching() throws {
+        let app = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Invoque-\(UUID().uuidString).app")
+        try FileManager.default.createDirectory(at: app,
+                                                withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: app) }
+        let item = try XCTUnwrap(source.items(matching: app.path).first)
+        XCTAssertEqual(item.action, .revealInFinder(app))
+        XCTAssertTrue(item.subtitle.hasPrefix("Reveal in Finder"))
+    }
+
+    /// `URL(string:)` rejects unencoded characters — a pasted file URL
+    /// with a literal space must still resolve to the same row the typed
+    /// path produces.
+    func testFileURLWithUnencodedSpaceResolves() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque dir \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir,
+                                                withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        XCTAssertEqual(source.items(matching: "file://\(dir.path)"),
+                       source.items(matching: dir.path))
+    }
+
     func testFileURLWithRemoteHostIsNotAPath() {
         XCTAssertTrue(source.items(matching: "file://share.example.com/tmp").isEmpty)
     }

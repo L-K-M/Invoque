@@ -11,7 +11,7 @@ refine new commands without leaving the panel.
 - **Launch** apps and commands, fuzzy-matched and ranked — exact prefix
   beats infix beats fuzzy, shorter matches win, and results stay stable
   while you keep typing.
-- **Calculate** inline (`2+2*3`, unit-free — the answer row pins first).
+- **Calculate** inline (`2+2*3`, unit-free — the answer row pins first, behind only a typed path).
 - **Find files** without Spotlight: `find notes` walks `~/` directly —
   hidden dirs and dependency trees pruned, dependency build folders too.
   ⏎ opens, ⌘⏎ reveals in Finder.
