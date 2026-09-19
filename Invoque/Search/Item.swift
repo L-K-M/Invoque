@@ -24,6 +24,22 @@ struct Item: Identifiable, Equatable {
     /// `SearchModel` like filter rows, so frecency never reads them —
     /// excluded from `recordSelection` eligibility for the same reason.
     static let fileIDPrefix = "file:"
+    /// The one row `PathSource` emits when the query *is* an existing
+    /// filesystem path. Pinned first — a typed address is a direct intent,
+    /// not a candidate among fuzzy matches.
+    static let pathIDPrefix = "path:"
+
+    /// Whether an id belongs to a pinned row — one that bypasses ranking
+    /// entirely. One place so `SearchModel` and `PanelModel` can't drift.
+    static func isPinnedID(_ id: String) -> Bool {
+        isHeadPinnedID(id) || id.hasPrefix(webIDPrefix)
+    }
+
+    /// The pins that lead the list — path and calculator. The web
+    /// fallback pins *last* instead, so it isn't a head pin.
+    static func isHeadPinnedID(_ id: String) -> Bool {
+        id.hasPrefix(pathIDPrefix) || id.hasPrefix(calculatorIDPrefix)
+    }
 
     /// Stable namespaced id, e.g. `"app:com.apple.Safari"`,
     /// `"cmd:format-json"`, `"sys:lockScreen"`, `"web:safari"`, `"calc:2+2"`.

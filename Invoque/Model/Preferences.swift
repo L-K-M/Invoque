@@ -39,6 +39,7 @@ final class Preferences: ObservableObject {
         static let decorationSize = 10.0
         static let crtEnabled = false
         static let crtIntensity = 0.5
+        static let searchEngine = SearchEngine.duckDuckGo
     }
 
     private enum Key {
@@ -63,6 +64,7 @@ final class Preferences: ObservableObject {
         static let decorationSize = "decorationSize"
         static let crtEnabled = "crtEnabled"
         static let crtIntensity = "crtIntensity"
+        static let searchEngine = "searchEngine"
     }
 
     // MARK: Stored settings
@@ -256,6 +258,12 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// The engine the "Search the web" fallback queries — `WebSource` reads
+    /// it live, so a change applies to the next keystroke.
+    @Published var searchEngine: SearchEngine {
+        didSet { defaults.set(searchEngine.rawValue, forKey: Key.searchEngine) }
+    }
+
     // MARK: Init
 
     init(defaults: UserDefaults = .standard) {
@@ -304,6 +312,8 @@ final class Preferences: ObservableObject {
         crtEnabled = defaults.object(forKey: Key.crtEnabled) as? Bool ?? Default.crtEnabled
         crtIntensity = Self.clamp(defaults.object(forKey: Key.crtIntensity) as? Double
             ?? Default.crtIntensity, in: Limit.unitInterval, fallback: Default.crtIntensity)
+        searchEngine = SearchEngine(rawValue: defaults.string(forKey: Key.searchEngine) ?? "")
+            ?? Default.searchEngine
     }
 
     // MARK: Summon hotkey

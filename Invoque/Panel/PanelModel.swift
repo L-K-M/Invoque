@@ -298,13 +298,9 @@ final class PanelModel: ObservableObject {
         let trimmed = SearchModel.normalizedQuery(query)
         let freshByID = Dictionary(freshRows.map { ($0.id, $0) },
                                    uniquingKeysWith: { first, _ in first })
-        func isPinned(_ id: String) -> Bool {
-            id.hasPrefix(Item.calculatorIDPrefix)
-                || id.hasPrefix(Item.webIDPrefix)
-        }
         var head: [ResultRow] = []
         var headIDs = Set<String>()
-        for row in results where !isPinned(row.id) {
+        for row in results where !Item.isPinnedID(row.id) {
             // Prefer the fresh copy's match surface when one exists — a
             // rescan that renames what the item matches must not keep
             // displaying a row that no longer qualifies.
@@ -319,15 +315,13 @@ final class PanelModel: ObservableObject {
         // survivors would slice the web fallback off the bottom. Same
         // slot math as SearchModel's own `rankedSlots`.
         let tail = freshRows.filter {
-            !isPinned($0.id) && !headIDs.contains($0.id)
+            !Item.isPinnedID($0.id) && !headIDs.contains($0.id)
         }
-        let calculator = freshRows.filter {
-            $0.id.hasPrefix(Item.calculatorIDPrefix)
-        }
+        let headPins = freshRows.filter { Item.isHeadPinnedID($0.id) }
         let web = freshRows.filter { $0.id.hasPrefix(Item.webIDPrefix) }
         let middleSlots = max(0, SearchModel.maxResults
-            - calculator.count - web.count)
-        return Array((calculator
+            - headPins.count - web.count)
+        return Array((headPins
             + Array((head + tail).prefix(middleSlots)) + web)
             .prefix(SearchModel.maxResults))
     }
@@ -675,6 +669,16 @@ final class PanelModel: ObservableObject {
                 onSubmit?(ResultRow(id: row.id, title: row.title,
                                     subtitle: row.subtitle, icon: row.icon,
                                     action: .revealInFinder(url)))
+                return
+            case .revealInFinder(let url):
+                // The inverse — a pasted file *path* reveals on plain ⏎,
+                // so ⌘⏎ is the open gesture there (only `PathSource`
+                // emits reveal actions). Executables stay on reveal on
+                // either gesture — opening an .app or a +x file runs it.
+                let opens = PathSource.isSafeToOpen(url)
+                onSubmit?(ResultRow(id: row.id, title: row.title,
+                                    subtitle: row.subtitle, icon: row.icon,
+                                    action: opens ? .openFile(url) : .revealInFinder(url)))
                 return
             default:
                 break
