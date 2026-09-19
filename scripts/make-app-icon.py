@@ -21,6 +21,7 @@ than a hard crop on macOS 13-15 (macOS 26 masks everything anyway).
 """
 
 import os
+import shutil
 import struct
 import sys
 import zlib
@@ -296,13 +297,18 @@ def main():
 
     os.makedirs(iconset, exist_ok=True)
     os.makedirs(accentset, exist_ok=True)
-    # --verify flags any stray file as drift; regeneration must clear
+    # --verify flags any stray entry as drift; regeneration must clear
     # them too, or re-running can't fix the red check it reports.
     for stale in os.listdir(iconset):
         path = os.path.join(iconset, stale)
-        if stale not in EXPECTED_NAMES and os.path.isfile(path):
+        if stale in EXPECTED_NAMES:
+            continue
+        # rmtree raises on links — detach a link itself instead.
+        if os.path.islink(path) or os.path.isfile(path):
             os.remove(path)
-            print(f"  removed stray {stale}")
+        else:
+            shutil.rmtree(path)
+        print(f"  removed stray {stale}")
     print(f"  source {SOURCE}: {source[0]}x{source[1]}")
     for nominal, scale in CONTENTS:
         name = f"icon_{nominal}x{nominal}@{scale}x.png"
