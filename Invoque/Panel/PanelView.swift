@@ -223,7 +223,13 @@ struct PanelView: View {
                     if model.results.isEmpty {
                         // An empty query hasn't searched yet — hint instead
                         // of claiming there are no results.
-                        Text(model.query.isEmpty
+                        Text(model.fileSearchTextIsBlank
+                             ? "Type a filename"
+                             : model.fileScanIsPending
+                             ? "Searching files…"
+                             : model.fileSearchIsActive
+                             ? "No matching files"
+                             : model.query.isEmpty
                              ? "Search apps, commands, or the web"
                              : "No results")
                             .font(.callout)
@@ -284,6 +290,8 @@ struct PanelView: View {
              ? "⌘⏎ allow · esc dismiss"
              : model.makerIsActive
              ? "⏎ generate/save · esc dismiss"
+             : model.fileSearchIsActive
+             ? "⏎ open · ⌘⏎ reveal in Finder · esc dismiss"
              : "↑↓ navigate · ⏎ open · esc dismiss")
             .font(.caption)
             .foregroundStyle(tertiaryColor)

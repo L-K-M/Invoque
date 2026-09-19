@@ -153,6 +153,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             writer: CommandWriter(rootURL: commandStore.primaryRootURL),
             store: commandStore,
             permissionGrants: permissionGrants)
+        // `find `/`f ` — the Spotlight-free filename walk (PLAN §3). The
+        // scan runs inside the model's debounced task; the probe lets
+        // `cancelFileSearch` reach a walk mid-flight.
+        model.fileSearcher = { query, isCancelled in
+            FileSearch.items(query: query, isCancelled: isCancelled)
+        }
         // Kick the initial scan only after the model is fully wired — an
         // unstructured Task starts immediately and can outrun the lines
         // above. (The store's onChange→onReload subscription is init-time,

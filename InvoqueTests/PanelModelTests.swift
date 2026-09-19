@@ -6,11 +6,13 @@ final class PanelModelTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
     private var commandDirectory: URL!
+    private var savedFileDebounce: UInt64!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         suiteName = "invoque-test-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
+        savedFileDebounce = PanelModel.fileSearchDebounceNanoseconds
         commandDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("invoque-panel-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: commandDirectory,
@@ -18,6 +20,7 @@ final class PanelModelTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        PanelModel.fileSearchDebounceNanoseconds = savedFileDebounce
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         suiteName = nil
@@ -474,6 +477,254 @@ final class PanelModelTests: XCTestCase {
         await awaitResults(model) { !$0.isEmpty }
         XCTAssertEqual(model.results.first?.title, "Command failed")
         XCTAssertEqual(model.results.first?.subtitle, "nope")
+    }
+
+    // MARK: File-search mode
+
+    /// Polls `fileRunCompletions` until `atLeast` scans have reached their
+    /// completion point — the `awaitCompletions` twin for `find`/`f` runs.
+    private func awaitFileCompletions(_ model: PanelModel, atLeast count: Int,
+                                      file: StaticString = #filePath,
+                                      line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(7)
+        while model.fileRunCompletions < count, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(model.fileRunCompletions, count,
+                                    "file search never completed",
+                                    file: file, line: line)
+    }
+
+    /// Shrinks the file-search debounce so "past the debounce" sleeps are
+    /// short and stay decoupled from the production constant — a debounce
+    /// bump can't silently turn a no-scan assertion vacuous. Restored in
+    /// tearDown.
+    private func withShortFileDebounce() {
+        PanelModel.fileSearchDebounceNanoseconds = 10_000_000
+    }
+
+    /// The `awaitStarts` twin for file scans.
+    private func awaitFileStarts(_ model: PanelModel, atLeast count: Int,
+                                 file: StaticString = #filePath,
+                                 line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(7)
+        while model.fileRunsStarted < count, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(model.fileRunsStarted, count,
+                                    "file search never started",
+                                    file: file, line: line)
+    }
+
+    private static func fileItem(_ name: String) -> Item {
+        let url = URL(fileURLWithPath: "/tmp/\(name)")
+        return Item(id: Item.fileIDPrefix + url.path, title: name,
+                    subtitle: "/tmp", icon: .fileURL(url),
+                    action: .openFile(url), matchText: name)
+    }
+
+    func testFindKeywordRunsFileSearch() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find notes"
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(model.results.first?.title, "notes.txt")
+        XCTAssertEqual(model.results.first?.action,
+                       .openFile(URL(fileURLWithPath: "/tmp/notes.txt")))
+    }
+
+    func testFAliasRunsFileSearch() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "f notes"
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(model.results.first?.title, "notes.txt")
+        XCTAssertEqual(model.results.first?.action,
+                       .openFile(URL(fileURLWithPath: "/tmp/notes.txt")))
+    }
+
+    func testBareFindKeywordStaysNormalSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// The `f` alias follows the same bare-keyword rule as `find`.
+    func testBareFAliasStaysNormalSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "f"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// Unwired, "find x" is just a query — the same convention as
+    /// `filterLookup`/`maker`. The fixture's title must contain the whole
+    /// query text for the normal search to surface it.
+    func testUnwiredFileSearcherLeavesQueryAsSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:finder",
+                                                 title: "Find X Utility")])
+        model.query = "find x"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// Unwired `f x` degrades to a normal query, mirroring `find x`.
+    func testUnwiredFAliasLeavesQueryAsSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:finder",
+                                                 title: "F X Utility")])
+        model.query = "f x"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// A double space after the keyword must not leak whitespace into the
+    /// scanned query — `activeFileSearch` trims before the searcher sees it.
+    func testFileSearchTrimsExtraSpaces() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { text, _ in [Self.fileItem("\(text).txt")] }
+        model.query = "f  alpha"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["alpha.txt"])
+    }
+
+    /// A whitespace-plus-newline rest is blank — the model's trim matches
+    /// `FileSearch.scan`'s `.whitespacesAndNewlines`, so no doomed scan
+    /// is dispatched.
+    func testNewlineOnlyFileTextIsBlank() async throws {
+        let model = makeModel(items: [])
+        withShortFileDebounce()
+        model.fileSearcher = { _, _ in [Self.fileItem("x")] }
+        model.query = "find \n"
+        XCTAssertTrue(model.fileSearchTextIsBlank)
+        try await Task.sleep(nanoseconds: 100_000_000) // past the debounce
+        XCTAssertEqual(model.fileRunsStarted, 0)
+    }
+
+    /// Between scheduling and rows landing the scan is pending — the view
+    /// reads this to show progress rather than "No matching files".
+    func testFileScanIsPendingDuringScan() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in
+            Thread.sleep(forTimeInterval: 0.2)
+            return [Self.fileItem("x.txt")]
+        }
+        model.query = "find x"
+        XCTAssertTrue(model.fileScanIsPending) // debouncing already counts
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertFalse(model.fileScanIsPending)
+    }
+
+    /// "find " with nothing after it owns an empty list — the mode is
+    /// active but no scan runs.
+    func testEmptyFileTextOwnsEmptyList() async throws {
+        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        withShortFileDebounce()
+        model.fileSearcher = { _, _ in [Self.fileItem("x")] }
+        model.query = "finder"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+        model.query = "find "
+        try await Task.sleep(nanoseconds: 100_000_000) // past the debounce
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertEqual(model.fileRunsStarted, 0)
+    }
+
+    /// Backspacing to "find " mid-session must clear the previous scan's
+    /// rows — a stale row left on screen is still selectable.
+    func testBlankingFileTextClearsRows() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find a"
+        await awaitResults(model) { $0.count == 1 }
+        model.query = "find "
+        XCTAssertTrue(model.results.isEmpty)
+    }
+
+    /// A rescan-driven `refreshResults` on an unchanged `find` session must
+    /// not restart a full disk walk for rows already on screen.
+    func testIdenticalFileQuerySkipsRescan() async throws {
+        let model = makeModel(items: [])
+        withShortFileDebounce()
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find a"
+        await awaitFileCompletions(model, atLeast: 1)
+        model.refreshResults()
+        try await Task.sleep(nanoseconds: 100_000_000) // past the debounce
+        XCTAssertEqual(model.fileRunsStarted, 1)
+        XCTAssertEqual(model.results.map(\.title), ["notes.txt"])
+    }
+
+    /// A slow earlier scan must not stamp rows over a newer keystroke's
+    /// results — `fileGeneration` drops it.
+    func testStaleFileResultIsDropped() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { text, _ in
+            if text == "a" { Thread.sleep(forTimeInterval: 1.0) }
+            return [Self.fileItem("\(text).txt")]
+        }
+        model.query = "find a"
+        // The "a" scan must be in flight — not merely scheduled — before
+        // the query moves on, or there's nothing stale to drop.
+        await awaitFileStarts(model, atLeast: 1)
+        model.query = "find ab"
+        await awaitFileCompletions(model, atLeast: 2)
+        XCTAssertEqual(model.results.map(\.title), ["ab.txt"])
+    }
+
+    /// Leaving file mode restores normal results, and the in-flight scan's
+    /// late completion is discarded rather than stamped over them.
+    func testLeavingFileSearchDropsInFlightResult() async throws {
+        let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
+        model.fileSearcher = { _, _ in
+            Thread.sleep(forTimeInterval: 1.0)
+            return [Self.fileItem("stale.txt")]
+        }
+        model.query = "find a"
+        await awaitFileStarts(model, atLeast: 1)
+        model.query = "safari"
+        XCTAssertEqual(model.results.map(\.id), ["app:safari"])
+        // This is the model's first file run, so `atLeast: 1` means "the
+        // in-flight scan's landing" — a snapshot baseline could already
+        // include it if the scan finished between the start-poll and the
+        // capture, and would then wait for a second run that never comes.
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.id), ["app:safari"])
+    }
+
+    /// ⌘⏎ on a file row reveals it in Finder rather than opening — the
+    /// performer receives a swapped `.revealInFinder` action.
+    func testCommandModifierRevealsFileRow() {
+        let url = URL(fileURLWithPath: "/tmp/notes.txt")
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "file:/tmp/notes.txt", title: "notes.txt", subtitle: "/tmp",
+            icon: .fileURL(url), action: .openFile(url))])
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .revealInFinder(url))
+    }
+
+    /// The same ⌘⏎ reveal applies to app rows.
+    func testCommandModifierRevealsAppRow() {
+        let url = URL(fileURLWithPath: "/Applications/Safari.app")
+        let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.query = "safari"
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .revealInFinder(url))
+    }
+
+    /// Plain ⏎ still opens — the reveal swap must not leak into it.
+    func testPlainReturnOpensFileRow() {
+        let url = URL(fileURLWithPath: "/tmp/notes.txt")
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "file:/tmp/notes.txt", title: "notes.txt", subtitle: "/tmp",
+            icon: .fileURL(url), action: .openFile(url))])
+        model.submit()
+        XCTAssertEqual(submitted?.action, .openFile(url))
     }
 
     // MARK: Maker routing

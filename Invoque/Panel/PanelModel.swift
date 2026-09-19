@@ -65,6 +65,14 @@ final class PanelModel: ObservableObject {
         didSet { refreshResults() }
     }
 
+    /// Runs a Spotlight-free filename scan (`FileSearch.items` in
+    /// production, a stub in tests). While `nil`, `find`/`f` queries stay
+    /// normal searches — the same "unwired stays normal" convention as
+    /// `filterLookup` and `maker`.
+    var fileSearcher: ((_ query: String, _ isCancelled: () -> Bool) -> [Item])? {
+        didSet { refreshResults() }
+    }
+
     /// The Maker's state machine — injected at wiring time; `nil` in tests
     /// that don't exercise `make`. While `makerPrompt` is non-nil the maker
     /// owns the panel (the view swaps the results list for `MakerView`).
@@ -144,6 +152,48 @@ final class PanelModel: ObservableObject {
         makerPrompt != nil && maker != nil
     }
 
+    // MARK: File-search routing
+
+    /// Keywords that route the query into file-search mode — `find ` and
+    /// `f ` (Alfred's `find` muscle memory). The bare keyword without a
+    /// trailing space stays a normal search, and the built-in wins over a
+    /// command claiming the same keyword — the `makerKeywords` policy.
+    static let fileSearchKeywords = ["find", "f"]
+
+    /// The resolved `find`/`f` session when `query` is `<keyword> <rest>`
+    /// and a searcher is wired, else nil. `text` is whitespace-trimmed —
+    /// "f  x" scans "x", and a spaces-only rest resolves blank. Blank owns
+    /// an empty list until there's something worth scanning for.
+    private func activeFileSearch() -> (keyword: String, text: String)? {
+        guard fileSearcher != nil,
+              let spaceIndex = query.firstIndex(of: " ") else { return nil }
+        let keyword = String(query[..<spaceIndex])
+        guard Self.fileSearchKeywords.contains(keyword) else { return nil }
+        let text = String(query[spaceIndex...].dropFirst())
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (keyword, text)
+    }
+
+    /// Whether a file scan owns the list right now — the prefix is typed
+    /// AND a searcher is wired. The footer reads this to show the
+    /// open/reveal hints.
+    var fileSearchIsActive: Bool {
+        activeFileSearch() != nil
+    }
+
+    /// True in file mode when the text after the keyword is blank — the
+    /// view shows an input hint rather than claiming zero matches.
+    var fileSearchTextIsBlank: Bool {
+        activeFileSearch()?.text.isEmpty ?? false
+    }
+
+    /// True between scheduling a scan and its rows landing — the view says
+    /// "Searching files…" rather than a premature "No matching files".
+    /// `fileTask` is nilled on completion, cancel, or mode exit.
+    var fileScanIsPending: Bool {
+        fileTask != nil && fileSearchIsActive
+    }
+
     // MARK: Searching
 
     /// Re-runs the current query. Called on query changes and by
@@ -154,33 +204,52 @@ final class PanelModel: ObservableObject {
         // The maker owns the panel: `MakerView` replaces the list, and a
         // command source rescan must not refill rows nobody can see.
         if makerIsActive {
-            filterTask?.cancel()
-            filterTask = nil
-            activeFilterKeyword = nil
-            // Same stale-drop as the mode-exit path: an in-flight filter
-            // run must not stamp rows over the maker-owned panel.
-            filterGeneration += 1
+            cancelFileSearch()
+            cancelFilterRun()
             if !results.isEmpty { results = [] }
             return
         }
+        // Built-in keywords win over filter commands claiming them — the
+        // `makerKeywords` policy.
+        if let resolved = activeFileSearch() {
+            cancelFilterRun()
+            scheduleFileSearch(keyword: resolved.keyword, text: resolved.text)
+            return
+        }
         if let resolved = activeFilter() {
+            cancelFileSearch()
             scheduleFilter(resolved.command, keyword: resolved.keyword,
                            text: resolved.text)
             return
         }
-        filterTask?.cancel()
-        filterTask = nil
-        activeFilterKeyword = nil
-        // A filter task awaiting runner.query ignores cancellation
-        // cooperatively — bump the generation so its late completion is
-        // discarded rather than stamped over the fresh search rows.
-        filterGeneration += 1
+        cancelFileSearch()
+        cancelFilterRun()
         let newResults = (searchModel?.results(for: query) ?? []).map(ResultRow.init)
         // A background rescan landing identical rows must not yank the
         // selection back to the top (results' didSet resets it) or fire a
         // redundant objectWillChange.
         guard newResults != results else { return }
         results = newResults
+    }
+
+    /// Stops any scheduled or in-flight filter run and bumps the
+    /// generation — a task awaiting `runner.query` ignores cancellation
+    /// cooperatively, so the late completion must also be discarded rather
+    /// than stamped over whatever replaced it.
+    private func cancelFilterRun() {
+        filterTask?.cancel()
+        filterTask = nil
+        activeFilterKeyword = nil
+        filterGeneration += 1
+    }
+
+    /// The `cancelFilterRun` twin for `find`/`f` sessions.
+    private func cancelFileSearch() {
+        fileTask?.cancel()
+        fileTask = nil
+        activeFileKeyword = nil
+        activeFileText = nil
+        fileGeneration += 1
     }
 
     // MARK: Filter mode
@@ -282,6 +351,83 @@ final class PanelModel: ObservableObject {
         }
     }
 
+    // MARK: File-search mode
+
+    /// Debounce for `find`/`f` re-scans — longer than the filter debounce:
+    /// a directory walk costs more per run than a JS query. `var` so timing
+    /// tests shrink it instead of sleeping past the production value.
+    static var fileSearchDebounceNanoseconds: UInt64 = 150_000_000
+
+    /// @Published so a completion that clears the handle without touching
+    /// `results` (identical rows) still republishes — `fileScanIsPending`
+    /// must flip to false in the view or "Searching files…" sticks.
+    @Published private var fileTask: Task<Void, Never>?
+    /// Stale-drop: a scan finishing for an older keystroke is discarded.
+    private var fileGeneration = 0
+    /// File scans that reached the main-actor completion point — the test
+    /// hook mirroring `filterRunCompletions`.
+    private(set) var fileRunCompletions = 0
+    /// File scans actually started (past the debounce) — mirrors
+    /// `filterRunsStarted`.
+    private(set) var fileRunsStarted = 0
+    /// The keyword owning the list right now — switching modes clears rows
+    /// that don't belong to the new session (see `activeFilterKeyword`).
+    private var activeFileKeyword: String?
+    /// The text the current file session last scheduled — a store-rescan
+    /// `refreshResults` re-running the identical query skips a redundant
+    /// disk walk.
+    private var activeFileText: String?
+
+    /// Debounced per-keystroke scan. Rows replace the list on arrival;
+    /// `fileGeneration` drops results for stale queries. The scan itself is
+    /// synchronous and polls `Task.isCancelled` — it runs inside this task,
+    /// so `cancelFileSearch` reaches it.
+    private func scheduleFileSearch(keyword: String, text: String) {
+        // Identical session — this is a rescan-driven refresh, not a new
+        // keystroke; restarting the walk would redo seconds of disk work
+        // for the rows already on screen.
+        if activeFileKeyword == keyword, activeFileText == text { return }
+        // Entering file mode (or switching keywords) clears the previous
+        // list — otherwise the old session's rows linger during the debounce.
+        if activeFileKeyword != keyword {
+            activeFileKeyword = keyword
+            results = []
+        }
+        activeFileText = text
+        fileGeneration += 1
+        let generation = fileGeneration
+        fileTask?.cancel()
+        // "find " with nothing after it owns an empty list — a blank query
+        // would match everything and the cap would fill with junk. Clearing
+        // on the guard-else covers backspacing to blank mid-session too.
+        // `text` arrives pre-trimmed from `activeFileSearch`.
+        guard !text.isEmpty, let searcher = fileSearcher else {
+            fileTask = nil // cancelled above — drop the dead handle
+            if !results.isEmpty { results = [] }
+            return
+        }
+        fileTask = Task {
+            try? await Task.sleep(nanoseconds: Self.fileSearchDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { fileRunsStarted += 1 }
+            let rows = searcher(text) { Task.isCancelled }.map(ResultRow.init)
+            await MainActor.run {
+                // Count every completion — dropped ones too — but only
+                // after this run's effects land, so a poller that sees the
+                // tick also sees the final rows/selection state.
+                defer { fileRunCompletions += 1 }
+                // A stale run leaves `fileTask` alone — a newer task owns
+                // it, and nil-ing here would break its cancellation.
+                guard generation == fileGeneration else { return }
+                fileTask = nil
+                // Identical rows must not re-assign: results' didSet resets
+                // the selection, so a no-op refresh would yank it to the top.
+                guard rows != results else { return }
+                results = rows
+            }
+        }
+    }
+
     /// What picking a filter row does. `arg` is the payload: an http(s) URL
     /// opens, anything else copies. No arg copies the title — a row with
     /// nothing to do still does something harmless.
@@ -298,9 +444,8 @@ final class PanelModel: ObservableObject {
     /// output (PLAN §4.1) so the user can pick a row. Any in-flight filter
     /// task is cancelled — these rows are the list now.
     func showCommandResults(_ rows: [ResultRow]) {
-        filterTask?.cancel()
-        filterTask = nil
-        activeFilterKeyword = nil
+        cancelFileSearch()
+        cancelFilterRun()
         // Replacing the list resets the selection to the top row via the
         // results didSet — a fresh command output is a new result set.
         results = rows
@@ -362,9 +507,10 @@ final class PanelModel: ObservableObject {
     /// the query expands to `"<keyword> "`, entering the command's filter
     /// mode instead of dismissing.
     ///
-    /// `commandModifier` distinguishes plain ⏎ from ⌘⏎ — only ⌘⏎ grants a
-    /// pending consent request, so a habitual double-⏎ can't silently
-    /// record a permanent `shell` grant.
+    /// `commandModifier` distinguishes plain ⏎ from ⌘⏎ — ⌘⏎ grants a
+    /// pending consent request (so a habitual double-⏎ can't silently
+    /// record a permanent `shell` grant) and reveals a file/app row in
+    /// Finder instead of opening it.
     func submit(commandModifier: Bool = false) {
         // A pending consent prompt swallows ⏎ — neutral, not "run whatever
         // row is selected underneath the card"; ⌘⏎ means Allow.
@@ -386,6 +532,20 @@ final class PanelModel: ObservableObject {
             pinnedFilter = (keyword, commandName)
             query = keyword + " "
             return
+        }
+        // ⌘⏎ on a file or app reveals it in Finder instead of opening —
+        // Alfred's `find` gesture. The consent check above already claimed
+        // ⌘⏎, so a pending prompt can't be bypassed by a file row.
+        if commandModifier, let row = selectedRow {
+            switch row.action {
+            case .openFile(let url), .openApp(let url):
+                onSubmit?(ResultRow(id: row.id, title: row.title,
+                                    subtitle: row.subtitle, icon: row.icon,
+                                    action: .revealInFinder(url)))
+                return
+            default:
+                break
+            }
         }
         onSubmit?(selectedRow)
     }
