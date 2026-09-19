@@ -6,12 +6,16 @@ final class SearchEngineTests: XCTestCase {
     /// Every engine builds a valid https URL carrying the encoded query —
     /// a typo'd template would drop the row silently at search time.
     func testEveryEngineBuildsAQueryURL() {
-        for engine in SearchEngine.allCases {
-            let url = engine.url(encodedQuery: "hello%20world")
-            XCTAssertNotNil(url, engine.rawValue)
-            XCTAssertEqual(url?.scheme, "https", engine.rawValue)
-            XCTAssertTrue(url?.absoluteString.contains("hello%20world") ?? false,
-                          engine.rawValue)
+        // Reserved characters must survive verbatim — a template that
+        // re-encodes or truncates at `?`/`#` would corrupt the query.
+        for encodedQuery in ["hello%20world", "a%26b", "50%25%20off%3F", "q%23frag"] {
+            for engine in SearchEngine.allCases {
+                let url = engine.url(encodedQuery: encodedQuery)
+                XCTAssertNotNil(url, engine.rawValue)
+                XCTAssertEqual(url?.scheme, "https", engine.rawValue)
+                XCTAssertTrue(url?.absoluteString.contains(encodedQuery) ?? false,
+                              "\(engine.rawValue) — \(encodedQuery)")
+            }
         }
     }
 
@@ -27,11 +31,12 @@ final class SearchEngineTests: XCTestCase {
         XCTAssertTrue(item.subtitle.contains("Kagi"))
     }
 
-    /// The default engine is DuckDuckGo — the pre-picker behavior.
-    func testDuckDuckGoIsTheDefault() {
-        let item = WebSource().items(matching: "query").first
-        guard case .openURL(let url)? = item?.action else {
-            return XCTFail("expected .openURL")
+    /// The default engine is DuckDuckGo — the pre-picker behavior. (The
+    /// parameterless init's default is a literal, not UserDefaults.)
+    func testDuckDuckGoIsTheDefault() throws {
+        let item = try XCTUnwrap(WebSource().items(matching: "query").first)
+        guard case .openURL(let url) = item.action else {
+            return XCTFail("expected .openURL, got \(item.action)")
         }
         XCTAssertEqual(url.host, "duckduckgo.com")
     }
@@ -48,6 +53,8 @@ final class SearchEngineTests: XCTestCase {
 
         preferences.searchEngine = .mojeek
         XCTAssertEqual(Preferences(defaults: defaults).searchEngine, .mojeek)
+        // Pins the persisted key — a rename fails here, not silently below.
+        XCTAssertEqual(defaults.string(forKey: "searchEngine"), "mojeek")
 
         defaults.set("altavista", forKey: "searchEngine")
         XCTAssertEqual(Preferences(defaults: defaults).searchEngine, .duckDuckGo)

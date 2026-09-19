@@ -3,7 +3,8 @@ import Foundation
 /// The engine the "Search the web" fallback row queries (Settings →
 /// General → Search). A curated set: the mainstream defaults plus the
 /// privacy engines and the independents — each just needs a `GET` query
-/// endpoint, no API key.
+/// endpoint, no API key. (Kagi serves results only to its signed-in
+/// subscribers — it's in the set for them.)
 enum SearchEngine: String, CaseIterable, Identifiable {
 
     case duckDuckGo
