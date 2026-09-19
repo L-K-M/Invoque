@@ -8,9 +8,12 @@ final class SearchEngineTests: XCTestCase {
     func testEveryEngineBuildsAQueryURL() {
         XCTAssertFalse(SearchEngine.allCases.isEmpty,
                        "allCases empty — the loop body never executes")
-        // Pin the advertised set (README lists nine engines) so a silently
-        // removed case can't pass the loop vacuously.
-        XCTAssertEqual(SearchEngine.allCases.count, 9,
+        // Pin the advertised set (README lists nine engines) by rawValue —
+        // a rename or swap keeps the count but resets every user's
+        // persisted choice to the default.
+        XCTAssertEqual(Set(SearchEngine.allCases.map(\.rawValue)),
+                       ["duckDuckGo", "google", "bing", "kagi", "brave",
+                        "startpage", "qwant", "ecosia", "mojeek"],
                        "engine set changed — update this pin and the README")
         // Reserved characters must survive verbatim — a template that
         // re-encodes or truncates at `?`/`#` would corrupt the query.
