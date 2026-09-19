@@ -1,19 +1,59 @@
 # Invoque.app
 
-A keyboard-first macOS launcher in the Raycast/Alfred tradition — app search,
-calculator, system actions — whose custom commands are **plain files on disk**
-(a `command.json` manifest plus a `main.js` script running on JavaScriptCore)
-and whose built-in `make` command asks a configured LLM to write, test, and
+A keyboard-first macOS launcher in the Raycast/Alfred tradition — summon a
+panel on a global hotkey, type, hit ⏎. Custom commands are **plain files on
+disk** (a `command.json` manifest plus a `main.js` script on JavaScriptCore),
+and the built-in `make` command asks a configured LLM to write, test, and
 refine new commands without leaving the panel.
 
-Type `make command to format clipboard json`, watch it write the manifest and
-the script, run it on real input, tell it what's wrong, and keep the result —
-the command is just two files you can read, diff, and edit by hand.
+## What it does
 
-> **Status: pre-implementation.** This repo currently holds the research and
-> the design — see [`RESEARCH.md`](RESEARCH.md) (prior art, engine evaluation,
-> feasibility) and [`PLAN.md`](PLAN.md) (architecture, command format, the
-> `make` flow, milestones).
+- **Launch** apps and commands, fuzzy-matched and ranked — exact prefix
+  beats infix beats fuzzy, shorter matches win, and results stay stable
+  while you keep typing.
+- **Calculate** inline (`2+2*3`, unit-free — the answer row pins first).
+- **Find files** without Spotlight: `find notes` walks `~/` directly —
+  hidden dirs and dependency trees pruned, dependency build folders too.
+  ⏎ opens, ⌘⏎ reveals in Finder.
+- **Paste a path** — `/tmp/build.log` or `~/Documents` — and the row is the
+  path itself: ⏎ opens folders, reveals files (⌘⏎ inverts it). A file is
+  never executed on a paste.
+- **Search the web** as the always-last fallback, against your configured
+  engine — DuckDuckGo, Google, Bing, Kagi, Brave, Startpage, Qwant,
+  Ecosia, or Mojeek (Settings → General).
+- **System actions** — lock, sleep, restart, empty trash…
+- **Make commands** with natural language: `make command to format
+  clipboard json` generates the manifest and script, runs it on real input
+  inside the panel, takes feedback, regenerates, and saves — with history
+  and rollback. Generated code declares permissions (`clipboard`,
+  `shell`, `network`…); risky ones ask for consent on first run.
+- **Look like yourself**: material/transparency, highlight, corner
+  radii, retro corner decorations and CRT scanlines —
+  captured as shareable theme presets (Classic, Summon, Graphite, ZX
+  Night, Vaporwave, Synthwave, Memphis, Amiga), with JSON import/export
+  that also reads Zap and Jetty theme files. Icons resolve through the
+  shared PictKit store — the same ladder Zap, Jetty, and Top Drawer draw
+  from.
+
+## The commands
+
+Commands live under `~/.config/invoque/commands/<name>/` as readable files
+— `command.json` (manifest: title, keyword, mode, permissions) plus
+`main.js`. Edit by hand, version with git, share by copying the folder.
+Filter-mode commands take over the result list; action-mode commands run
+and hand back items, a title, or nothing.
+
+## Building
+
+Requires macOS 13+ and Xcode 16+ (the project uses file-system–synchronized
+groups — drop a file in, it's compiled). `scripts/build.sh` produces
+`Invoque.app`; tests via `xcodebuild -scheme Invoque test`. CI runs the
+suite plus an icon-drift check: `scripts/make-app-icon.py` renders the
+appiconset from `media-sources/icon2.png`.
+
+The design and milestones live in [`PLAN.md`](PLAN.md); the research that
+led here (prior art, engine evaluation, feasibility) in
+[`RESEARCH.md`](RESEARCH.md). Conventions for agents in `AGENTS.md`.
 
 Sibling projects: **[Zap](https://github.com/L-K-M/Zap)** (app switcher),
 **[Jetty](https://github.com/L-K-M/Jetty)** (Dock replacement),

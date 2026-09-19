@@ -42,6 +42,17 @@ struct SettingsView: View {
                 Toggle("Keep query when the panel re-opens", isOn: $preferences.keepQueryOnReshow)
             }
 
+            Section("Search") {
+                Picker("Search engine", selection: $preferences.searchEngine) {
+                    ForEach(SearchEngine.allCases) { engine in
+                        Text(engine.label).tag(engine)
+                    }
+                }
+                Text("The \"Search the web\" fallback row queries this engine.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             updatesSection
 
             makerSection

@@ -15,8 +15,9 @@ See `RESEARCH.md` for the survey and engine evaluation this design is based on.
 ### Goals
 - Spotlight-style floating panel on a global hotkey; instantly typeable, hides
   on Esc and on losing focus.
-- Built-in sources: apps, commands, calculator, system actions, web-search
-  fallback. (Files/clipboard history/snippets are candidates — pick by scope.)
+- Built-in sources: apps, commands, calculator, system actions, direct
+  filesystem paths, web-search fallback. (Clipboard history/snippets are
+  candidates — pick by scope.)
 - Custom commands as two plain files in a commands directory — inspectable,
   hand-editable, git-able. Hot-reloaded on save.
 - `make` command: natural language → generated `command.json` + `main.js` →
@@ -136,7 +137,10 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   cached sources) and async `reload()` for dynamic ones.
 - Sources v1: `AppSource` (NSWorkspace scan, LaunchServices apps), 
   `CommandSource` (from CommandStore), `CalculatorSource`, `SystemSource`
-  (lock/sleep/restart/empty trash…), `WebSource` (fallback "Search for X").
+  (lock/sleep/restart/empty trash…), `PathSource` (a pasted/typed
+  filesystem path that exists pins first — ⏎ opens folders, reveals
+  files in Finder; ⌘⏎ is the inverse), `WebSource` (fallback "Search
+  for X" against the configured `SearchEngine` — Settings → General).
 - File search: `find <query>` / `f <query>` routes to a built-in file mode —
   a direct `FileManager` walk of `~`, **not** Spotlight/NSMetadataQuery
   (metadata misses excluded locations). Hidden directories (`~/Library`,
@@ -158,8 +162,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - Ranking: match tier first — exact prefix > exact infix > fuzzy
   subsequence — then shorter match text, then frecency (persisted usage
   counts in UserDefaults), then the alignment score, then title/id for a
-  total order. Pinned rows keep their slots: calculator answers first, web
-  fallback last.
+  total order. Pinned rows keep their slots: `path:` rows first (a typed
+  address is a direct intent), calculator answers next, web fallback last.
 - Stability: extending the query preserves the displayed order of rows
   that still match — a row the user is reaching for never moves under
   them. Non-extension edits (deletion, replacement, mode switches) re-rank
@@ -444,7 +448,8 @@ Invoque/
 │   │   ├── FuzzyMatcher.swift           # pure, unit-tested
 │   │   ├── Frecency.swift
 │   │   ├── FileSearch.swift             # find/f mode: Spotlight-free dir walk
-│   │   └── Sources/                     # Apps, Commands, Calculator, System, Web
+│   │   └── Sources/                     # Apps, Commands, Calculator, System,
+│   │                                    #   Path (typed file paths), Web
 │   ├── Commands/
 │   │   ├── CommandManifest.swift        # Codable + validation
 │   │   ├── CommandStore.swift           # scan roots, FS-watch, reload
@@ -466,6 +471,7 @@ Invoque/
 │   ├── Settings/                        # same pattern as Zap (+ AngleDial)
 │   ├── Updates/                         # copied from Zap (GitHub releases)
 │   ├── Model/                           # Preferences + theming value types:
+│   │   ├── SearchEngine.swift           #   the web fallback's engine picker values
 │   │   ├── Preferences.swift            #   UserDefaults, validated on load
 │   │   ├── AppearancePreset.swift       #   shareable themes + Zap/Jetty import
 │   │   ├── PanelMaterial.swift          #   background material enum

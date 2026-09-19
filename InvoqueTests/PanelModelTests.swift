@@ -741,6 +741,20 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(submitted?.action, .revealInFinder(url))
     }
 
+    /// The inverse for a pasted file path: the row's default action is
+    /// already reveal, so ⌘⏎ means open.
+    func testCommandModifierOpensRevealRow() {
+        let url = URL(fileURLWithPath: "/tmp/notes.txt")
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "path:/tmp/notes.txt", title: "notes.txt", subtitle: "/tmp",
+            icon: .fileURL(url), action: .revealInFinder(url))])
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .openFile(url))
+    }
+
     /// Plain ⏎ still opens — the reveal swap must not leak into it.
     func testPlainReturnOpensFileRow() {
         let url = URL(fileURLWithPath: "/tmp/notes.txt")
