@@ -94,6 +94,12 @@ def decode_png(path):
         for x in range(width):
             s = x * channels
             d = (y * width + x) * 3
+            # Transparent pixels carry arbitrary RGB; a half-transparent
+            # edge would box-average stale dark values into the icon.
+            # Fail fast — flatten the artwork deliberately instead.
+            if channels == 4 and line[s + 3] != 255:
+                raise ValueError("source artwork has transparency; "
+                                 "flatten it before rendering icons")
             px[d:d + 3] = line[s:s + 3]
         prev = line
     return width, height, px

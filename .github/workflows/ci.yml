@@ -32,6 +32,14 @@ jobs:
         with:
           persist-credentials: false   # nothing here runs git after checkout
 
+      # The committed app icon must match what the script regenerates from
+      # media-sources/icon2.png — otherwise the appiconset silently drifts
+      # from its source of truth.
+      - name: Check app icon is regenerated
+        run: |
+          python3 scripts/make-app-icon.py
+          git diff --exit-code -- Invoque/Resources/Assets.xcassets
+
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:

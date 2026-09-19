@@ -191,15 +191,22 @@ final class AppearancePresetTests: XCTestCase {
         XCTAssertEqual(memphis.decorationStyle, DecorationStyle.memphis.rawValue)
         XCTAssertEqual(synthwave.decorationStyle,
                        DecorationStyle.synthwave.rawValue)
-        // Every built-in's colors must parse — a bad hex would silently
-        // fall back to the defaults in `apply(to:)`.
-        for preset in [memphis, synthwave] {
-            XCTAssertNotNil(NSColor(hex: preset.tintHex),
-                            "\(preset.name) tintHex")
-            XCTAssertNotNil(NSColor(hex: preset.highlightHex),
-                            "\(preset.name) highlightHex")
-            XCTAssertNotNil(NSColor(hex: preset.labelHex),
-                            "\(preset.name) labelHex")
+        // Their corner decorations are palette-driven stripes — an empty
+        // palette would render nothing.
+        XCTAssertFalse(DecorationStyle.memphis.colors.isEmpty)
+        XCTAssertFalse(DecorationStyle.synthwave.colors.isEmpty)
+    }
+
+    /// Every built-in's colors must parse — a bad hex would silently
+    /// fall back to the defaults in `apply(to:)`, and a `.gradient`
+    /// preset's `gradientHex` is just as load-bearing as its `tintHex`.
+    func testBuiltInColorsParse() {
+        for preset in AppearancePreset.builtIns {
+            for hex in [preset.tintHex, preset.gradientHex,
+                        preset.highlightHex, preset.labelHex] {
+                XCTAssertNotNil(NSColor(hex: hex),
+                                "\(preset.name) color \(hex)")
+            }
         }
     }
 
