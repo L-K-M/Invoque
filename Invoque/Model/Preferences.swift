@@ -29,6 +29,7 @@ final class Preferences: ObservableObject {
         static let highlightHex = "#0A84FF"
         static let highlightOpacity = 0.25
         static let labelHex = "#FFFFFF"
+        static let panelTypeface = PanelTypeface.system
         static let panelCornerRadius = 16.0
         static let highlightCornerRadius = 8.0
         static let adaptiveAccent = true
@@ -52,6 +53,7 @@ final class Preferences: ObservableObject {
         static let highlightHex = "highlightHex"
         static let highlightOpacity = "highlightOpacity"
         static let labelHex = "labelHex"
+        static let panelTypeface = "panelTypeface"
         static let panelCornerRadius = "panelCornerRadius"
         static let highlightCornerRadius = "highlightCornerRadius"
         static let adaptiveAccent = "adaptiveAccent"
@@ -177,6 +179,12 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// The panel's typeface — a curated choice (system designs or a bundled
+    /// macOS family), resolved by `PanelTypeface.font`/`nsFont`.
+    @Published var panelTypeface: PanelTypeface {
+        didSet { defaults.set(panelTypeface.rawValue, forKey: Key.panelTypeface) }
+    }
+
     /// The card's corner radius.
     @Published var panelCornerRadius: Double {
         didSet {
@@ -287,6 +295,8 @@ final class Preferences: ObservableObject {
             ?? Default.decorationStyle
         decorationPosition = DecorationPosition(rawValue: defaults.string(forKey: Key.decorationPosition) ?? "")
             ?? Default.decorationPosition
+        panelTypeface = PanelTypeface(rawValue: defaults.string(forKey: Key.panelTypeface) ?? "")
+            ?? Default.panelTypeface
         decorationOpacity = Self.clamp(defaults.object(forKey: Key.decorationOpacity) as? Double
             ?? Default.decorationOpacity, in: Limit.unitInterval, fallback: Default.decorationOpacity)
         decorationSize = Self.clamp(defaults.object(forKey: Key.decorationSize) as? Double

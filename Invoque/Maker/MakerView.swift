@@ -18,6 +18,9 @@ struct MakerView: View {
     /// colors (green/red) stay as-is.
     var titleColor: Color = .primary
     var secondaryColor: Color = .secondary
+    /// The chosen typeface — `font(_:)` resolves each style. The `make`
+    /// token and test-log output stay monospaced: they're code, not chrome.
+    var typeface: PanelTypeface = .system
 
     @State private var feedback = ""
     @State private var testArgs = ""
@@ -66,7 +69,7 @@ struct MakerView: View {
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(secondaryColor)
             Text(displayedPrompt)
-                .font(.headline)
+                .font(typeface.font(.headline))
                 .foregroundStyle(titleColor)
                 .lineLimit(2)
             Spacer(minLength: 0)
@@ -90,7 +93,7 @@ struct MakerView: View {
     private var idleContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Describe the command, then press ⏎ to generate it.")
-                .font(.callout)
+                .font(typeface.font(.callout))
                 .foregroundStyle(secondaryColor)
             Button("Generate") {
                 Task { await model.primarySubmit(prompt: prompt) }
@@ -113,7 +116,7 @@ struct MakerView: View {
             Label("Saved", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
             Text("The command is live — search for it by name. Esc dismisses; editing the query starts a new session.")
-                .font(.caption)
+                .font(typeface.font(.caption))
                 .foregroundStyle(secondaryColor)
             Button("Make another") { model.discard() }
         }
@@ -125,7 +128,7 @@ struct MakerView: View {
                 .foregroundStyle(.red)
             if let error = model.lastError {
                 Text(error)
-                    .font(.caption)
+                    .font(typeface.font(.caption))
                     .foregroundStyle(secondaryColor)
                     .textSelection(.enabled)
             }
@@ -153,7 +156,7 @@ struct MakerView: View {
                     // issue strings would collapse under `\.self`.
                     ForEach(Array(draft.issues.enumerated()), id: \.offset) { _, issue in
                         Text("· \(issue)")
-                            .font(.caption)
+                            .font(typeface.font(.caption))
                             .foregroundStyle(.red)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -166,7 +169,7 @@ struct MakerView: View {
             // shows here, and Save/⏎ retries.
             if let error = model.lastError {
                 Text(error)
-                    .font(.caption)
+                    .font(typeface.font(.caption))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -187,7 +190,7 @@ struct MakerView: View {
         VStack(alignment: .leading, spacing: 4) {
             if let manifest = draft.manifest {
                 Text(manifest.title)
-                    .font(.headline)
+                    .font(typeface.font(.headline))
                 HStack(spacing: 8) {
                     Text(manifest.name)
                     badge(manifest.mode.rawValue)
@@ -197,15 +200,15 @@ struct MakerView: View {
                         badge(permission)
                     }
                 }
-                .font(.caption)
+                .font(typeface.font(.caption))
                 .foregroundStyle(secondaryColor)
             } else {
                 Text("command.json didn't decode")
-                    .font(.headline)
+                    .font(typeface.font(.headline))
                     .foregroundStyle(.red)
             }
             Text(fileSummary(draft.generation))
-                .font(.caption)
+                .font(typeface.font(.caption))
                 .foregroundStyle(secondaryColor)
         }
         .textSelection(.enabled)
@@ -238,7 +241,7 @@ struct MakerView: View {
                 + request.permissions
                     .map { CommandPermissionGrants.consentLine(for: $0) }
                     .joined(separator: "; "))
-                .font(.caption)
+                .font(typeface.font(.caption))
                 .foregroundStyle(titleColor)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -254,7 +257,7 @@ struct MakerView: View {
     private func testResultView(_ result: JSResult) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(resultSummary(result))
-                .font(.callout)
+                .font(typeface.font(.callout))
                 .foregroundStyle(result.error == nil ? titleColor : Color.red)
             if !result.logs.isEmpty {
                 Text(result.logs.suffix(6).joined(separator: "\n"))

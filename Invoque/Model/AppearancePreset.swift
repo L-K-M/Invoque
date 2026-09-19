@@ -19,6 +19,11 @@ struct AppearancePreset: Codable, Equatable, Identifiable {
     var highlightHex: String
     var highlightOpacity: Double
     var labelHex: String
+    /// The panel typeface's raw value — `PanelTypeface(rawValue:)`. Invoque's
+    /// own field: Zap/Jetty themes have no typeface, so their lenses and
+    /// decode take the default. The memberwise default keeps the built-in
+    /// and import initializers source-compatible.
+    var typeface: String = "system"
     var cornerRadius: Double
     var highlightCornerRadius: Double
     var adaptiveAccent: Bool
@@ -49,6 +54,7 @@ extension AppearancePreset {
         highlightHex = preferences.highlightHex
         highlightOpacity = preferences.highlightOpacity
         labelHex = preferences.labelHex
+        typeface = preferences.panelTypeface.rawValue
         cornerRadius = preferences.panelCornerRadius
         highlightCornerRadius = preferences.highlightCornerRadius
         adaptiveAccent = preferences.adaptiveAccent
@@ -75,6 +81,8 @@ extension AppearancePreset {
         preferences.highlightOpacity = Self.clamp(highlightOpacity, in: limits.unitInterval,
                                                   fallback: Preferences.Default.highlightOpacity)
         preferences.labelHex = Self.validColor(labelHex, default: Preferences.Default.labelHex)
+        preferences.panelTypeface = PanelTypeface(rawValue: typeface)
+            ?? Preferences.Default.panelTypeface
         preferences.panelCornerRadius = Self.clamp(cornerRadius, in: limits.radius,
                                                    fallback: Preferences.Default.panelCornerRadius)
         preferences.highlightCornerRadius = Self.clamp(highlightCornerRadius, in: limits.radius,
@@ -134,6 +142,7 @@ extension AppearancePreset {
         highlightHex = field(String.self, .highlightHex) ?? d.highlightHex
         highlightOpacity = field(Double.self, .highlightOpacity) ?? d.highlightOpacity
         labelHex = field(String.self, .labelHex) ?? d.labelHex
+        typeface = field(String.self, .typeface) ?? d.panelTypeface.rawValue
         cornerRadius = field(Double.self, .cornerRadius) ?? d.panelCornerRadius
         highlightCornerRadius = field(Double.self, .highlightCornerRadius) ?? d.highlightCornerRadius
         adaptiveAccent = field(Bool.self, .adaptiveAccent) ?? d.adaptiveAccent
@@ -156,7 +165,7 @@ extension AppearancePreset {
 
     private enum CodingKeys: String, CodingKey {
         case name, material, tintHex, gradientHex, gradientAngle, backgroundOpacity
-        case highlightHex, highlightOpacity, labelHex
+        case highlightHex, highlightOpacity, labelHex, typeface
         case cornerRadius, highlightCornerRadius, adaptiveAccent
         case decorationStyle, decorationPosition, decorationOpacity, decorationSize
         case crtEnabled, crtIntensity
@@ -454,6 +463,7 @@ extension AppearancePreset {
         highlightHex: "#00AEEF",
         highlightOpacity: 0.55,
         labelHex: "#FFFFFF",
+        typeface: "menlo",
         cornerRadius: 14,
         highlightCornerRadius: 12,
         adaptiveAccent: false,
@@ -474,6 +484,7 @@ extension AppearancePreset {
         highlightHex: "#FF6AD5",
         highlightOpacity: 0.55,
         labelHex: "#FFFFFF",
+        typeface: "avenirNext",
         cornerRadius: 20,
         highlightCornerRadius: 16,
         adaptiveAccent: false,
@@ -497,6 +508,7 @@ extension AppearancePreset {
         highlightHex: "#FB1A91",
         highlightOpacity: 0.5,
         labelHex: "#F5F0FF",
+        typeface: "avenirNext",
         cornerRadius: 16,
         highlightCornerRadius: 10,
         adaptiveAccent: false,
@@ -521,6 +533,7 @@ extension AppearancePreset {
         highlightHex: "#FB04B5",
         highlightOpacity: 0.35,
         labelHex: "#000517",
+        typeface: "futura",
         cornerRadius: 10,
         highlightCornerRadius: 6,
         adaptiveAccent: false,
@@ -541,6 +554,7 @@ extension AppearancePreset {
         highlightHex: "#FF6F00",
         highlightOpacity: 0.6,
         labelHex: "#FFFFFF",
+        typeface: "menlo",
         cornerRadius: 16,
         highlightCornerRadius: 14,
         adaptiveAccent: false,
