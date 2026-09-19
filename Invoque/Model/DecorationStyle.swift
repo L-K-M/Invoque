@@ -45,12 +45,10 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
     }
 
     /// Stripe colors, ordered from the one nearest the corner inward. Empty for
-    /// `.none`.
-    var colors: [Color] {
-        hexes.map { Color(hexString: $0) }
-    }
-
-    private var hexes: [String] {
+    /// `.none`. Internal (not private) so tests can parse every hex directly —
+    /// `Color(hexString:)` swallows a malformed value as `.clear`, which would
+    /// render an invisible stripe.
+    var hexStrings: [String] {
         switch self {
         case .none: return []
         case .zxSpectrum: return ["#D52B1E", "#FFD500", "#00A651", "#00AEEF"]
@@ -65,5 +63,9 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
         case .synthwave: return ["#FF2975", "#FF9A3D", "#B61FFF"]
         case .amiga, .amigaPixel: return []   // drawn as a ball, not stripes — see BoingBallDecoration
         }
+    }
+
+    var colors: [Color] {
+        hexStrings.map { Color(hexString: $0) }
     }
 }

@@ -200,12 +200,20 @@ final class AppearancePresetTests: XCTestCase {
     /// Every built-in's colors must parse — a bad hex would silently
     /// fall back to the defaults in `apply(to:)`, and a `.gradient`
     /// preset's `gradientHex` is just as load-bearing as its `tintHex`.
+    /// Decoration palettes are parsed too: `Color(hexString:)` swallows
+    /// a malformed value as `.clear`, an invisible stripe.
     func testBuiltInColorsParse() {
         for preset in AppearancePreset.builtIns {
             for hex in [preset.tintHex, preset.gradientHex,
                         preset.highlightHex, preset.labelHex] {
                 XCTAssertNotNil(NSColor(hex: hex),
                                 "\(preset.name) color \(hex)")
+            }
+        }
+        for style in DecorationStyle.allCases {
+            for hex in style.hexStrings {
+                XCTAssertNotNil(NSColor(hex: hex),
+                                "\(style.label) palette color \(hex)")
             }
         }
     }
