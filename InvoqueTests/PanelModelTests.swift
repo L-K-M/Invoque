@@ -755,6 +755,25 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(submitted?.action, .openFile(url))
     }
 
+    /// ⌘⏎ on a pasted `.app` path must stay reveal — opening a package
+    /// launches it, and a pasted bundle must not run on either gesture.
+    func testCommandModifierKeepsAppPackageOnReveal() throws {
+        let app = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Invoque-\(UUID().uuidString).app")
+        try FileManager.default.createDirectory(at: app,
+                                                withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: app) }
+        let url = URL(fileURLWithPath: app.path)
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "path:\(app.path)", title: app.lastPathComponent, subtitle: "/tmp",
+            icon: .fileURL(url), action: .revealInFinder(url))])
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .revealInFinder(url))
+    }
+
     /// Plain ⏎ still opens — the reveal swap must not leak into it.
     func testPlainReturnOpensFileRow() {
         let url = URL(fileURLWithPath: "/tmp/notes.txt")
