@@ -537,9 +537,11 @@ final class PanelModelTests: XCTestCase {
     }
 
     /// Unwired, "find x" is just a query — the same convention as
-    /// `filterLookup`/`maker`.
+    /// `filterLookup`/`maker`. The fixture's title must contain the whole
+    /// query text for the normal search to surface it.
     func testUnwiredFileSearcherLeavesQueryAsSearch() {
-        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        let model = makeModel(items: [Self.appItem(id: "app:finder",
+                                                 title: "Find X Utility")])
         model.query = "find x"
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
     }
