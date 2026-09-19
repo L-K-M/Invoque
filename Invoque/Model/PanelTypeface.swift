@@ -48,11 +48,22 @@ enum PanelTypeface: String, CaseIterable, Identifiable {
     }
 
     /// The family name a named case resolves through; nil for the system
-    /// designs (those go through `systemDesign` instead).
+    /// designs (those go through `systemDesign` instead). Spelled out
+    /// per-case rather than reusing `label` — a display rename must never
+    /// silently break font resolution.
     var family: String? {
         switch self {
         case .system, .rounded, .serif, .monospaced: return nil
-        default: return label
+        case .avenirNext: return "Avenir Next"
+        case .americanTypewriter: return "American Typewriter"
+        case .courierNew: return "Courier New"
+        case .futura: return "Futura"
+        case .georgia: return "Georgia"
+        case .gillSans: return "Gill Sans"
+        case .helveticaNeue: return "Helvetica Neue"
+        case .menlo: return "Menlo"
+        case .optima: return "Optima"
+        case .timesNewRoman: return "Times New Roman"
         }
     }
 
