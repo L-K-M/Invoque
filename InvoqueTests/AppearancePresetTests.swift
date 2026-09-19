@@ -195,6 +195,10 @@ final class AppearancePresetTests: XCTestCase {
         // palette would render nothing.
         XCTAssertFalse(DecorationStyle.memphis.colors.isEmpty)
         XCTAssertFalse(DecorationStyle.synthwave.colors.isEmpty)
+        // CRT is part of each theme's reference art, not an add-on:
+        // Synthwave is a scanlined sunset, Memphis is flat print.
+        XCTAssertTrue(synthwave.crtEnabled)
+        XCTAssertFalse(memphis.crtEnabled)
     }
 
     /// Every built-in's colors must parse — a bad hex would silently
