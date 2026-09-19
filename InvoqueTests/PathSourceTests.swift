@@ -100,10 +100,12 @@ final class PathSourceTests: XCTestCase {
     }
 
     /// Handler-executed formats run on `NSWorkspace.open` with no +x bit —
-    /// pasted `.jar`/`.command`/`.saver`/`.prefPane` must be unsafe; a
+    /// every extension `isSafeToOpen` blocks must stay unsafe (a literal
+    /// list here is the pin; the impl's list could silently shrink). A
     /// `.txt` control stays safe.
     func testHandlerExecutedFormatsAreNotSafeToOpen() throws {
-        for ext in ["jar", "command", "pkg", "mpkg", "saver", "prefPane"] {
+        for ext in ["app", "jar", "workflow", "terminal", "term", "command",
+                    "pkg", "mpkg", "saver", "prefPane"] {
             let file = FileManager.default.temporaryDirectory
                 .appendingPathComponent("invoque-\(UUID().uuidString).\(ext)")
             FileManager.default.createFile(atPath: file.path, contents: Data())
