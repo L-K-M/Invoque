@@ -50,7 +50,12 @@ final class PathSource: ItemSource {
             guard url.host?.isEmpty ?? true || url.host == "localhost" else {
                 return nil
             }
-            return url
+            // Re-canonicalize through `fileURLWithPath` so `file:///tmp` and
+            // a typed `/tmp` produce the same URL — directory-ness affects
+            // the trailing slash, and `URL(string:)` doesn't check it. An
+            // empty path (`file://` alone) would otherwise resolve to cwd.
+            guard !url.path.isEmpty else { return nil }
+            return URL(fileURLWithPath: url.path)
         }
         guard query.hasPrefix("/") || query.hasPrefix("~") else { return nil }
         let path = (query as NSString).expandingTildeInPath

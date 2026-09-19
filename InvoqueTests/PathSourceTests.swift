@@ -45,6 +45,18 @@ final class PathSourceTests: XCTestCase {
                        .openFile(URL(fileURLWithPath: "/tmp")))
     }
 
+    /// `file:///tmp` and a typed `/tmp` name the same directory — both query
+    /// forms must produce identical rows (same id, same action URL).
+    func testFileURLMatchesTypedPath() throws {
+        XCTAssertEqual(source.items(matching: "file:///tmp"),
+                       source.items(matching: "/tmp"))
+    }
+
+    /// Bare `file://` carries no path — it must not resolve to the cwd.
+    func testBareFileSchemeEmitsNothing() {
+        XCTAssertTrue(source.items(matching: "file://").isEmpty)
+    }
+
     func testFileURLWithRemoteHostIsNotAPath() {
         XCTAssertTrue(source.items(matching: "file://share.example.com/tmp").isEmpty)
     }
