@@ -59,8 +59,8 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
         // The app's own palettes: Memphis Group's print brights
         // (pink/cyan/yellow on cream, grounded by the navy squiggle dark)
         // and the outrun sunset — hot pink, burnt orange, electric violet.
-        case .memphis: return ["#F2339E", "#2BD9D9", "#F7E038", "#16142E"]
-        case .synthwave: return ["#FF2975", "#FF9A3D", "#B61FFF"]
+        case .memphis: return ["#FB04B5", "#02FBF6", "#FDE133", "#000517"]
+        case .synthwave: return ["#FB1A91", "#FF9A3D", "#B61FFF"]
         case .amiga, .amigaPixel: return []   // drawn as a ball, not stripes — see BoingBallDecoration
         }
     }

@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Renders Invoque's app icon set from the shipped source artwork.
 
-    python3 scripts/make-app-icon.py
+    python3 scripts/make-app-icon.py            # regenerate and write
+    python3 scripts/make-app-icon.py --verify   # CI: compare, don't write
 
 Reads media-sources/icon2.png and writes
 Invoque/Resources/Assets.xcassets/AppIcon.appiconset/*.png plus its
 Contents.json and the AccentColor colorset — every size regenerated in
 step, so the sizes cannot drift apart. Re-run it after changing the
-source art.
+source art. `--verify` regenerates in memory and compares against what's
+committed — *pixel*-level for the PNGs, because deflate bytes are not
+guaranteed stable across zlib builds — and byte-level for the JSON.
 
 No dependencies on purpose: no Pillow, no ImageMagick — the PNG is decoded
 and re-encoded here with zlib, and each target size is an area-average
@@ -19,6 +22,7 @@ than a hard crop on macOS 13-15 (macOS 26 masks everything anyway).
 
 import os
 import struct
+import sys
 import zlib
 
 SOURCE = "media-sources/icon2.png"
@@ -26,10 +30,11 @@ ASSETS = os.path.join("Invoque", "Resources", "Assets.xcassets")
 ICONSET = os.path.join(ASSETS, "AppIcon.appiconset")
 ACCENTSET = os.path.join(ASSETS, "AccentColor.colorset")
 
-# The icon's Memphis pink — the brand accent for system-tinted controls
-# (Settings pickers, the angle dial). Written here so icon and accent
-# can't drift: the accent IS a color of the artwork.
-ACCENT = (0xF2 / 255.0, 0x33 / 255.0, 0x9E / 255.0)
+# The icon's own Memphis pink (#FB04B5 in the artwork) — the brand accent
+# for system-tinted controls (Settings pickers, the angle dial). Written
+# here so icon and accent can't drift: the accent IS a color of the
+# artwork, and `check_accent_in_artwork` keeps that true.
+ACCENT = (0xFB / 255.0, 0x04 / 255.0, 0xB5 / 255.0)
 
 INSET = 0.02          # fraction of the canvas left clear on every side
 SQUIRCLE_N = 5.0      # superellipse exponent; ~5 approximates Apple's corner
@@ -38,11 +43,14 @@ CONTENTS = [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1),
             (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)]
 
 
-def decode_png(path):
-    """One RGB image as (width, height, flat bytearray of RGB triplets).
+def decode_png(path, opaque_only=False):
+    """One image as (width, height, flat bytearray of RGBA quads).
 
     Handles the formats a hand-exported PNG actually uses: 8-bit truecolor
     (with or without alpha), non-interlaced, all five scanline filters.
+    `opaque_only` rejects any transparency — the source-art policy, not
+    applied when reading back generated icons (their squircle edge is
+    deliberately translucent).
     """
     data = open(path, "rb").read()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
@@ -73,7 +81,7 @@ def decode_png(path):
     channels = 4 if color_type == 6 else 3
     stride = width * channels
     raw = zlib.decompress(bytes(idat))
-    px = bytearray(width * height * 3)
+    px = bytearray(width * height * 4)
     prev = bytearray(stride)
     for y in range(height):
         f = raw[y * (stride + 1)]
@@ -99,14 +107,16 @@ def decode_png(path):
                 line[i] = (line[i] + pr) & 0xFF
         for x in range(width):
             s = x * channels
-            d = (y * width + x) * 3
+            d = (y * width + x) * 4
+            alpha = line[s + 3] if channels == 4 else 255
             # Transparent pixels carry arbitrary RGB; a half-transparent
             # edge would box-average stale dark values into the icon.
             # Fail fast — flatten the artwork deliberately instead.
-            if channels == 4 and line[s + 3] != 255:
+            if opaque_only and alpha != 255:
                 raise ValueError("source artwork has transparency; "
                                  "flatten it before rendering icons")
             px[d:d + 3] = line[s:s + 3]
+            px[d + 3] = alpha
         prev = line
     return width, height, px
 
@@ -125,8 +135,24 @@ def squircle_coverage(x, y, half):
     return clamp(0.5 - distance)
 
 
+def check_accent_in_artwork(source, tolerance=2):
+    """Fail fast if the artwork's pink no longer equals ACCENT.
+
+    ACCENT claims to be a color of the artwork; if icon2.png is
+    re-exported with a different pink the accent must move with it —
+    this is the check that keeps "can't drift" true.
+    """
+    target = tuple(int(round(c * 255)) for c in ACCENT)
+    px = source[2]
+    for i in range(0, len(px), 4):
+        if all(abs(px[i + k] - target[k]) <= tolerance for k in range(3)):
+            return
+    raise ValueError("ACCENT not found in source artwork — update ACCENT "
+                     "to the artwork's pink before regenerating")
+
+
 def render(source, size):
-    """Area-average `source` (w, h, RGB) down to `size` px, squircle-clipped."""
+    """Area-average `source` (w, h, RGBA) down to `size` px, squircle-clipped."""
     sw, sh, spx = source
     half = size * (0.5 - INSET)
     centre = size / 2.0
@@ -146,7 +172,7 @@ def render(source, size):
             r = g = b = n = 0
             for sy in range(y0, min(y1, sh)):
                 for sx in range(x0, min(x1, sw)):
-                    s = (sy * sw + sx) * 3
+                    s = (sy * sw + sx) * 4
                     r += spx[s]
                     g += spx[s + 1]
                     b += spx[s + 2]
@@ -179,26 +205,7 @@ def write_png(path, size, pixels):
         handle.write(png)
 
 
-def main():
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    source_path = os.path.join(root, SOURCE)
-    iconset = os.path.join(root, ICONSET)
-    accentset = os.path.join(root, ACCENTSET)
-    os.makedirs(iconset, exist_ok=True)
-    os.makedirs(accentset, exist_ok=True)
-
-    source = decode_png(source_path)
-    print(f"  source {SOURCE}: {source[0]}x{source[1]}")
-
-    drawn = {}
-    for nominal, scale in CONTENTS:
-        pixels = nominal * scale
-        if pixels not in drawn:
-            drawn[pixels] = render(source, pixels)
-        name = f"icon_{nominal}x{nominal}@{scale}x.png"
-        write_png(os.path.join(iconset, name), pixels, drawn[pixels])
-        print(f"  {name} ({pixels}px)")
-
+def iconset_json():
     images = ',\n'.join(
         '    {\n'
         '      "idiom" : "mac",\n'
@@ -207,21 +214,99 @@ def main():
         f'      "filename" : "icon_{nominal}x{nominal}@{scale}x.png"\n'
         '    }'
         for nominal, scale in CONTENTS)
-    with open(os.path.join(iconset, "Contents.json"), "w") as handle:
-        handle.write('{\n  "images" : [\n' + images + '\n  ],\n'
-                     '  "info" : {\n    "author" : "xcode",\n'
-                     '    "version" : 1\n  }\n}\n')
-    print("  Contents.json")
+    return ('{\n  "images" : [\n' + images + '\n  ],\n'
+            '  "info" : {\n    "author" : "xcode",\n'
+            '    "version" : 1\n  }\n}\n')
 
+
+def accent_json():
+    return (
+        '{\n  "colors" : [\n    {\n      "color" : {\n'
+        '        "color-space" : "srgb",\n'
+        '        "components" : { "alpha" : "1.000", '
+        f'"blue" : "{ACCENT[2]:.3f}", "green" : "{ACCENT[1]:.3f}", '
+        f'"red" : "{ACCENT[0]:.3f}" }}\n'
+        '      },\n      "idiom" : "universal"\n    }\n  ],\n'
+        '  "info" : { "author" : "xcode", "version" : 1 }\n}\n')
+
+
+def render_all(source):
+    """Every distinct pixel size once — ten files share seven renders."""
+    drawn = {}
+    for nominal, scale in CONTENTS:
+        drawn.setdefault(nominal * scale, render(source, nominal * scale))
+    return drawn
+
+
+def verify(iconset, accentset, drawn):
+    """Compare the committed assets to the regenerated output. Pixel-level
+    for the PNGs (deflate bytes can differ across zlib builds while the
+    pixels stay identical); byte-level for the JSON manifests. Returns a
+    list of failures — empty means the committed set is up to date."""
+    failures = []
+    expected = {"Contents.json"} | {
+        f"icon_{n}x{n}@{s}x.png" for n, s in CONTENTS}
+    found = set(os.listdir(iconset)) if os.path.isdir(iconset) else set()
+    for name in sorted(expected - found):
+        failures.append(f"{name}: missing")
+    for name in sorted(found - expected):
+        failures.append(f"{name}: unexpected file")
+
+    for nominal, scale in CONTENTS:
+        name = f"icon_{nominal}x{nominal}@{scale}x.png"
+        path = os.path.join(iconset, name)
+        if not os.path.exists(path):
+            continue
+        w, h, px = decode_png(path)
+        size = nominal * scale
+        if (w, h) != (size, size):
+            failures.append(f"{name}: {w}x{h}, expected {size}px")
+        elif px != drawn[size]:
+            failures.append(f"{name}: pixels differ")
+
+    for path, text in [(os.path.join(iconset, "Contents.json"),
+                        iconset_json()),
+                       (os.path.join(accentset, "Contents.json"),
+                        accent_json())]:
+        if not os.path.exists(path) or open(path).read() != text:
+            failures.append(f"{os.path.relpath(path)}: differs")
+    return failures
+
+
+def main():
+    verify_only = "--verify" in sys.argv
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    iconset = os.path.join(root, ICONSET)
+    accentset = os.path.join(root, ACCENTSET)
+
+    source = decode_png(os.path.join(root, SOURCE), opaque_only=True)
+    check_accent_in_artwork(source)
+    drawn = render_all(source)
+
+    if verify_only:
+        failures = verify(iconset, accentset, drawn)
+        if failures:
+            print("committed assets drifted from the source of truth:")
+            for failure in failures:
+                print(f"  {failure}")
+            sys.exit(1)
+        print("app icon assets match the regenerated output")
+        return
+
+    os.makedirs(iconset, exist_ok=True)
+    os.makedirs(accentset, exist_ok=True)
+    print(f"  source {SOURCE}: {source[0]}x{source[1]}")
+    for nominal, scale in CONTENTS:
+        name = f"icon_{nominal}x{nominal}@{scale}x.png"
+        pixels = nominal * scale
+        write_png(os.path.join(iconset, name), pixels, drawn[pixels])
+        print(f"  {name} ({pixels}px)")
+
+    with open(os.path.join(iconset, "Contents.json"), "w") as handle:
+        handle.write(iconset_json())
+    print("  Contents.json")
     with open(os.path.join(accentset, "Contents.json"), "w") as handle:
-        handle.write(
-            '{\n  "colors" : [\n    {\n      "color" : {\n'
-            '        "color-space" : "srgb",\n'
-            '        "components" : { "alpha" : "1.000", '
-            f'"blue" : "{ACCENT[2]:.3f}", "green" : "{ACCENT[1]:.3f}", '
-            f'"red" : "{ACCENT[0]:.3f}" }}\n'
-            '      },\n      "idiom" : "universal"\n    }\n  ],\n'
-            '  "info" : { "author" : "xcode", "version" : 1 }\n}\n')
+        handle.write(accent_json())
     print("  AccentColor.colorset/Contents.json")
 
 
