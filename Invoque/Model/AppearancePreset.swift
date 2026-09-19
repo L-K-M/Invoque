@@ -455,7 +455,6 @@ extension AppearancePreset {
 
     static let zxNight = AppearancePreset(
         name: "ZX Night",
-        typeface: "menlo",
         material: .gradient,
         tintHex: "#0B0B1A",
         gradientHex: "#1A1140",
@@ -464,6 +463,7 @@ extension AppearancePreset {
         highlightHex: "#00AEEF",
         highlightOpacity: 0.55,
         labelHex: "#FFFFFF",
+        typeface: "menlo",
         cornerRadius: 14,
         highlightCornerRadius: 12,
         adaptiveAccent: false,
@@ -476,7 +476,6 @@ extension AppearancePreset {
 
     static let vaporwave = AppearancePreset(
         name: "Vaporwave",
-        typeface: "avenirNext",
         material: .gradient,
         tintHex: "#241B4B",
         gradientHex: "#3B2A6B",
@@ -485,6 +484,7 @@ extension AppearancePreset {
         highlightHex: "#FF6AD5",
         highlightOpacity: 0.55,
         labelHex: "#FFFFFF",
+        typeface: "avenirNext",
         cornerRadius: 20,
         highlightCornerRadius: 16,
         adaptiveAccent: false,
@@ -500,7 +500,6 @@ extension AppearancePreset {
     /// CRT on — the scanlines are part of the reference, not a novelty.
     static let synthwave = AppearancePreset(
         name: "Synthwave",
-        typeface: "avenirNext",
         material: .gradient,
         tintHex: "#150D33",
         gradientHex: "#341361",
@@ -509,6 +508,7 @@ extension AppearancePreset {
         highlightHex: "#FB1A91",
         highlightOpacity: 0.5,
         labelHex: "#F5F0FF",
+        typeface: "avenirNext",
         cornerRadius: 16,
         highlightCornerRadius: 10,
         adaptiveAccent: false,
@@ -525,7 +525,6 @@ extension AppearancePreset {
     /// reference is geometry, not chrome.
     static let memphis = AppearancePreset(
         name: "Memphis",
-        typeface: "futura",
         material: .solid,
         tintHex: "#FEFBEC",
         gradientHex: "#EFE7D5",
@@ -534,6 +533,7 @@ extension AppearancePreset {
         highlightHex: "#FB04B5",
         highlightOpacity: 0.35,
         labelHex: "#000517",
+        typeface: "futura",
         cornerRadius: 10,
         highlightCornerRadius: 6,
         adaptiveAccent: false,
@@ -546,7 +546,6 @@ extension AppearancePreset {
 
     static let amiga = AppearancePreset(
         name: "Amiga",
-        typeface: "menlo",
         material: .solid,
         tintHex: "#1A1A1A",
         gradientHex: "#2C2C2C",
@@ -555,6 +554,7 @@ extension AppearancePreset {
         highlightHex: "#FF6F00",
         highlightOpacity: 0.6,
         labelHex: "#FFFFFF",
+        typeface: "menlo",
         cornerRadius: 16,
         highlightCornerRadius: 14,
         adaptiveAccent: false,
