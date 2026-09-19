@@ -100,19 +100,20 @@ final class PathSourceTests: XCTestCase {
     }
 
     /// Handler-executed formats run on `NSWorkspace.open` with no +x bit —
-    /// a pasted `.jar` must be unsafe; a `.txt` control stays safe.
+    /// pasted `.jar`/`.command`/`.saver`/`.prefPane` must be unsafe; a
+    /// `.txt` control stays safe.
     func testHandlerExecutedFormatsAreNotSafeToOpen() throws {
-        let jar = FileManager.default.temporaryDirectory
-            .appendingPathComponent("invoque-\(UUID().uuidString).jar")
-        FileManager.default.createFile(atPath: jar.path, contents: Data())
+        for ext in ["jar", "command", "saver", "prefPane"] {
+            let file = FileManager.default.temporaryDirectory
+                .appendingPathComponent("invoque-\(UUID().uuidString).\(ext)")
+            FileManager.default.createFile(atPath: file.path, contents: Data())
+            defer { try? FileManager.default.removeItem(at: file) }
+            XCTAssertFalse(PathSource.isSafeToOpen(file), ext)
+        }
         let txt = FileManager.default.temporaryDirectory
             .appendingPathComponent("invoque-\(UUID().uuidString).txt")
         FileManager.default.createFile(atPath: txt.path, contents: Data())
-        defer {
-            try? FileManager.default.removeItem(at: jar)
-            try? FileManager.default.removeItem(at: txt)
-        }
-        XCTAssertFalse(PathSource.isSafeToOpen(jar))
+        defer { try? FileManager.default.removeItem(at: txt) }
         XCTAssertTrue(PathSource.isSafeToOpen(txt))
     }
 
@@ -153,6 +154,13 @@ final class PathSourceTests: XCTestCase {
                        URL(fileURLWithPath: "/tmp/a?b"))
         XCTAssertEqual(PathSource.resolve("file:///tmp/a#b"),
                        URL(fileURLWithPath: "/tmp/a#b"))
+    }
+
+    /// Hosts are case-insensitive — `file://LOCALHOST/…` is as local as
+    /// the lowercase spelling.
+    func testLocalhostHostIsCaseInsensitive() {
+        XCTAssertEqual(PathSource.resolve("file://LOCALHOST/tmp"),
+                       URL(fileURLWithPath: "/tmp"))
     }
 
     func testFileURLWithRemoteHostIsNotAPath() {

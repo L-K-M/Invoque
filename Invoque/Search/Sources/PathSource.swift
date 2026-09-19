@@ -47,16 +47,18 @@ final class PathSource: ItemSource {
     /// thing a pasted path must never do. Unsafe: application bundles
     /// (the `.app` extension outright, or any package declaring
     /// `CFBundlePackageType` `APPL`), formats whose default handler runs
-    /// them (`.jar`, `.workflow`, `.terminal`, `.term`), and plain executables
+    /// them (`.jar`, `.workflow`, `.terminal`, `.term`, `.command`,
+    /// `.saver`, `.prefPane`), and plain executables
     /// (scripts, binaries with the +x bit). Document packages such as
     /// `.xcodeproj` or `.rtfd` open in their editors — no payload runs —
     /// so they stay openable.
     /// `PanelModel` consults the same policy for the ⌘⏎ inverse.
     static func isSafeToOpen(_ url: URL) -> Bool {
-        // `.jar`, `.workflow`, `.terminal`/`.term` run via their default
-        // handler on open — no +x bit, no APPL type — so they reveal like
-        // apps.
-        if ["app", "jar", "workflow", "terminal", "term"]
+        // `.jar`, `.workflow`, `.terminal`/`.term`, `.command` run via their
+        // default handler on open — no +x bit, no APPL type — and
+        // `.saver`/`.prefPane` load plugin code via System Settings.
+        if ["app", "jar", "workflow", "terminal", "term", "command",
+            "saver", "prefpane"]
             .contains(url.pathExtension.lowercased()) { return false }
         if (Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundlePackageType")
             as? String) == "APPL" {
@@ -97,7 +99,8 @@ final class PathSource: ItemSource {
                 return URL(fileURLWithPath: String(rest))
             }
             // `file://host/…` is a remote share, not a local path.
-            guard url.host?.isEmpty ?? true || url.host == "localhost" else {
+            guard url.host?.isEmpty ?? true
+                || url.host?.lowercased() == "localhost" else {
                 return nil
             }
             // Re-canonicalize through `fileURLWithPath` so `file:///tmp` and
