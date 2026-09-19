@@ -254,8 +254,8 @@ final class SearchModelTests: XCTestCase {
         let results = model.results(for: "/tmp")
         // calc: ids pin without matching — the spoiler is live, so the
         // explicit order assertion is the path-over-calc guarantee.
-        XCTAssertEqual(Array(results.map(\.id).prefix(2)),
-                       ["path:/tmp", "calc:2+2"])
+        XCTAssertEqual(Array(results.map(\.id).prefix(3)),
+                       ["path:/tmp", "calc:2+2", "app:spoiler"])
         XCTAssertEqual(results.first?.action,
                        .openFile(URL(fileURLWithPath: "/tmp")))
     }
