@@ -476,6 +476,159 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.first?.subtitle, "nope")
     }
 
+    // MARK: File-search mode
+
+    /// Polls `fileRunCompletions` until `atLeast` scans have reached their
+    /// completion point — the `awaitCompletions` twin for `find`/`f` runs.
+    private func awaitFileCompletions(_ model: PanelModel, atLeast count: Int,
+                                      file: StaticString = #filePath,
+                                      line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(7)
+        while model.fileRunCompletions < count, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(model.fileRunCompletions, count,
+                                    "file search never completed",
+                                    file: file, line: line)
+    }
+
+    /// The `awaitStarts` twin for file scans.
+    private func awaitFileStarts(_ model: PanelModel, atLeast count: Int,
+                                 file: StaticString = #filePath,
+                                 line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(7)
+        while model.fileRunsStarted < count, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(model.fileRunsStarted, count,
+                                    "file search never started",
+                                    file: file, line: line)
+    }
+
+    private static func fileItem(_ name: String) -> Item {
+        let url = URL(fileURLWithPath: "/tmp/\(name)")
+        return Item(id: Item.fileIDPrefix + url.path, title: name,
+                    subtitle: "/tmp", icon: .fileURL(url),
+                    action: .openFile(url), matchText: name)
+    }
+
+    func testFindKeywordRunsFileSearch() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find notes"
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(model.results.first?.title, "notes.txt")
+        XCTAssertEqual(model.results.first?.action,
+                       .openFile(URL(fileURLWithPath: "/tmp/notes.txt")))
+    }
+
+    func testFAliasRunsFileSearch() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "f notes"
+        await awaitResults(model) { $0.count == 1 }
+    }
+
+    func testBareFindKeywordStaysNormalSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// Unwired, "find x" is just a query — the same convention as
+    /// `filterLookup`/`maker`.
+    func testUnwiredFileSearcherLeavesQueryAsSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        model.query = "find x"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// "find " with nothing after it owns an empty list — the mode is
+    /// active but no scan runs.
+    func testEmptyFileTextOwnsEmptyList() async throws {
+        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        model.fileSearcher = { _, _ in [Self.fileItem("x")] }
+        model.query = "finder"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+        model.query = "find "
+        try await Task.sleep(nanoseconds: 300_000_000) // past the debounce
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertEqual(model.fileRunsStarted, 0)
+    }
+
+    /// A slow earlier scan must not stamp rows over a newer keystroke's
+    /// results — `fileGeneration` drops it.
+    func testStaleFileResultIsDropped() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { text, _ in
+            if text == "a" { Thread.sleep(forTimeInterval: 0.3) }
+            return [Self.fileItem("\(text).txt")]
+        }
+        model.query = "find a"
+        // The "a" scan must be in flight — not merely scheduled — before
+        // the query moves on, or there's nothing stale to drop.
+        await awaitFileStarts(model, atLeast: 1)
+        model.query = "find ab"
+        await awaitFileCompletions(model, atLeast: 2)
+        XCTAssertEqual(model.results.map(\.title), ["ab.txt"])
+    }
+
+    /// Leaving file mode restores normal results, and the in-flight scan's
+    /// late completion is discarded rather than stamped over them.
+    func testLeavingFileSearchDropsInFlightResult() async throws {
+        let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
+        model.fileSearcher = { _, _ in
+            Thread.sleep(forTimeInterval: 0.3)
+            return [Self.fileItem("stale.txt")]
+        }
+        model.query = "find a"
+        await awaitFileStarts(model, atLeast: 1)
+        let completionsBeforeExit = model.fileRunCompletions
+        model.query = "safari"
+        XCTAssertEqual(model.results.map(\.id), ["app:safari"])
+        await awaitFileCompletions(model, atLeast: completionsBeforeExit + 1)
+        XCTAssertEqual(model.results.map(\.id), ["app:safari"])
+    }
+
+    /// ⌘⏎ on a file row reveals it in Finder rather than opening — the
+    /// performer receives a swapped `.revealInFinder` action.
+    func testCommandModifierRevealsFileRow() {
+        let url = URL(fileURLWithPath: "/tmp/notes.txt")
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "file:/tmp/notes.txt", title: "notes.txt", subtitle: "/tmp",
+            icon: .fileURL(url), action: .openFile(url))])
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .revealInFinder(url))
+    }
+
+    /// The same ⌘⏎ reveal applies to app rows.
+    func testCommandModifierRevealsAppRow() {
+        let url = URL(fileURLWithPath: "/Applications/Safari.app")
+        let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.query = "safari"
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .revealInFinder(url))
+    }
+
+    /// Plain ⏎ still opens — the reveal swap must not leak into it.
+    func testPlainReturnOpensFileRow() {
+        let url = URL(fileURLWithPath: "/tmp/notes.txt")
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "file:/tmp/notes.txt", title: "notes.txt", subtitle: "/tmp",
+            icon: .fileURL(url), action: .openFile(url))])
+        model.submit()
+        XCTAssertEqual(submitted?.action, .openFile(url))
+    }
+
     // MARK: Maker routing
 
     /// A MakerModel whose LLM is a stub — generation resolves to a clean

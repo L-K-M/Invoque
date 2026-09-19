@@ -20,6 +20,10 @@ struct Item: Identifiable, Equatable {
     /// index-based ids are meaningless across queries, so frecency must
     /// never record them (see `SearchModel.recordSelection`).
     static let filterRowIDPrefix = "filter:"
+    /// Rows produced by `FileSearch` (`find`/`f` mode). They bypass
+    /// `SearchModel` like filter rows, so frecency never reads them —
+    /// excluded from `recordSelection` eligibility for the same reason.
+    static let fileIDPrefix = "file:"
 
     /// Stable namespaced id, e.g. `"app:com.apple.Safari"`,
     /// `"cmd:format-json"`, `"sys:lockScreen"`, `"web:safari"`, `"calc:2+2"`.
@@ -52,6 +56,11 @@ struct Item: Identifiable, Equatable {
     enum Action: Equatable {
         case openApp(URL)
         case openURL(URL)
+        /// Open a file in its default app — the `find` mode's ⏎.
+        case openFile(URL)
+        /// Show the file/app in Finder — ⌘⏎ on an `openFile`/`openApp` row
+        /// (`PanelModel.submit` performs the swap).
+        case revealInFinder(URL)
         case copyText(String)
         case runCommand(String, [String])
         /// Enter a filter-mode command: the panel expands the query to

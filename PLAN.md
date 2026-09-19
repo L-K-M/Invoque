@@ -131,6 +131,12 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - Sources v1: `AppSource` (NSWorkspace scan, LaunchServices apps), 
   `CommandSource` (from CommandStore), `CalculatorSource`, `SystemSource`
   (lock/sleep/restart/empty trash…), `WebSource` (fallback "Search for X").
+- File search: `find <query>` / `f <query>` routes to a built-in file mode —
+  a direct `FileManager` walk of `~`, **not** Spotlight/NSMetadataQuery
+  (metadata misses excluded locations). Hidden directories (`~/Library`,
+  `.git`) and `node_modules` are pruned; hidden files in visible dirs still
+  match. Debounced ~150 ms, cancellable, stale results discarded; ⏎ opens
+  the file, ⌘⏎ reveals it in Finder (also on app rows).
 - Fuzzy matcher: small fzf-style scorer (subsequence bonus, word-boundary
   bonus, recency/frecency weighting). Pure function — unit-test it. Zap's
   type-to-search matching is the local precedent.
@@ -403,6 +409,7 @@ Invoque/
 │   │   ├── ItemSource.swift             # protocol + Item model
 │   │   ├── FuzzyMatcher.swift           # pure, unit-tested
 │   │   ├── Frecency.swift
+│   │   ├── FileSearch.swift             # find/f mode: Spotlight-free dir walk
 │   │   └── Sources/                     # Apps, Commands, Calculator, System, Web
 │   ├── Commands/
 │   │   ├── CommandManifest.swift        # Codable + validation

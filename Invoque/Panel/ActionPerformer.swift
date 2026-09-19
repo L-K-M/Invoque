@@ -18,6 +18,10 @@ enum ActionPerformer {
             }
         case .openURL(let url):
             NSWorkspace.shared.open(url)
+        case .openFile(let url):
+            NSWorkspace.shared.open(url)
+        case .revealInFinder(let url):
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         case .copyText(let text):
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
