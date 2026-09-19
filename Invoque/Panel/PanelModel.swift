@@ -178,6 +178,13 @@ final class PanelModel: ObservableObject {
         activeFileSearch() != nil
     }
 
+    /// True in file mode when the text after the keyword is blank — the
+    /// view shows an input hint rather than claiming zero matches.
+    var fileSearchTextIsBlank: Bool {
+        guard let resolved = activeFileSearch() else { return false }
+        return resolved.text.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     // MARK: Searching
 
     /// Re-runs the current query. Called on query changes and by

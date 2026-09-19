@@ -223,7 +223,9 @@ struct PanelView: View {
                     if model.results.isEmpty {
                         // An empty query hasn't searched yet — hint instead
                         // of claiming there are no results.
-                        Text(model.fileSearchIsActive
+                        Text(model.fileSearchTextIsBlank
+                             ? "Type a filename"
+                             : model.fileSearchIsActive
                              ? "No matching files"
                              : model.query.isEmpty
                              ? "Search apps, commands, or the web"

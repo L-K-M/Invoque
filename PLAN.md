@@ -134,9 +134,10 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - File search: `find <query>` / `f <query>` routes to a built-in file mode —
   a direct `FileManager` walk of `~`, **not** Spotlight/NSMetadataQuery
   (metadata misses excluded locations). Hidden directories (`~/Library`,
-  `.git`) and dependency/build trees (`node_modules`, `Pods`, `venv`,
-  `target`, `build`, `dist`) are pruned; hidden files in visible dirs still
-  match. Debounced ~150 ms, cancellable, capped on visited entries and
+  `.git`) and dependency trees (`node_modules`, `Pods`, `venv`) are pruned
+  (case-insensitively); generic build dirs (`target`, `build`, `dist`) are
+  pruned only beside a project manifest, so a hand-made `Documents/build`
+  stays findable. Hidden files in visible dirs still match. Debounced ~150 ms, cancellable, capped on visited entries and
   matches, stale results discarded; ⏎ opens the file, ⌘⏎ reveals it in
   Finder (also on app rows). Caveat: TCC-guarded folders (Desktop,
   Documents, Downloads) need the system consent prompt on first access —

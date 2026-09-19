@@ -56,6 +56,35 @@ final class FileSearchTests: XCTestCase {
         XCTAssertTrue(scannedNames("index").isEmpty)
     }
 
+    /// Every unconditional entry in `skippedDirectoryNames` must prune its
+    /// contents — keeps the list honest as it grows.
+    func testAllSkippedDirectoryNamesPruneContents() throws {
+        for name in FileSearch.skippedDirectoryNames {
+            try makeFile("\(name)/probe-\(name).txt")
+            XCTAssertTrue(scannedNames("probe-\(name)").isEmpty,
+                          "expected \(name) contents to be pruned")
+        }
+    }
+
+    /// The comparison lowercases: a `Pods` dir prunes exactly like `pods`.
+    func testSkippedNamesAreCaseInsensitive() throws {
+        try makeFile("Pods/podfile-case-probe.txt")
+        XCTAssertTrue(scannedNames("podfile-case-probe").isEmpty)
+    }
+
+    /// `build`/`dist`/`target` prune only beside a project manifest —
+    /// generated output skips, a hand-made folder's files stay findable.
+    func testProjectScopedDirPrunedBesideManifest() throws {
+        try makeFile("proj/package.json")
+        try makeFile("proj/build/scoped-probe.txt")
+        XCTAssertTrue(scannedNames("scoped-probe").isEmpty)
+    }
+
+    func testProjectScopedDirWithoutManifestIsSearched() throws {
+        try makeFile("docs/build/plain-probe.txt")
+        XCTAssertEqual(scannedNames("plain-probe"), ["plain-probe.txt"])
+    }
+
     func testPackageContentsAreSkipped() {
         XCTAssertTrue(scannedNames("inside").isEmpty)
     }
@@ -79,8 +108,9 @@ final class FileSearchTests: XCTestCase {
     /// considered, whatever the tree holds. Restore the default so later
     /// tests in the process aren't capped.
     func testVisitedCapStopsTheWalk() {
+        let defaultMaxVisited = FileSearch.maxVisited
         FileSearch.maxVisited = 0
-        defer { FileSearch.maxVisited = 500_000 }
+        defer { FileSearch.maxVisited = defaultMaxVisited }
         XCTAssertTrue(scannedNames("txt").isEmpty)
     }
 

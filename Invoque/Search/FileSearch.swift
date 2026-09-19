@@ -11,10 +11,11 @@ import Foundation
 /// - Hidden *directories* are skipped (`~/Library`, `.git`, `~/.cache`) — the
 ///   single biggest win — while hidden *files* in visible directories still
 ///   match, so `~/.zshrc` remains findable.
-/// - Package interiors (`.skipsPackageDescendants`) and dependency/build
-///   trees (`node_modules`, `Pods`, `venv`, `target`, `build`, `dist`) are
-///   never entered; they are noise for "find a file" intent. The directory
-///   itself still matches — only its contents are pruned.
+/// - Package interiors (`.skipsPackageDescendants`), dependency trees
+///   (`node_modules`, `Pods`, `venv`), and manifest-adjacent build dirs
+///   (`target`, `build`, `dist`) are never entered — noise for "find a
+///   file" intent. The directory itself still matches; only its contents
+///   are pruned.
 /// - `maxVisited` bounds the worst case on giant trees; `maxMatches` bounds
 ///   the sort input. Both are `var` so tests can shrink them.
 ///
@@ -29,12 +30,25 @@ enum FileSearch {
         [FileManager.default.homeDirectoryForCurrentUser]
     }
 
-    /// Directory names never descended into. Hidden directories are already
-    /// pruned by the `isHidden` check; this list is for visible-but-noisy
-    /// trees — dependency and build output folders that bury real files in
-    /// bulk.
+    /// Directory names never descended into — compared case-insensitively
+    /// (a case-insensitive volume can't distinguish them anyway). Hidden
+    /// directories are pruned separately via `isHidden`.
     static let skippedDirectoryNames: Set<String> = [
-        "node_modules", "Pods", "venv", "target", "build", "dist",
+        "node_modules", "pods", "venv",
+    ]
+
+    /// Generic names pruned only next to a project manifest — a hand-made
+    /// `~/Documents/build` folder's files are real and must stay findable,
+    /// while `proj/target` beside `Cargo.toml` is generated output.
+    static let projectScopedDirectoryNames: Set<String> = [
+        "target", "build", "dist",
+    ]
+
+    /// Files whose presence beside a `projectScopedDirectoryNames` entry
+    /// marks it as generated output worth skipping.
+    private static let projectManifestNames = [
+        "package.json", "Cargo.toml", "Podfile", "Package.swift",
+        "pom.xml", "pyproject.toml",
     ]
 
     /// Hard stop on total entries enumerated across all roots — bounds a
@@ -109,17 +123,32 @@ enum FileSearch {
             if visited > maxVisited { return }
 
             let values = try? url.resourceValues(forKeys: [.isHiddenKey, .isDirectoryKey])
-            if values?.isDirectory == true,
-               (values?.isHidden == true
-                || skippedDirectoryNames.contains(url.lastPathComponent)) {
-                enumerator.skipDescendants()
-                continue
+            if values?.isDirectory == true {
+                let name = url.lastPathComponent.lowercased()
+                if values?.isHidden == true
+                    || skippedDirectoryNames.contains(name)
+                    || (projectScopedDirectoryNames.contains(name)
+                        && hasProjectManifest(beside: url)) {
+                    enumerator.skipDescendants()
+                    continue
+                }
             }
             guard seenPaths.insert(url.standardizedFileURL.path).inserted else { continue }
             if let score = FuzzyMatcher.score(query, candidate: url.lastPathComponent) {
                 matches.append(Match(url: url, score: score))
                 if matches.count >= maxMatches { return }
             }
+        }
+    }
+
+    /// Whether `directory`'s parent holds a project manifest — the signal
+    /// that a generically-named dir (`build`, `dist`, `target`) is
+    /// generated output rather than user content.
+    private static func hasProjectManifest(beside directory: URL) -> Bool {
+        let parent = directory.deletingLastPathComponent()
+        return projectManifestNames.contains {
+            FileManager.default.fileExists(
+                atPath: parent.appendingPathComponent($0).path)
         }
     }
 
