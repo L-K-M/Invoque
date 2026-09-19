@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Invoque
 
@@ -177,6 +178,47 @@ final class AppearancePresetTests: XCTestCase {
                             "\(preset.name) decorationStyle")
             XCTAssertNotNil(DecorationPosition(rawValue: preset.decorationPosition),
                             "\(preset.name) decorationPosition")
+        }
+    }
+
+    /// The icon-art themes must stay in the built-in set — Memphis is the
+    /// day side (dark label on cream), Synthwave the night side.
+    func testBuiltInsIncludeIconThemes() throws {
+        let memphis = try XCTUnwrap(AppearancePreset.builtIns
+            .first { $0.name == "Memphis" })
+        let synthwave = try XCTUnwrap(AppearancePreset.builtIns
+            .first { $0.name == "Synthwave" })
+        XCTAssertEqual(memphis.decorationStyle, DecorationStyle.memphis.rawValue)
+        XCTAssertEqual(synthwave.decorationStyle,
+                       DecorationStyle.synthwave.rawValue)
+        // Their corner decorations are palette-driven stripes — an empty
+        // palette would render nothing.
+        XCTAssertFalse(DecorationStyle.memphis.colors.isEmpty)
+        XCTAssertFalse(DecorationStyle.synthwave.colors.isEmpty)
+        // CRT is part of each theme's reference art, not an add-on:
+        // Synthwave is a scanlined sunset, Memphis is flat print.
+        XCTAssertTrue(synthwave.crtEnabled)
+        XCTAssertFalse(memphis.crtEnabled)
+    }
+
+    /// Every built-in's colors must parse — a bad hex would silently
+    /// fall back to the defaults in `apply(to:)`, and a `.gradient`
+    /// preset's `gradientHex` is just as load-bearing as its `tintHex`.
+    /// Decoration palettes are parsed too: `Color(hexString:)` swallows
+    /// a malformed value as `.clear`, an invisible stripe.
+    func testBuiltInColorsParse() {
+        for preset in AppearancePreset.builtIns {
+            for hex in [preset.tintHex, preset.gradientHex,
+                        preset.highlightHex, preset.labelHex] {
+                XCTAssertNotNil(NSColor(hex: hex),
+                                "\(preset.name) color \(hex)")
+            }
+        }
+        for style in DecorationStyle.allCases {
+            for hex in style.hexStrings {
+                XCTAssertNotNil(NSColor(hex: hex),
+                                "\(style.label) palette color \(hex)")
+            }
         }
     }
 

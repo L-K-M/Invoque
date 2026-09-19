@@ -377,7 +377,7 @@ extension AppearancePreset {
     /// Ready-made themes shown in Appearance settings. The retro trio keeps the
     /// same names and values as Zap's and Jetty's so a family look means the
     /// same thing in every app.
-    static let builtIns: [AppearancePreset] = [classic, summon, graphite, zxNight, vaporwave, amiga]
+    static let builtIns: [AppearancePreset] = [classic, summon, graphite, zxNight, vaporwave, synthwave, memphis, amiga]
 
     /// The shipping defaults, as a named preset.
     static let classic = AppearancePreset(
@@ -483,6 +483,53 @@ extension AppearancePreset {
         decorationSize: 12,
         crtEnabled: true,
         crtIntensity: 0.6)
+
+    /// The icon art's night side (`media-sources/icon.png`): the outrun
+    /// palette of navy sky, striped magenta sun and pink horizon grid.
+    /// CRT on — the scanlines are part of the reference, not a novelty.
+    static let synthwave = AppearancePreset(
+        name: "Synthwave",
+        material: .gradient,
+        tintHex: "#150D33",
+        gradientHex: "#341361",
+        gradientAngle: 25,
+        backgroundOpacity: 0.88,
+        highlightHex: "#FB1A91",
+        highlightOpacity: 0.5,
+        labelHex: "#F5F0FF",
+        cornerRadius: 16,
+        highlightCornerRadius: 10,
+        adaptiveAccent: false,
+        decorationStyle: DecorationStyle.synthwave.rawValue,
+        decorationPosition: DecorationPosition.topTrailing.rawValue,
+        decorationOpacity: 1,
+        decorationSize: 10,
+        crtEnabled: true,
+        crtIntensity: 0.5)
+
+    /// The app icon itself (`media-sources/icon2.png`): flat Memphis Group
+    /// print — cream paper, navy squiggle text, a pink wash for the
+    /// selection, harder corners than the glass looks because the
+    /// reference is geometry, not chrome.
+    static let memphis = AppearancePreset(
+        name: "Memphis",
+        material: .solid,
+        tintHex: "#FEFBEC",
+        gradientHex: "#EFE7D5",
+        gradientAngle: 0,
+        backgroundOpacity: 0.97,
+        highlightHex: "#FB04B5",
+        highlightOpacity: 0.35,
+        labelHex: "#000517",
+        cornerRadius: 10,
+        highlightCornerRadius: 6,
+        adaptiveAccent: false,
+        decorationStyle: DecorationStyle.memphis.rawValue,
+        decorationPosition: DecorationPosition.topTrailing.rawValue,
+        decorationOpacity: 1,
+        decorationSize: 10,
+        crtEnabled: false,
+        crtIntensity: 0.5)
 
     static let amiga = AppearancePreset(
         name: "Amiga",

@@ -125,7 +125,9 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   `CRTScreenOverlay`, copied from Zap.
 - **Presets** (`AppearancePreset`): Codable snapshot + built-ins (Classic,
   Summon — the signature violet cockpit — Graphite, ZX Night, Vaporwave,
-  Amiga) + JSON import/export. The decoder sniffs keys and accepts **Jetty**
+  Synthwave, Memphis, Amiga) + JSON import/export. Synthwave and Memphis
+  mirror the `media-sources/` icon art — night and day halves of the same
+  palette. The decoder sniffs keys and accepts **Jetty**
   and **Zap** theme files too; Invoque's own field names match Jetty's where
   they coincide, so exports import into Jetty.
 
@@ -471,7 +473,7 @@ Invoque/
 │   │   └── DecorationStyle/Position · AccessibilityDisplaySettings  # (Zap)
 │   └── Resources/Assets.xcassets
 ├── InvoqueTests/                        # matcher, manifest, parser, runtime
-├── scripts/{build.sh,release.sh}        # lkm-build/lkm-release stubs
+├── scripts/{build.sh,release.sh,make-app-icon.py}   # lkm stubs; icon2.png → appiconset + accent
 ├── .github/workflows/{ci,release}.yml   # hardened per family conventions
 ├── AGENTS.md · PLAN.md · RESEARCH.md · README.md · LICENSE
 └── .gitignore                           # Zap's

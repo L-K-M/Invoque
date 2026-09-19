@@ -17,6 +17,8 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
     case vaporwave
     case sunset
     case love
+    case memphis
+    case synthwave
     case amiga
     case amigaPixel
 
@@ -30,6 +32,8 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
         case .vaporwave: return "Vaporwave"
         case .sunset: return "Sunset"
         case .love: return "Love"
+        case .memphis: return "Memphis"
+        case .synthwave: return "Synthwave"
         case .amiga: return "Amiga boing ball"
         case .amigaPixel: return "Amiga boing ball (pixel)"
         }
@@ -41,12 +45,10 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
     }
 
     /// Stripe colors, ordered from the one nearest the corner inward. Empty for
-    /// `.none`.
-    var colors: [Color] {
-        hexes.map { Color(hexString: $0) }
-    }
-
-    private var hexes: [String] {
+    /// `.none`. Internal (not private) so tests can parse every hex directly —
+    /// `Color(hexString:)` swallows a malformed value as `.clear`, which would
+    /// render an invisible stripe.
+    var hexStrings: [String] {
         switch self {
         case .none: return []
         case .zxSpectrum: return ["#D52B1E", "#FFD500", "#00A651", "#00AEEF"]
@@ -54,7 +56,16 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
         case .vaporwave: return ["#FF6AD5", "#C774E8", "#AD8CFF", "#8795E8", "#94D0FF"]
         case .sunset: return ["#FF512F", "#F09819", "#FFD200"]
         case .love: return ["#E40303", "#FF8C00", "#FFED00", "#008026", "#004DFF", "#750787"]
+        // The app's own palettes: Memphis Group's print brights
+        // (pink/cyan/yellow on cream, grounded by the navy squiggle dark)
+        // and the outrun sunset — hot pink, burnt orange, electric violet.
+        case .memphis: return ["#FB04B5", "#02FBF6", "#FDE133", "#000517"]
+        case .synthwave: return ["#FB1A91", "#FF9A3D", "#B61FFF"]
         case .amiga, .amigaPixel: return []   // drawn as a ball, not stripes — see BoingBallDecoration
         }
+    }
+
+    var colors: [Color] {
+        hexStrings.map { Color(hexString: $0) }
     }
 }
