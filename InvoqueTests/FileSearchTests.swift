@@ -86,6 +86,9 @@ final class FileSearchTests: XCTestCase {
         try makeFile("proj/CMakeLists.txt")
         try makeFile("proj/build/cmake-probe.txt")
         XCTAssertTrue(scannedNames("cmake-probe").isEmpty)
+        // The pruned dir's own name must not match either — the walk
+        // continues before scoring (see FileSearch's doc comment).
+        XCTAssertTrue(scannedNames("build").isEmpty)
     }
 
     func testProjectScopedDirWithoutManifestIsSearched() throws {

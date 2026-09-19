@@ -225,6 +225,8 @@ struct PanelView: View {
                         // of claiming there are no results.
                         Text(model.fileSearchTextIsBlank
                              ? "Type a filename"
+                             : model.fileScanIsPending
+                             ? "Searching files…"
                              : model.fileSearchIsActive
                              ? "No matching files"
                              : model.query.isEmpty

@@ -161,14 +161,17 @@ final class PanelModel: ObservableObject {
     static let fileSearchKeywords = ["find", "f"]
 
     /// The resolved `find`/`f` session when `query` is `<keyword> <rest>`
-    /// and a searcher is wired, else nil. `text` may be empty — "find "
-    /// owns an empty list until there's something worth scanning for.
+    /// and a searcher is wired, else nil. `text` is whitespace-trimmed —
+    /// "f  x" scans "x", and a spaces-only rest resolves blank. Blank owns
+    /// an empty list until there's something worth scanning for.
     private func activeFileSearch() -> (keyword: String, text: String)? {
         guard fileSearcher != nil,
               let spaceIndex = query.firstIndex(of: " ") else { return nil }
         let keyword = String(query[..<spaceIndex])
         guard Self.fileSearchKeywords.contains(keyword) else { return nil }
-        return (keyword, String(query[spaceIndex...].dropFirst()))
+        let text = String(query[spaceIndex...].dropFirst())
+            .trimmingCharacters(in: .whitespaces)
+        return (keyword, text)
     }
 
     /// Whether a file scan owns the list right now — the prefix is typed
@@ -181,8 +184,14 @@ final class PanelModel: ObservableObject {
     /// True in file mode when the text after the keyword is blank — the
     /// view shows an input hint rather than claiming zero matches.
     var fileSearchTextIsBlank: Bool {
-        guard let resolved = activeFileSearch() else { return false }
-        return resolved.text.trimmingCharacters(in: .whitespaces).isEmpty
+        activeFileSearch()?.text.isEmpty ?? false
+    }
+
+    /// True between scheduling a scan and its rows landing — the view says
+    /// "Searching files…" rather than a premature "No matching files".
+    /// `fileTask` is nilled on completion, cancel, or mode exit.
+    var fileScanIsPending: Bool {
+        fileTask != nil && fileSearchIsActive
     }
 
     // MARK: Searching
@@ -387,8 +396,9 @@ final class PanelModel: ObservableObject {
         // "find " with nothing after it owns an empty list — a blank query
         // would match everything and the cap would fill with junk. Clearing
         // on the guard-else covers backspacing to blank mid-session too.
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty,
-              let searcher = fileSearcher else {
+        // `text` arrives pre-trimmed from `activeFileSearch`.
+        guard !text.isEmpty, let searcher = fileSearcher else {
+            fileTask = nil // cancelled above — drop the dead handle
             if !results.isEmpty { results = [] }
             return
         }
@@ -402,9 +412,13 @@ final class PanelModel: ObservableObject {
                 // after this run's effects land, so a poller that sees the
                 // tick also sees the final rows/selection state.
                 defer { fileRunCompletions += 1 }
+                // A stale run leaves `fileTask` alone — a newer task owns
+                // it, and nil-ing here would break its cancellation.
+                guard generation == fileGeneration else { return }
+                fileTask = nil
                 // Identical rows must not re-assign: results' didSet resets
                 // the selection, so a no-op refresh would yank it to the top.
-                guard generation == fileGeneration, rows != results else { return }
+                guard rows != results else { return }
                 results = rows
             }
         }

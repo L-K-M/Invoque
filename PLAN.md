@@ -137,9 +137,12 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   `.git`) and dependency trees (`node_modules`, `Pods`, `venv`) are pruned
   (case-insensitively); generic build dirs (`target`, `build`, `dist`) are
   pruned only beside a project manifest, so a hand-made `Documents/build`
-  stays findable. Hidden files in visible dirs still match. Debounced ~150 ms, cancellable, capped on visited entries and
-  matches, stale results discarded; ⏎ opens the file, ⌘⏎ reveals it in
-  Finder (also on app rows). Caveat: TCC-guarded folders (Desktop,
+  stays findable. Hidden files in visible dirs still match. Debounced
+  ~150 ms, cancellable, capped on visited entries and matches, stale
+  results discarded; the panel shows a "Searching files…" hint while a
+  scan is in flight rather than a premature "no matches". ⏎ opens the
+  file, ⌘⏎ reveals it in Finder (also on app rows). Caveat: TCC-guarded
+  folders (Desktop,
   Documents, Downloads) need the system consent prompt on first access —
   the walk silently skips what it can't read. Follow-up: stream matches
   into the list as they're found rather than delivering one batch.

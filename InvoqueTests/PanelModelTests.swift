@@ -565,6 +565,30 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
     }
 
+    /// A double space after the keyword must not leak whitespace into the
+    /// scanned query — `activeFileSearch` trims before the searcher sees it.
+    func testFileSearchTrimsExtraSpaces() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { text, _ in [Self.fileItem("\(text).txt")] }
+        model.query = "f  alpha"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["alpha.txt"])
+    }
+
+    /// Between scheduling and rows landing the scan is pending — the view
+    /// reads this to show progress rather than "No matching files".
+    func testFileScanIsPendingDuringScan() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in
+            Thread.sleep(forTimeInterval: 0.2)
+            return [Self.fileItem("x.txt")]
+        }
+        model.query = "find x"
+        XCTAssertTrue(model.fileScanIsPending) // debouncing already counts
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertFalse(model.fileScanIsPending)
+    }
+
     /// "find " with nothing after it owns an empty list — the mode is
     /// active but no scan runs.
     func testEmptyFileTextOwnsEmptyList() async throws {
@@ -607,7 +631,7 @@ final class PanelModelTests: XCTestCase {
     func testStaleFileResultIsDropped() async throws {
         let model = makeModel(items: [])
         model.fileSearcher = { text, _ in
-            if text == "a" { Thread.sleep(forTimeInterval: 0.3) }
+            if text == "a" { Thread.sleep(forTimeInterval: 1.0) }
             return [Self.fileItem("\(text).txt")]
         }
         model.query = "find a"
@@ -624,7 +648,7 @@ final class PanelModelTests: XCTestCase {
     func testLeavingFileSearchDropsInFlightResult() async throws {
         let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
         model.fileSearcher = { _, _ in
-            Thread.sleep(forTimeInterval: 0.3)
+            Thread.sleep(forTimeInterval: 1.0)
             return [Self.fileItem("stale.txt")]
         }
         model.query = "find a"
