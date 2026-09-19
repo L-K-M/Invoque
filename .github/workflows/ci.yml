@@ -30,7 +30,7 @@ jobs:
       # a SHA cannot. Same pin-and-verify discipline zai-code-review.yml already uses.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false   # nothing here runs git after checkout
+          persist-credentials: false   # only local `git diff` runs after checkout; it needs no credentials
 
       # The committed app icon must match what the script regenerates from
       # media-sources/icon2.png — otherwise the appiconset silently drifts
@@ -39,6 +39,7 @@ jobs:
         run: |
           python3 scripts/make-app-icon.py
           git diff --exit-code -- Invoque/Resources/Assets.xcassets
+          test -z "$(git status --porcelain -- Invoque/Resources/Assets.xcassets)"
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
