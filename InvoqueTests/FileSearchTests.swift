@@ -154,6 +154,11 @@ final class FileSearchTests: XCTestCase {
         let appURL = root.appendingPathComponent("Fixture.app")
         let plist: [String: Any] = ["CFBundleIdentifier": "com.test.fixture",
                                     "CFBundlePackageType": "APPL"]
+        // The setUp fixture already made Fixture.app/Contents, but the
+        // plist write shouldn't silently depend on fixture layout.
+        try FileManager.default.createDirectory(
+            at: appURL.appendingPathComponent("Contents"),
+            withIntermediateDirectories: true)
         try PropertyListSerialization
             .data(fromPropertyList: plist, format: .xml, options: 0)
             .write(to: appURL.appendingPathComponent("Contents/Info.plist"))
