@@ -23,7 +23,7 @@ struct AppearancePreset: Codable, Equatable, Identifiable {
     /// own field: Zap/Jetty themes have no typeface, so their lenses and
     /// decode take the default. The memberwise default keeps the built-in
     /// and import initializers source-compatible.
-    var typeface: String = "system"
+    var typeface: String = Preferences.Default.panelTypeface.rawValue
     var cornerRadius: Double
     var highlightCornerRadius: Double
     var adaptiveAccent: Bool
