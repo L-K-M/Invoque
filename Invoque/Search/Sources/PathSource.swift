@@ -47,15 +47,16 @@ final class PathSource: ItemSource {
     /// thing a pasted path must never do. Unsafe: application bundles
     /// (the `.app` extension outright, or any package declaring
     /// `CFBundlePackageType` `APPL`), formats whose default handler runs
-    /// them (`.jar`, `.workflow`, `.terminal`), and plain executables
+    /// them (`.jar`, `.workflow`, `.terminal`, `.term`), and plain executables
     /// (scripts, binaries with the +x bit). Document packages such as
     /// `.xcodeproj` or `.rtfd` open in their editors — no payload runs —
     /// so they stay openable.
     /// `PanelModel` consults the same policy for the ⌘⏎ inverse.
     static func isSafeToOpen(_ url: URL) -> Bool {
-        // `.jar`, `.workflow`, `.terminal` run via their default handler on
-        // open — no +x bit, no APPL type — so they reveal like apps.
-        if ["app", "jar", "workflow", "terminal"]
+        // `.jar`, `.workflow`, `.terminal`/`.term` run via their default
+        // handler on open — no +x bit, no APPL type — so they reveal like
+        // apps.
+        if ["app", "jar", "workflow", "terminal", "term"]
             .contains(url.pathExtension.lowercased()) { return false }
         if (Bundle(url: url)?.object(forInfoDictionaryKey: "CFBundlePackageType")
             as? String) == "APPL" {

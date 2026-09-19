@@ -743,8 +743,11 @@ final class PanelModelTests: XCTestCase {
 
     /// The inverse for a pasted file path: the row's default action is
     /// already reveal, so ⌘⏎ means open.
-    func testCommandModifierOpensRevealRow() {
-        let url = URL(fileURLWithPath: "/tmp/notes.txt")
+    func testCommandModifierOpensRevealRow() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-\(UUID().uuidString).txt")
+        FileManager.default.createFile(atPath: url.path, contents: Data())
+        defer { try? FileManager.default.removeItem(at: url) }
         let model = makeModel(items: [])
         var submitted: ResultRow?
         model.onSubmit = { submitted = $0 }
