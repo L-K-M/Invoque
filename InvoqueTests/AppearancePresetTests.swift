@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Invoque
 
@@ -177,6 +178,28 @@ final class AppearancePresetTests: XCTestCase {
                             "\(preset.name) decorationStyle")
             XCTAssertNotNil(DecorationPosition(rawValue: preset.decorationPosition),
                             "\(preset.name) decorationPosition")
+        }
+    }
+
+    /// The icon-art themes must stay in the built-in set — Memphis is the
+    /// day side (dark label on cream), Synthwave the night side.
+    func testBuiltInsIncludeIconThemes() throws {
+        let memphis = try XCTUnwrap(AppearancePreset.builtIns
+            .first { $0.name == "Memphis" })
+        let synthwave = try XCTUnwrap(AppearancePreset.builtIns
+            .first { $0.name == "Synthwave" })
+        XCTAssertEqual(memphis.decorationStyle, DecorationStyle.memphis.rawValue)
+        XCTAssertEqual(synthwave.decorationStyle,
+                       DecorationStyle.synthwave.rawValue)
+        // Every built-in's colors must parse — a bad hex would silently
+        // fall back to the defaults in `apply(to:)`.
+        for preset in [memphis, synthwave] {
+            XCTAssertNotNil(NSColor(hex: preset.tintHex),
+                            "\(preset.name) tintHex")
+            XCTAssertNotNil(NSColor(hex: preset.highlightHex),
+                            "\(preset.name) highlightHex")
+            XCTAssertNotNil(NSColor(hex: preset.labelHex),
+                            "\(preset.name) labelHex")
         }
     }
 
