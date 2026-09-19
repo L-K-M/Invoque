@@ -11,8 +11,10 @@ import Foundation
 /// - Hidden *directories* are skipped (`~/Library`, `.git`, `~/.cache`) — the
 ///   single biggest win — while hidden *files* in visible directories still
 ///   match, so `~/.zshrc` remains findable.
-/// - Package interiors (`.skipsPackageDescendants`) and `node_modules` are
-///   never entered; they are noise for "find a file" intent.
+/// - Package interiors (`.skipsPackageDescendants`) and dependency/build
+///   trees (`node_modules`, `Pods`, `venv`, `target`, `build`, `dist`) are
+///   never entered; they are noise for "find a file" intent. The directory
+///   itself still matches — only its contents are pruned.
 /// - `maxVisited` bounds the worst case on giant trees; `maxMatches` bounds
 ///   the sort input. Both are `var` so tests can shrink them.
 ///
@@ -29,8 +31,11 @@ enum FileSearch {
 
     /// Directory names never descended into. Hidden directories are already
     /// pruned by the `isHidden` check; this list is for visible-but-noisy
-    /// trees.
-    static let skippedDirectoryNames: Set<String> = ["node_modules"]
+    /// trees — dependency and build output folders that bury real files in
+    /// bulk.
+    static let skippedDirectoryNames: Set<String> = [
+        "node_modules", "Pods", "venv", "target", "build", "dist",
+    ]
 
     /// Hard stop on total entries enumerated across all roots — bounds a
     /// pathological tree (or a root that turned out to be a mount).

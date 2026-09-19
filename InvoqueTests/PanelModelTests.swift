@@ -527,12 +527,23 @@ final class PanelModelTests: XCTestCase {
         model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
         model.query = "f notes"
         await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(model.results.first?.title, "notes.txt")
+        XCTAssertEqual(model.results.first?.action,
+                       .openFile(URL(fileURLWithPath: "/tmp/notes.txt")))
     }
 
     func testBareFindKeywordStaysNormalSearch() {
         let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
         model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
         model.query = "find"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// The `f` alias follows the same bare-keyword rule as `find`.
+    func testBareFAliasStaysNormalSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "f"
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
     }
 
@@ -543,6 +554,14 @@ final class PanelModelTests: XCTestCase {
         let model = makeModel(items: [Self.appItem(id: "app:finder",
                                                  title: "Find X Utility")])
         model.query = "find x"
+        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// Unwired `f x` degrades to a normal query, mirroring `find x`.
+    func testUnwiredFAliasLeavesQueryAsSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:finder",
+                                                 title: "F X Utility")])
+        model.query = "f x"
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
     }
 
@@ -557,6 +576,30 @@ final class PanelModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 300_000_000) // past the debounce
         XCTAssertTrue(model.results.isEmpty)
         XCTAssertEqual(model.fileRunsStarted, 0)
+    }
+
+    /// Backspacing to "find " mid-session must clear the previous scan's
+    /// rows — a stale row left on screen is still selectable.
+    func testBlankingFileTextClearsRows() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find a"
+        await awaitResults(model) { $0.count == 1 }
+        model.query = "find "
+        XCTAssertTrue(model.results.isEmpty)
+    }
+
+    /// A rescan-driven `refreshResults` on an unchanged `find` session must
+    /// not restart a full disk walk for rows already on screen.
+    func testIdenticalFileQuerySkipsRescan() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find a"
+        await awaitFileCompletions(model, atLeast: 1)
+        model.refreshResults()
+        try await Task.sleep(nanoseconds: 300_000_000) // past the debounce
+        XCTAssertEqual(model.fileRunsStarted, 1)
+        XCTAssertEqual(model.results.map(\.title), ["notes.txt"])
     }
 
     /// A slow earlier scan must not stamp rows over a newer keystroke's
@@ -586,10 +629,13 @@ final class PanelModelTests: XCTestCase {
         }
         model.query = "find a"
         await awaitFileStarts(model, atLeast: 1)
-        let completionsBeforeExit = model.fileRunCompletions
         model.query = "safari"
         XCTAssertEqual(model.results.map(\.id), ["app:safari"])
-        await awaitFileCompletions(model, atLeast: completionsBeforeExit + 1)
+        // This is the model's first file run, so `atLeast: 1` means "the
+        // in-flight scan's landing" — a snapshot baseline could already
+        // include it if the scan finished between the start-poll and the
+        // capture, and would then wait for a second run that never comes.
+        await awaitFileCompletions(model, atLeast: 1)
         XCTAssertEqual(model.results.map(\.id), ["app:safari"])
     }
 

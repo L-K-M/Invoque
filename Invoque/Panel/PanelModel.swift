@@ -232,6 +232,7 @@ final class PanelModel: ObservableObject {
         fileTask?.cancel()
         fileTask = nil
         activeFileKeyword = nil
+        activeFileText = nil
         fileGeneration += 1
     }
 
@@ -352,25 +353,38 @@ final class PanelModel: ObservableObject {
     /// The keyword owning the list right now — switching modes clears rows
     /// that don't belong to the new session (see `activeFilterKeyword`).
     private var activeFileKeyword: String?
+    /// The text the current file session last scheduled — a store-rescan
+    /// `refreshResults` re-running the identical query skips a redundant
+    /// disk walk.
+    private var activeFileText: String?
 
     /// Debounced per-keystroke scan. Rows replace the list on arrival;
     /// `fileGeneration` drops results for stale queries. The scan itself is
     /// synchronous and polls `Task.isCancelled` — it runs inside this task,
     /// so `cancelFileSearch` reaches it.
     private func scheduleFileSearch(keyword: String, text: String) {
+        // Identical session — this is a rescan-driven refresh, not a new
+        // keystroke; restarting the walk would redo seconds of disk work
+        // for the rows already on screen.
+        if activeFileKeyword == keyword, activeFileText == text { return }
         // Entering file mode (or switching keywords) clears the previous
         // list — otherwise the old session's rows linger during the debounce.
         if activeFileKeyword != keyword {
             activeFileKeyword = keyword
             results = []
         }
+        activeFileText = text
         fileGeneration += 1
         let generation = fileGeneration
         fileTask?.cancel()
         // "find " with nothing after it owns an empty list — a blank query
-        // would match everything and the cap would fill with junk.
+        // would match everything and the cap would fill with junk. Clearing
+        // on the guard-else covers backspacing to blank mid-session too.
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty,
-              let searcher = fileSearcher else { return }
+              let searcher = fileSearcher else {
+            if !results.isEmpty { results = [] }
+            return
+        }
         fileTask = Task {
             try? await Task.sleep(nanoseconds: Self.fileSearchDebounceNanoseconds)
             guard !Task.isCancelled else { return }
