@@ -162,7 +162,7 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - Ranking: match tier first — exact prefix > exact infix > fuzzy
   subsequence — then shorter match text, then frecency (persisted usage
   counts in UserDefaults), then the alignment score, then title/id for a
-  total order. Pinned rows keep their slots: `path:` rows first (a typed
+  total order. Pinned rows keep their slots: `PathSource` rows first (a typed
   address is a direct intent), calculator answers next, web fallback last.
 - Stability: extending the query preserves the displayed order of rows
   that still match — a row the user is reaching for never moves under
