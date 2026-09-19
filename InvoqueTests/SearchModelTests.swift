@@ -245,7 +245,9 @@ final class SearchModelTests: XCTestCase {
     func testPathRowPinsFirst() {
         let source = StubSource()
         source.stubbedItems = [
-            Self.appItem(id: "app:spoiler", title: "tmp"),
+            // An exact-prefix match — the spoiler must actually rank for
+            // the pin-over-ranked assertion to mean anything.
+            Self.appItem(id: "app:spoiler", title: "/tmp"),
             Self.appItem(id: "calc:2+2", title: "= 4"),
         ]
         let model = makeModel(sources: [source, PathSource()])
