@@ -354,8 +354,9 @@ final class PanelModel: ObservableObject {
     // MARK: File-search mode
 
     /// Debounce for `find`/`f` re-scans — longer than the filter debounce:
-    /// a directory walk costs more per run than a JS query.
-    private static let fileSearchDebounceNanoseconds: UInt64 = 150_000_000
+    /// a directory walk costs more per run than a JS query. `var` so timing
+    /// tests shrink it instead of sleeping past the production value.
+    static var fileSearchDebounceNanoseconds: UInt64 = 150_000_000
 
     /// @Published so a completion that clears the handle without touching
     /// `results` (identical rows) still republishes — `fileScanIsPending`

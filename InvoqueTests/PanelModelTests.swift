@@ -6,11 +6,13 @@ final class PanelModelTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
     private var commandDirectory: URL!
+    private var savedFileDebounce: UInt64!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         suiteName = "invoque-test-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
+        savedFileDebounce = PanelModel.fileSearchDebounceNanoseconds
         commandDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("invoque-panel-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: commandDirectory,
@@ -18,6 +20,7 @@ final class PanelModelTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        PanelModel.fileSearchDebounceNanoseconds = savedFileDebounce
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         suiteName = nil
@@ -492,6 +495,14 @@ final class PanelModelTests: XCTestCase {
                                     file: file, line: line)
     }
 
+    /// Shrinks the file-search debounce so "past the debounce" sleeps are
+    /// short and stay decoupled from the production constant — a debounce
+    /// bump can't silently turn a no-scan assertion vacuous. Restored in
+    /// tearDown.
+    private func withShortFileDebounce() {
+        PanelModel.fileSearchDebounceNanoseconds = 10_000_000
+    }
+
     /// The `awaitStarts` twin for file scans.
     private func awaitFileStarts(_ model: PanelModel, atLeast count: Int,
                                  file: StaticString = #filePath,
@@ -580,10 +591,11 @@ final class PanelModelTests: XCTestCase {
     /// is dispatched.
     func testNewlineOnlyFileTextIsBlank() async throws {
         let model = makeModel(items: [])
+        withShortFileDebounce()
         model.fileSearcher = { _, _ in [Self.fileItem("x")] }
         model.query = "find \n"
         XCTAssertTrue(model.fileSearchTextIsBlank)
-        try await Task.sleep(nanoseconds: 300_000_000) // past the debounce
+        try await Task.sleep(nanoseconds: 100_000_000) // past the debounce
         XCTAssertEqual(model.fileRunsStarted, 0)
     }
 
@@ -605,11 +617,12 @@ final class PanelModelTests: XCTestCase {
     /// active but no scan runs.
     func testEmptyFileTextOwnsEmptyList() async throws {
         let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        withShortFileDebounce()
         model.fileSearcher = { _, _ in [Self.fileItem("x")] }
         model.query = "finder"
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
         model.query = "find "
-        try await Task.sleep(nanoseconds: 300_000_000) // past the debounce
+        try await Task.sleep(nanoseconds: 100_000_000) // past the debounce
         XCTAssertTrue(model.results.isEmpty)
         XCTAssertEqual(model.fileRunsStarted, 0)
     }
@@ -629,11 +642,12 @@ final class PanelModelTests: XCTestCase {
     /// not restart a full disk walk for rows already on screen.
     func testIdenticalFileQuerySkipsRescan() async throws {
         let model = makeModel(items: [])
+        withShortFileDebounce()
         model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
         model.query = "find a"
         await awaitFileCompletions(model, atLeast: 1)
         model.refreshResults()
-        try await Task.sleep(nanoseconds: 300_000_000) // past the debounce
+        try await Task.sleep(nanoseconds: 100_000_000) // past the debounce
         XCTAssertEqual(model.fileRunsStarted, 1)
         XCTAssertEqual(model.results.map(\.title), ["notes.txt"])
     }
