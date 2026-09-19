@@ -41,6 +41,8 @@ SQUIRCLE_N = 5.0      # superellipse exponent; ~5 approximates Apple's corner
 # macOS wants each nominal size at 1x and 2x — ten files, seven renders.
 CONTENTS = [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1),
             (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)]
+EXPECTED_NAMES = frozenset(
+    {"Contents.json"} | {f"icon_{n}x{n}@{s}x.png" for n, s in CONTENTS})
 
 
 def decode_png(path, opaque_only=False):
@@ -245,12 +247,10 @@ def verify(iconset, accentset, drawn):
     pixels stay identical); byte-level for the JSON manifests. Returns a
     list of failures — empty means the committed set is up to date."""
     failures = []
-    expected = {"Contents.json"} | {
-        f"icon_{n}x{n}@{s}x.png" for n, s in CONTENTS}
     found = set(os.listdir(iconset)) if os.path.isdir(iconset) else set()
-    for name in sorted(expected - found):
+    for name in sorted(EXPECTED_NAMES - found):
         failures.append(f"{name}: missing")
-    for name in sorted(found - expected):
+    for name in sorted(found - EXPECTED_NAMES):
         failures.append(f"{name}: unexpected file")
 
     for nominal, scale in CONTENTS:
@@ -296,6 +296,13 @@ def main():
 
     os.makedirs(iconset, exist_ok=True)
     os.makedirs(accentset, exist_ok=True)
+    # --verify flags any stray file as drift; regeneration must clear
+    # them too, or re-running can't fix the red check it reports.
+    for stale in os.listdir(iconset):
+        path = os.path.join(iconset, stale)
+        if stale not in EXPECTED_NAMES and os.path.isfile(path):
+            os.remove(path)
+            print(f"  removed stray {stale}")
     print(f"  source {SOURCE}: {source[0]}x{source[1]}")
     for nominal, scale in CONTENTS:
         name = f"icon_{nominal}x{nominal}@{scale}x.png"
