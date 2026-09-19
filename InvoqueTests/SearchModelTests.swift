@@ -130,16 +130,75 @@ final class SearchModelTests: XCTestCase {
     }
 
     func testRepeatedSelectionsPromoteItem() {
-        // "Notes" and "Notion" score identically for "no" apart from the
-        // length divisor, which rounds equal — so the recorded pick wins.
+        // "Norse" and "North" tie on every ranking key for "no" — same
+        // tier (both prefix), same length — and "Norse" wins the title
+        // tiebreak unaided, so only frecency can flip the order.
         let source = StubSource()
-        let notes = Self.appItem(id: "app:notes", title: "Notes")
-        let notion = Self.appItem(id: "app:notion", title: "Notion")
-        source.stubbedItems = [notes, notion]
+        let norse = Self.appItem(id: "app:norse", title: "Norse")
+        let north = Self.appItem(id: "app:north", title: "North")
+        source.stubbedItems = [norse, north]
         let model = makeModel(sources: [source])
-        model.recordSelection(notion)
-        model.recordSelection(notion)
-        XCTAssertEqual(model.results(for: "no").first?.id, "app:notion")
+        // No frecency yet: the documented title/id tiebreak is the order.
+        XCTAssertEqual(model.results(for: "no").map(\.id),
+                       ["app:norse", "app:north"])
+        model.recordSelection(north)
+        model.recordSelection(north)
+        XCTAssertEqual(model.results(for: "no").first?.id, "app:north")
+    }
+
+    /// The discriminating case for tier-over-score ordering: "a b" scores
+    /// higher for "ab" on the raw alignment (two word-start bonuses) but
+    /// only fuzzy-matches — the contiguous infix still wins on tier.
+    func testInfixBeatsHigherScoredFuzzy() {
+        let source = StubSource()
+        let fuzzy = Self.appItem(id: "app:fuzzy", title: "a b")
+        let infix = Self.appItem(id: "app:infix", title: "wxyzabq")
+        source.stubbedItems = [fuzzy, infix]
+        // Guard the premise: the fuzzy hit really does out-score the infix.
+        let fuzzyScore = FuzzyMatcher.score("ab", candidate: "a b")
+        let infixScore = FuzzyMatcher.score("ab", candidate: "wxyzabq")
+        XCTAssertGreaterThan(fuzzyScore ?? 0, infixScore ?? 0)
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "ab")
+            .map(\.id), ["app:infix", "app:fuzzy"])
+    }
+
+    /// Ranking is class-first: an exact prefix beats an infix beats a
+    /// fuzzy subsequence, and a shorter matched text wins inside a class —
+    /// before score or frecency get a say.
+    func testPrefixBeatsInfixRegardlessOfLength() {
+        // "Asaf" is the shorter candidate but only an infix of "saf";
+        // tier beats length, so the prefix hit still leads.
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:asaf", title: "Asaf"),
+            Self.appItem(id: "app:safarix", title: "SafariX"),
+        ]
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "saf")
+            .map(\.id), ["app:safarix", "app:asaf"])
+    }
+
+    func testInfixBeatsFuzzyRegardlessOfLength() {
+        // "SanFran" is shorter but only fuzzy-matches "saf" (s…a…f, no
+        // contiguous hit); the longer infix still leads.
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:sanfran", title: "SanFran"),
+            Self.appItem(id: "app:xsafthing", title: "x-saf-thing"),
+        ]
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "saf")
+            .map(\.id), ["app:xsafthing", "app:sanfran"])
+    }
+
+    func testShorterMatchWinsWithinTier() {
+        // Both are prefix hits of "sa"; the shorter match text leads even
+        // though both earn the same prefix bonus.
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:safari", title: "Safari"),
+            Self.appItem(id: "app:sa", title: "Sa"),
+        ]
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "sa")
+            .map(\.id), ["app:sa", "app:safari"])
     }
 
     func testSelectionOfPinnedRowsIsNotRecorded() {

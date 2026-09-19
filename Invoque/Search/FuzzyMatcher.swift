@@ -8,6 +8,24 @@ import Foundation
 /// `score("xyz", candidate: "Safari")` is `nil` (not a subsequence).
 enum FuzzyMatcher {
 
+    // MARK: Match
+
+    /// A scored match plus its ranking tier.
+    struct Match: Equatable {
+        /// Ordering tier: an exact prefix of the candidate beats a
+        /// contiguous substring elsewhere, which beats a scattered
+        /// subsequence. Users read the list top-down, so "starts with what
+        /// I typed" outranks cleverer alignments — Raycast/Alfred ranking.
+        enum Tier: Int, Comparable {
+            case prefix, infix, fuzzy
+            static func < (lhs: Tier, rhs: Tier) -> Bool {
+                lhs.rawValue < rhs.rawValue
+            }
+        }
+        let tier: Tier
+        let score: Int
+    }
+
     // MARK: Scoring weights
 
     /// Points per matched character: every alignment starts here.
@@ -57,10 +75,19 @@ enum FuzzyMatcher {
     /// are lowercased copies of the inputs, so the per-keystroke cost stays
     /// flat.
     static func score(_ query: String, candidate: String) -> Int? {
+        match(query, candidate: candidate)?.score
+    }
+
+    /// The `score` result plus the match's ranking `Tier`, classified on the
+    /// same lowercased forms the scorer already builds — no extra
+    /// allocation. `nil` when `query` isn't a subsequence of `candidate`.
+    static func match(_ query: String, candidate: String) -> Match? {
         guard !query.isEmpty, !candidate.isEmpty else { return nil }
 
-        let queryChars = Array(query.lowercased())
-        let loweredCandidate = Array(candidate.lowercased())
+        let loweredQueryText = query.lowercased()
+        let loweredCandidateText = candidate.lowercased()
+        let queryChars = Array(loweredQueryText)
+        let loweredCandidate = Array(loweredCandidateText)
         let rawQuery = Array(query)
         let rawCandidate = Array(candidate)
         // `lowercased()` can reshape exotic graphemes; without a 1:1 mapping
@@ -105,12 +132,27 @@ enum FuzzyMatcher {
             queryIndex += 1
         }
 
-        if loweredCandidate.count >= queryChars.count,
-           loweredCandidate.prefix(queryChars.count).elementsEqual(queryChars) {
+        let isPrefix = loweredCandidate.count >= queryChars.count
+            && loweredCandidate.prefix(queryChars.count).elementsEqual(queryChars)
+        if isPrefix {
             total += Self.prefixBonus
         }
         total -= loweredCandidate.count / Self.lengthPenaltyDivisor
-        return total
+
+        // Tier classification rides on the lowered forms: a prefix is also
+        // an infix, so the prefix check runs first. The substring probe must
+        // go through the string, not the greedy alignment above — a leftmost
+        // per-character scan can miss a contiguous hit ("saf" in "sasaf"
+        // aligns at 0,1,4 even though it sits whole at index 2).
+        let tier: Match.Tier
+        if isPrefix {
+            tier = .prefix
+        } else if loweredCandidateText.range(of: loweredQueryText) != nil {
+            tier = .infix
+        } else {
+            tier = .fuzzy
+        }
+        return Match(tier: tier, score: total)
     }
 
     // MARK: Helpers

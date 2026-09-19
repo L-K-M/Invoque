@@ -151,11 +151,19 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   the walk silently skips what it can't read. Follow-up: stream matches
   into the list as they're found rather than delivering one batch.
 - Fuzzy matcher: small fzf-style scorer (subsequence bonus, word-boundary
-  bonus, recency/frecency weighting). Pure function — unit-test it. Zap's
-  type-to-search matching is the local precedent.
-- Ranking: base match score + frecency (persisted usage counts in
-  UserDefaults/CoreData-free flat file) + source priorities (calculator
-  exact-match > commands > apps > web fallback).
+  bonus, case bonus). Pure function — unit-test it. Zap's type-to-search
+  matching is the local precedent.
+- Ranking: match tier first — exact prefix > exact infix > fuzzy
+  subsequence — then shorter match text, then frecency (persisted usage
+  counts in UserDefaults), then the alignment score, then title/id for a
+  total order. Pinned rows keep their slots: calculator answers first, web
+  fallback last.
+- Stability: extending the query preserves the displayed order of rows
+  that still match — a row the user is reaching for never moves under
+  them. Non-extension edits (deletion, replacement, mode switches) re-rank
+  fresh. Rows that match for the first time mid-extension (a streamed
+  file hit, a refreshed source) join at their fresh rank below the
+  survivors. The same holds for `find`/`f` scan completions.
 - Icons: result-row bitmaps resolve through `PictKit`'s `IconResolver`
   (`InvoqueIcons`, the `JettyIcons`/`ZapIcons` seam) — a user-set icon in
   Pict (or any family app) wins, then the bundle's own un-jailed artwork,
