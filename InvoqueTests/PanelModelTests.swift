@@ -746,7 +746,7 @@ final class PanelModelTests: XCTestCase {
     func testCommandModifierOpensRevealRow() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("invoque-\(UUID().uuidString).txt")
-        FileManager.default.createFile(atPath: url.path, contents: Data())
+        try Data().write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
         let model = makeModel(items: [])
         var submitted: ResultRow?
