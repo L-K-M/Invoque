@@ -234,7 +234,8 @@ def render_all(source):
     """Every distinct pixel size once — ten files share seven renders."""
     drawn = {}
     for nominal, scale in CONTENTS:
-        drawn.setdefault(nominal * scale, render(source, nominal * scale))
+        if nominal * scale not in drawn:
+            drawn[nominal * scale] = render(source, nominal * scale)
     return drawn
 
 
