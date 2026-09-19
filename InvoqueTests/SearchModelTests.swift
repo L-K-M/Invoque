@@ -44,7 +44,7 @@ final class SearchModelTests: XCTestCase {
             id: id,
             title: title,
             subtitle: "Application",
-            icon: .appIcon("/Applications/\(title).app"),
+            icon: .appIcon(path: "/Applications/\(title).app", bundleID: nil),
             action: .openApp(URL(fileURLWithPath: "/Applications/\(title).app")),
             matchText: title
         )

@@ -147,6 +147,36 @@ final class FileSearchTests: XCTestCase {
         XCTAssertEqual(item.matchText, "notes.txt")
     }
 
+    /// A `.app` package row is an app-icon row — the shared-store ladder
+    /// (Pict override, then un-jailed bundle artwork) applies to it the
+    /// same as to an `AppSource` result, keyed by the bundle's real ID.
+    func testAppPackageItemUsesAppIcon() throws {
+        let appURL = root.appendingPathComponent("Fixture.app")
+        let plist: [String: Any] = ["CFBundleIdentifier": "com.test.fixture",
+                                    "CFBundlePackageType": "APPL"]
+        // The setUp fixture already made Fixture.app/Contents, but the
+        // plist write shouldn't silently depend on fixture layout.
+        try FileManager.default.createDirectory(
+            at: appURL.appendingPathComponent("Contents"),
+            withIntermediateDirectories: true)
+        try PropertyListSerialization
+            .data(fromPropertyList: plist, format: .xml, options: 0)
+            .write(to: appURL.appendingPathComponent("Contents/Info.plist"))
+        let item = FileSearch.item(for: appURL)
+        XCTAssertEqual(item.icon,
+                       .appIcon(path: appURL.path, bundleID: "com.test.fixture"))
+        XCTAssertEqual(item.action, .openFile(appURL))
+    }
+
+    /// A bundle with no readable identifier still gets the path-rung
+    /// ladder — a Pict override keyed `app:<path>` still applies.
+    func testAppPackageWithoutBundleIDStillUsesAppIcon() throws {
+        let bare = root.appendingPathComponent("Bare.app")
+        try makeFile("Bare.app/Contents/dummy")
+        let item = FileSearch.item(for: bare)
+        XCTAssertEqual(item.icon, .appIcon(path: bare.path, bundleID: nil))
+    }
+
     /// Paths under home abbreviate to `~` — the subtitle's compact form.
     func testItemSubtitleAbbreviatesHome() {
         let url = URL(fileURLWithPath:

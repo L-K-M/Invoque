@@ -81,11 +81,12 @@ final class AppSource: ItemSource {
     /// to nil, and two malformed apps producing `app.` + `""` would collide
     /// on this id.
     private static func item(for entry: AppEntry) -> Item {
-        Item(
-            id: Item.appIDPrefix + (entry.bundleID.flatMap { $0.isEmpty ? nil : $0 } ?? entry.path),
+        let bundleID = entry.bundleID.flatMap { $0.isEmpty ? nil : $0 }
+        return Item(
+            id: Item.appIDPrefix + (bundleID ?? entry.path),
             title: entry.name,
             subtitle: "Application",
-            icon: .appIcon(entry.path),
+            icon: .appIcon(path: entry.path, bundleID: bundleID),
             action: .openApp(URL(fileURLWithPath: entry.path)),
             matchText: "\(entry.name) \(entry.fileName)"
         )

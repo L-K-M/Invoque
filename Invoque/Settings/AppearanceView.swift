@@ -46,18 +46,24 @@ struct AppearanceView: View {
 
     private static func makePreviewModel() -> PanelModel {
         let model = PanelModel()
+        // The preview draws what the launcher draws — shared-store icons
+        // included, or the panel preview wouldn't preview the panel.
+        model.iconResolver = { InvoqueIcons.shared.icon(for: $0) }
         let rows = [
             ResultRow(id: "preview.finder", title: "Finder", subtitle: "Application",
-                      icon: .appIcon("/System/Library/CoreServices/Finder.app"),
+                      icon: .appIcon(path: "/System/Library/CoreServices/Finder.app",
+                                   bundleID: "com.apple.finder"),
                       action: .copyText("")),
             ResultRow(id: "preview.calc", title: "Calculator", subtitle: "Application",
-                      icon: .appIcon("/System/Applications/Calculator.app"),
+                      icon: .appIcon(path: "/System/Applications/Calculator.app",
+                                   bundleID: "com.apple.calculator"),
                       action: .copyText("")),
             ResultRow(id: "preview.json", title: "Format Clipboard JSON", subtitle: "Invoque command",
                       icon: .symbol("terminal"),
                       action: .copyText("")),
             ResultRow(id: "preview.safari", title: "Safari", subtitle: "Application",
-                      icon: .appIcon("/Applications/Safari.app"),
+                      icon: .appIcon(path: "/Applications/Safari.app",
+                                   bundleID: "com.apple.Safari"),
                       action: .copyText("")),
         ]
         model.showCommandResults(rows)

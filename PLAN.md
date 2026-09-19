@@ -77,8 +77,11 @@ A background **agent app** (`LSUIElement = true`, no Dock icon).
 
 **Tech stack:** Swift, SwiftUI for panel content and Settings, AppKit for
 windowing (`NSPanel`, `NSStatusItem`), `JavaScriptCore` for the command runtime,
-`NSWorkspace` for app listing, `UserDefaults` for preferences. No third-party
-dependencies. Targets macOS 13+ (revisit if Zap has since raised its floor).
+`NSWorkspace` for app listing, `UserDefaults` for preferences. One
+dependency: [`PictKit`](https://github.com/L-K-M/Pict), the first-party
+SwiftPM package holding the shared icon store and resolution ladder Zap,
+Jetty and Top Drawer already link. Otherwise no third-party dependencies.
+Targets macOS 13+ (revisit if Zap has since raised its floor).
 
 ---
 
@@ -110,10 +113,11 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   is luminance-aware (`Color.readableForeground`, TopDrawer's rule) against
   the fill *composited over* the card's base color — at low opacity the
   background dominates, so the raw highlight alone would choose wrong.
-- **Adaptive accent**: when on, the selected row's icon supplies the fill —
-  `CIAreaAverage` dominant color, saturation-boosted, cached by icon path
-  (Jetty's `TileAccent` transplanted to the launcher). `.symbol` rows fall
-  back to the theme highlight.
+- **Adaptive accent**: when on, the selected row's *drawn* icon supplies
+  the fill — `CIAreaAverage` dominant color, saturation-boosted, cached by
+  icon path and invalidated with the shared store (Jetty's `TileAccent`
+  transplanted to the launcher). `.symbol` rows fall back to the theme
+  highlight.
 - **Text**: `labelHex` applies only where the theme owns the background
   (`solid`/`gradient` — `PanelMaterial.usesThemeTextColor`); glass defers to
   the system, which adapts `.primary` to the appearance.
@@ -152,6 +156,15 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - Ranking: base match score + frecency (persisted usage counts in
   UserDefaults/CoreData-free flat file) + source priorities (calculator
   exact-match > commands > apps > web fallback).
+- Icons: result-row bitmaps resolve through `PictKit`'s `IconResolver`
+  (`InvoqueIcons`, the `JettyIcons`/`ZapIcons` seam) — a user-set icon in
+  Pict (or any family app) wins, then the bundle's own un-jailed artwork,
+  then the `NSWorkspace` icon on a miss, which also warms in the
+  background. App rows are `.application` targets (path rung, then
+  bundle-id rung — SSB wrappers stay told apart); file-search rows are
+  `.file` targets, `.app` packages included. `IconStoreWatcher` republishes
+  the panel when another app rewrites the store; the adaptive accent
+  samples the *drawn* image, so a custom icon glows its own colors.
 
 ---
 
@@ -414,6 +427,8 @@ Invoque/
 │   │   ├── PanelBackground.swift        # material: Liquid Glass/blur/fill/gradient
 │   │   ├── AdaptiveAccent.swift         # icon-dominant-color selection tint
 │   │   └── PanelDecoration/CRT/BoingBall # retro flourishes (from Zap)
+│   ├── Icons/
+│   │   └── InvoqueIcons.swift           # PictKit seam: resolver + watcher
 │   ├── Search/
 │   │   ├── ItemSource.swift             # protocol + Item model
 │   │   ├── FuzzyMatcher.swift           # pure, unit-tested

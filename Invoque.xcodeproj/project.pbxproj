@@ -6,6 +6,11 @@
 	objectVersion = 70;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AA0000000000000000000020 /* PictKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000022 /* PictKit */; };
+		AA0000000000000000000023 /* PictKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000024 /* PictKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		AA000000000000000000001A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -31,6 +36,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0000000000000000000020 /* PictKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -38,6 +44,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0000000000000000000023 /* PictKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,6 +89,7 @@
 			);
 			name = Invoque;
 			packageProductDependencies = (
+				AA0000000000000000000022 /* PictKit */,
 			);
 			productName = Invoque;
 			productReference = AA0000000000000000000006 /* Invoque.app */;
@@ -104,6 +112,9 @@
 				AA0000000000000000000005 /* InvoqueTests */,
 			);
 			name = InvoqueTests;
+			packageProductDependencies = (
+				AA0000000000000000000024 /* PictKit */,
+			);
 			productName = InvoqueTests;
 			productReference = AA0000000000000000000007 /* InvoqueTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -137,6 +148,7 @@
 			);
 			mainGroup = AA0000000000000000000002;
 			packageReferences = (
+				AA0000000000000000000021 /* XCRemoteSwiftPackageReference "Pict" */,
 			);
 			productRefGroup = AA0000000000000000000003 /* Products */;
 			projectDirPath = "";
@@ -386,6 +398,30 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AA0000000000000000000021 /* XCRemoteSwiftPackageReference "Pict" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/L-K-M/Pict";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA0000000000000000000022 /* PictKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000021 /* XCRemoteSwiftPackageReference "Pict" */;
+			productName = PictKit;
+		};
+		AA0000000000000000000024 /* PictKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000021 /* XCRemoteSwiftPackageReference "Pict" */;
+			productName = PictKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		AA0000000000000000000010 /* Build configuration list for PBXProject "Invoque" */ = {

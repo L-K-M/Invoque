@@ -159,6 +159,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.fileSearcher = { query, isCancelled in
             FileSearch.items(query: query, isCancelled: isCancelled)
         }
+        // Shared icon store (PictKit) — the same ladder Zap and Jetty draw
+        // from: a Pict override, then the bundle's own un-jailed artwork,
+        // then the workspace icon on a miss. The hook republishes when
+        // artwork lands or another app rewrites the store.
+        model.iconResolver = { InvoqueIcons.shared.icon(for: $0) }
+        InvoqueIcons.shared.onIconsInvalidated = { [weak model] in
+            model?.noteIconsChanged()
+        }
         // Kick the initial scan only after the model is fully wired — an
         // unstructured Task starts immediately and can outrun the lines
         // above. (The store's onChange→onReload subscription is init-time,

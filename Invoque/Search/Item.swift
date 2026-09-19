@@ -46,8 +46,10 @@ struct Item: Identifiable, Equatable {
         case symbol(String)
         /// An image file on disk.
         case fileURL(URL)
-        /// A bundle path whose app icon should be shown.
-        case appIcon(String)
+        /// A bundle path whose app icon should be shown. `bundleID` feeds
+        /// the shared-store lookup ladder (path first, identifier second —
+        /// a Pict override follows the app when it moves).
+        case appIcon(path: String, bundleID: String?)
     }
 
     // MARK: Action
