@@ -11,8 +11,9 @@ final class SearchEngineTests: XCTestCase {
         for encodedQuery in ["hello%20world", "a%26b", "50%25%20off%3F", "q%23frag"] {
             for engine in SearchEngine.allCases {
                 let url = engine.url(encodedQuery: encodedQuery)
-                XCTAssertNotNil(url, engine.rawValue)
-                XCTAssertEqual(url?.scheme, "https", engine.rawValue)
+                XCTAssertNotNil(url, "\(engine.rawValue) — \(encodedQuery)")
+                XCTAssertEqual(url?.scheme, "https",
+                               "\(engine.rawValue) — \(encodedQuery)")
                 XCTAssertTrue(url?.absoluteString.contains(encodedQuery) ?? false,
                               "\(engine.rawValue) — \(encodedQuery)")
             }
