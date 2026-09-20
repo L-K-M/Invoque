@@ -1303,7 +1303,7 @@ final class PanelModelTests: XCTestCase {
         await awaitFileCompletions(model, atLeast: 1)
         let starts = model.fileRunsStarted
 
-        rules.blocked = ["file:/tmp/alpha.txt"]
+        rules.blocked = [Self.fileItem("alpha.txt").id]
         model.entryRulesDidChange()
         XCTAssertEqual(model.results.map(\.title), ["beta.txt"])
         XCTAssertEqual(model.fileRunsStarted, starts)
