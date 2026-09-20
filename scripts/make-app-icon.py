@@ -269,7 +269,7 @@ def draw_status_mark(size):
                     if (u - dx) ** 2 + (v - dy) ** 2 < r * r:
                         disc_c += 1
                     t = (u - tri_x0) / (tri_x1 - tri_x0)
-                    if t >= 0 and abs(v - tri_mid) < tri_half * (1 - t) + 0.02:
+                    if 0 <= t <= 1 and abs(v - tri_mid) < tri_half * (1 - t) + 0.02:
                         tri_c += 1
                     d = min(_seg_dist(u, v, *check[0], *check[1]),
                             _seg_dist(u, v, *check[1], *check[2]))
