@@ -115,6 +115,7 @@ struct SettingsView: View {
             }
             Spacer()
             Button(actionTitle, action: action)
+                .accessibilityLabel("\(actionTitle) \(title)")
         }
     }
 

@@ -119,22 +119,26 @@ final class FileSearchTests: XCTestCase {
     /// more match than the cap, dropping the top-ranked file backfills
     /// the slot — a blocked file leaves no hole in the list.
     func testExclusionBackfillsBeyondTheCap() throws {
-        for index in 0...SearchModel.maxResults {
-            try makeFile(String(format: "fill-%02d.txt", index))
+        let last = SearchModel.maxResults
+        for index in 0...last {
+            try makeFile(String(format: "fill-%04d.txt", index))
         }
-        // Equal-length prefix matches sort by path — fill-00 leads,
-        // fill-50 sits just past the cap. The excluded id comes from the
-        // items API so the test pins the walk's key to the id the panel
-        // actually blocks, not a hand-built mirror of it.
+        // Equal-length prefix matches sort by path (%04d keeps them one
+        // length whatever the cap): index 0 leads, `last` sits just past
+        // the cap. The excluded id comes from the items API so the test
+        // pins the walk's key to the id the panel actually blocks, not a
+        // hand-built mirror of it.
+        let firstName = String(format: "fill-%04d.txt", 0)
+        let pastCapName = String(format: "fill-%04d.txt", last)
         let excludedID = try XCTUnwrap(
             FileSearch.items(query: "fill", roots: [root])
-                .first { $0.id.hasSuffix("fill-00.txt") }?.id)
+                .first { $0.id.hasSuffix(firstName) }?.id)
         let matches = FileSearch.scan(query: "fill", roots: [root],
                                       isExcluded: { $0 == excludedID })
         XCTAssertEqual(matches.count, SearchModel.maxResults)
         let names = matches.map { $0.url.lastPathComponent }
-        XCTAssertFalse(names.contains("fill-00.txt"))
-        XCTAssertTrue(names.contains("fill-50.txt"),
+        XCTAssertFalse(names.contains(firstName))
+        XCTAssertTrue(names.contains(pastCapName),
                       "the match past the cap must backfill the hole")
     }
 
@@ -142,21 +146,26 @@ final class FileSearchTests: XCTestCase {
     /// limit, boosting the file that would rank last lifts it into the
     /// output — otherwise a deep-ranked pin would silently do nothing.
     func testBoostedMatchSurvivesTheCap() throws {
-        for index in 0...SearchModel.maxResults {
-            try makeFile(String(format: "fill-%02d.txt", index))
+        let last = SearchModel.maxResults
+        for index in 0...last {
+            try makeFile(String(format: "fill-%04d.txt", index))
         }
-        // fill-50 sorts last among the equal-length prefix matches — the
+        // The last index sorts last among the equal-length prefix matches
+        // (%04d keeps every filename one length, whatever the cap) — the
         // unboosted scan drops it, the boosted scan must not.
+        let boostedName = String(format: "fill-%04d.txt", last)
+        let weakestName = String(format: "fill-%04d.txt", last - 1)
         let boostedID = try XCTUnwrap(
-            FileSearch.items(query: "fill-50", roots: [root]).first?.id)
+            FileSearch.items(query: String(format: "fill-%04d", last),
+                             roots: [root]).first?.id)
         XCTAssertEqual(FileSearch.scan(query: "fill", roots: [root])
-            .last?.url.lastPathComponent, "fill-49.txt")
+            .last?.url.lastPathComponent, weakestName)
         let matches = FileSearch.scan(query: "fill", roots: [root],
                                       isBoosted: { $0 == boostedID })
         XCTAssertEqual(matches.count, SearchModel.maxResults)
-        XCTAssertEqual(matches.first?.url.lastPathComponent, "fill-50.txt")
+        XCTAssertEqual(matches.first?.url.lastPathComponent, boostedName)
         XCTAssertFalse(matches.contains {
-            $0.url.lastPathComponent == "fill-49.txt" },
+            $0.url.lastPathComponent == weakestName },
             "the weakest unpinned match yields the slot")
     }
 
