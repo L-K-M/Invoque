@@ -471,4 +471,18 @@ final class SearchModelTests: XCTestCase {
         // same query (`web:2+2`) is a different id and still lands.
         XCTAssertEqual(model.results(for: "2+2").map(\.id), ["web:2+2"])
     }
+
+    /// Blocked `path:` rows drop too — the filter runs ahead of the
+    /// head-pin classification for the third functional category.
+    func testBlockedPathRowDrops() throws {
+        let rules = StubRules()
+        let pathSource = PathSource()
+        // The id carries the standardized path (`/tmp` may canonicalize
+        // to `/private/tmp`), so derive it rather than assume the literal.
+        let pathID = try XCTUnwrap(
+            pathSource.items(matching: "/tmp").first?.id)
+        rules.blocked = [pathID]
+        let model = makeModel(sources: [pathSource], rules: rules)
+        XCTAssertTrue(model.results(for: "/tmp").isEmpty)
+    }
 }

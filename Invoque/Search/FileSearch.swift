@@ -153,8 +153,7 @@ enum FileSearch {
                     || skippedDirectoryNames.contains(name)
                     || (projectScopedDirectoryNames.contains(name)
                         && hasProjectManifest(beside: url))
-                    || isExcluded(Item.fileIDPrefix
-                        + url.standardizedFileURL.path) {
+                    || isExcluded(Self.fileID(for: url)) {
                     enumerator.skipDescendants()
                     continue
                 }
@@ -165,7 +164,7 @@ enum FileSearch {
             // `visited` size for nothing.
             if let match = FuzzyMatcher.match(query, candidate: url.lastPathComponent) {
                 let path = url.standardizedFileURL.path
-                if !isExcluded(Item.fileIDPrefix + path),
+                if !isExcluded(Self.fileID(forPath: path)),
                    seenPaths.insert(path).inserted {
                     matches.append(Match(url: url, tier: match.tier,
                                          score: match.score))
@@ -184,6 +183,16 @@ enum FileSearch {
             FileManager.default.fileExists(
                 atPath: parent.appendingPathComponent($0).path)
         }
+    }
+
+    /// The row's stable id — one construction for every `file:` id so the
+    /// walk's exclusion keys can never drift from the id a row displays.
+    private static func fileID(for url: URL) -> String {
+        fileID(forPath: url.standardizedFileURL.path)
+    }
+
+    private static func fileID(forPath path: String) -> String {
+        Item.fileIDPrefix + path
     }
 
     /// The result row's data: stable `file:` id on the resolved path, the
@@ -207,7 +216,7 @@ enum FileSearch {
                            .flatMap { $0.isEmpty ? nil : $0 })
             : .fileURL(url)
         return Item(
-            id: Item.fileIDPrefix + url.standardizedFileURL.path,
+            id: fileID(for: url),
             title: name,
             subtitle: String(subtitle),
             icon: icon,

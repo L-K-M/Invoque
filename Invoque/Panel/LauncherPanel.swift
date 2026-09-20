@@ -65,14 +65,16 @@ final class LauncherPanel: NSPanel {
     /// outright: they have no other meaning in a plain search field, and
     /// claiming them unconditionally keeps a no-op chord from beeping.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.type == .keyDown, !event.isARepeat,
+        if event.type == .keyDown,
            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "p":
-                onPinChord?()
+                // Repeats are claimed but don't re-toggle — an unclaimed
+                // repeat would fall through to the menu and beep.
+                if !event.isARepeat { onPinChord?() }
                 return true
             case "b":
-                onBlockChord?()
+                if !event.isARepeat { onBlockChord?() }
                 return true
             default:
                 break
