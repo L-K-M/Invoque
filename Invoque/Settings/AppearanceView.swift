@@ -12,6 +12,10 @@ struct AppearanceView: View {
     /// Nothing it can do matters — the preview swallows all hit-testing.
     @StateObject private var previewModel = AppearanceView.makePreviewModel()
 
+    /// The picker's installed-family tail — state so a font activated
+    /// mid-session appears when the refresh below re-reads the font manager.
+    @State private var extraFamilies = PanelTypeface.moreFamilies
+
     var body: some View {
         VStack(spacing: 0) {
             PanelView(model: previewModel, preferences: preferences)
@@ -141,10 +145,14 @@ struct AppearanceView: View {
                 }
                 Divider()
                 // Every other installed family — user fonts included.
-                ForEach(PanelTypeface.moreFamilies, id: \.self) { family in
+                ForEach(extraFamilies, id: \.self) { family in
                     let typeface = PanelTypeface.custom(family)
                     Text(typeface.label).font(typeface.font(.body)).tag(typeface)
                 }
+            }
+            .onAppear {
+                PanelTypeface.refreshInstalledFamilies()
+                extraFamilies = PanelTypeface.moreFamilies
             }
             ColorPicker("Label", selection: colorBinding(\.labelHex), supportsOpacity: false)
                 .disabled(!preferences.panelMaterial.usesThemeTextColor)

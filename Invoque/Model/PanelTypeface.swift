@@ -53,22 +53,35 @@ struct PanelTypeface: Hashable, Identifiable, RawRepresentable {
     }
 
     /// Every family the font manager reports, minus hidden system faces
-    /// (".AppleSystemUIFont" and friends), sorted for the picker. The list
-    /// doesn't change mid-session, so it's cached.
-    static let installedFamilies: [String] = {
-        NSFontManager.shared.availableFontFamilies
-            .filter { !$0.hasPrefix(".") }
-            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-    }()
+    /// (".AppleSystemUIFont" and friends), sorted for the picker. Fonts can
+    /// be activated while the app runs, so Appearance refreshes this when
+    /// it opens — see `refreshInstalledFamilies`.
+    private(set) static var installedFamilies = currentInstalledFamilies()
 
     /// Installed families that aren't already in `curated` — the picker's
     /// tail section, so a curated face never tags twice.
-    static let moreFamilies: [String] = {
+    private(set) static var moreFamilies: [String] = {
         let curatedNames = Set(curated.compactMap(\.family))
         return installedFamilies.filter { !curatedNames.contains($0) }
     }()
 
-    private static let installedFamilySet = Set(installedFamilies)
+    private static var installedFamilySet = Set(installedFamilies)
+
+    /// Re-reads the font manager so a family activated while the app runs
+    /// appears in the picker without a relaunch — and stops validating a
+    /// family that was deactivated.
+    static func refreshInstalledFamilies() {
+        installedFamilies = currentInstalledFamilies()
+        let curatedNames = Set(curated.compactMap(\.family))
+        moreFamilies = installedFamilies.filter { !curatedNames.contains($0) }
+        installedFamilySet = Set(installedFamilies)
+    }
+
+    private static func currentInstalledFamilies() -> [String] {
+        NSFontManager.shared.availableFontFamilies
+            .filter { !$0.hasPrefix(".") }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
 
     // MARK: Persistence
 
@@ -196,7 +209,8 @@ extension PanelTypeface {
             guard Self.installedFamilySet.contains(name) else { return nil }
             face = .family(name)
         default:
-            guard let name = Self.legacyFamilyKeys[rawValue] else { return nil }
+            guard let name = Self.legacyFamilyKeys[rawValue],
+                  Self.installedFamilySet.contains(name) else { return nil }
             face = .family(name)
         }
     }
