@@ -200,7 +200,9 @@ final class PanelModel: ObservableObject {
     /// `f ` (Alfred's `find` muscle memory), and `search `. The bare
     /// keyword without a trailing space stays a normal search, and the
     /// built-in wins over a command claiming the same keyword — the
-    /// `makerKeywords` policy.
+    /// `makerKeywords` policy. Note `search ` deliberately reroutes what
+    /// used to be a normal (web-fallback) query into file mode — call it
+    /// out in release notes.
     static let fileSearchKeywords = ["find", "f", "search"]
 
     /// The resolved `find`/`f`/`search` session when `query` is

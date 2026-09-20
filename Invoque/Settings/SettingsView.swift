@@ -84,7 +84,7 @@ struct SettingsView: View {
                 .disabled(isSoleScope(.system))
             Toggle("External drives", isOn: scopeBinding(.volumes))
                 .disabled(isSoleScope(.volumes))
-            Text("The startup disk skips hidden folders and packages as usual; other drives are searched whole. Network shares are never walked.")
+            Text("Everywhere skips hidden folders and package interiors; external drives are searched in full, not just a home folder. Network shares are never walked.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

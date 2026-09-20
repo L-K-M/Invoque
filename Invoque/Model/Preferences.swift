@@ -363,6 +363,9 @@ final class Preferences: ObservableObject {
     /// the main thread.
     @Published var fileSearchScopes: Set<FileSearch.Scope> {
         didSet {
+            // A no-op write would still queue a full-disk rescan via the
+            // changed callback — don't pay that for a re-assigned value.
+            guard fileSearchScopes != oldValue else { return }
             defaults.set(fileSearchScopes.map(\.rawValue).sorted(),
                          forKey: Key.fileSearchScopes)
             rulesLock.withLock { scopeSnapshot = fileSearchScopes }
@@ -438,11 +441,17 @@ final class Preferences: ObservableObject {
             .compactMapValues { $0 as? String }
         blockedItems = (defaults.dictionary(forKey: Key.blockedItems) ?? [:])
             .compactMapValues { $0 as? String }
-        // An absent key falls back to the default scope set; a stored
-        // (even empty) list is the user's own choice and is respected.
-        fileSearchScopes = (defaults.array(forKey: Key.fileSearchScopes) as? [String])
-            .map { Set($0.compactMap { FileSearch.Scope(rawValue: $0) }) }
-            ?? Default.fileSearchScopes
+        // An absent key falls back to the default scope set and a stored
+        // empty list stays respected — but a non-empty list that decodes
+        // to nothing is stale data (a renamed/removed case), not a choice;
+        // falling back beats silently searching nowhere.
+        if let raw = defaults.array(forKey: Key.fileSearchScopes) as? [String] {
+            let decoded = Set(raw.compactMap { FileSearch.Scope(rawValue: $0) })
+            fileSearchScopes = decoded.isEmpty && !raw.isEmpty
+                ? Default.fileSearchScopes : decoded
+        } else {
+            fileSearchScopes = Default.fileSearchScopes
+        }
         // didSet doesn't run on init-time assignment — seed the snapshots
         // the threaded reads use.
         pinnedIDSnapshot = Set(pinnedItems.keys)

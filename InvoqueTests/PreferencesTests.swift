@@ -276,6 +276,16 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.fileSearchScopes, [.home, .volumes])
     }
 
+    /// A present-but-unparseable list (a renamed/removed scope case after
+    /// an upgrade) is stale data, not a user choice — fall back to the
+    /// default rather than silently disabling file search.
+    func testAllMalformedFileSearchScopesFallBack() {
+        defaults.set(["bogus"], forKey: "fileSearchScopes")
+
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertEqual(preferences.fileSearchScopes, [.home])
+    }
+
     /// The snapshot the off-main walk reads mirrors every write — it must
     /// never lag the live set, or a Settings toggle wouldn't reach the
     /// next scan.
@@ -286,13 +296,28 @@ final class PreferencesTests: XCTestCase {
     }
 
     /// A scope write fires its own callback — a rescan, not a reshape:
-    /// the cached walk only covered the old roots.
+    /// the cached walk only covered the old roots. The callback must see
+    /// the snapshot already updated, or the rescan it triggers walks the
+    /// previous scopes one step late.
     func testFileSearchScopesChangedFires() {
         let preferences = Preferences(defaults: defaults)
         var fired = 0
-        preferences.fileSearchScopesChanged = { fired += 1 }
+        preferences.fileSearchScopesChanged = {
+            fired += 1
+            XCTAssertEqual(preferences.fileSearchScopeSnapshot, [.volumes])
+        }
         preferences.fileSearchScopes = [.volumes]
         XCTAssertEqual(fired, 1)
+    }
+
+    /// Re-assigning the same set must not queue another full-disk rescan.
+    func testNoOpFileSearchScopesWriteStaysSilent() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.fileSearchScopes = [.volumes]
+        var fired = 0
+        preferences.fileSearchScopesChanged = { fired += 1 }
+        preferences.fileSearchScopes = [.volumes]
+        XCTAssertEqual(fired, 0)
     }
 
     /// A direct setter can't persist an out-of-range or unparseable value —

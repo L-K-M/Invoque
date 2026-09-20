@@ -31,12 +31,15 @@ enum FileSearch {
         /// makes sense to search.
         case home
         /// `/` — the whole startup disk, minus `/Volumes` (those belong
-        /// to `volumes`) and minus `~` when `home` is also enabled.
+        /// to `volumes`), minus `/System/Volumes` (the data volume is
+        /// already reachable through the firmlinks at `/`, and Preboot/
+        /// VM/Update are noise), and minus `~` when `home` is also on.
         case system
         /// Every mounted local volume that isn't the boot disk — other
-        /// drives are searched whole, not just a home folder. Network
-        /// shares are skipped: a per-keystroke recursive walk over a
-        /// remote mount isn't interactive.
+        /// drives are searched in full, not just a home folder (the usual
+        /// pruning still applies). Network shares are skipped: a
+        /// per-keystroke recursive walk over a remote mount isn't
+        /// interactive.
         case volumes
     }
 
@@ -62,33 +65,57 @@ enum FileSearch {
     /// drive mounted mid-session joins the next scan without a settings
     /// round-trip.
     static func resolvedRoots(for scopes: Set<Scope>) -> [Root] {
+        // An empty set can't mean "search nothing" — the Settings UI
+        // can't produce one, so it only ever arrives via stale or
+        // hand-edited defaults; fall back rather than dead-end the mode.
+        let scopes = scopes.isEmpty ? defaultScopes : scopes
         var roots: [Root] = []
         let home = FileManager.default.homeDirectoryForCurrentUser
+            .standardizedFileURL.path
         if scopes.contains(.home) {
-            roots.append(Root(url: home))
+            roots.append(Root(url: URL(fileURLWithPath: home)))
         }
         if scopes.contains(.system) {
-            var skips: Set<String> = ["/Volumes"]
-            if scopes.contains(.home) {
-                skips.insert(home.standardizedFileURL.path)
-            }
+            // /Volumes holds the other-drive mounts (the `volumes` scope's
+            // job) and /System/Volumes holds the internal volume group —
+            // the data volume is already reachable via the firmlinks at
+            // `/`, so walking it again by its real mount point would
+            // double-list every user file and bypass the home skip.
+            var skips: Set<String> = ["/Volumes", "/System/Volumes"]
+            if scopes.contains(.home) { skips.insert(home) }
             roots.append(Root(url: URL(fileURLWithPath: "/"),
                               skipPaths: skips))
         }
         if scopes.contains(.volumes) {
-            roots += mountedVolumeRoots()
+            for var root in mountedVolumeRoots() {
+                if scopes.contains(.home) {
+                    let volumePath = root.url.standardizedFileURL.path
+                    // A relocated home can live on another drive — home +
+                    // volumes mustn't double-walk it either. The trailing
+                    // slash stops a sibling-prefix false positive.
+                    if volumePath == home { continue }
+                    if home.hasPrefix(volumePath + "/") {
+                        root.skipPaths.insert(home)
+                    }
+                }
+                roots.append(root)
+            }
         }
         return roots
     }
 
     /// Mounted local volumes other than the boot disk — external and
-    /// secondary drives, each searched whole.
+    /// secondary drives, each searched in full.
     private static func mountedVolumeRoots() -> [Root] {
         let urls = FileManager.default.mountedVolumeURLs(
             includingResourceValuesForKeys: [.volumeIsLocalKey],
             options: [.skipHiddenVolumes]) ?? []
         return urls.compactMap { url in
+            // The boot disk can also appear under its /Volumes alias and —
+            // on some OS versions — via the /System/Volumes/* group;
+            // neither is "another drive".
             guard url.path != "/",
+                  !url.path.hasPrefix("/System/Volumes/"),
                   (try? url.resourceValues(forKeys: [.volumeIsLocalKey]))?
                       .volumeIsLocal == true else { return nil }
             return Root(url: url)
