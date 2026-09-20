@@ -240,6 +240,61 @@ final class PreferencesTests: XCTestCase {
         XCTAssertTrue(preferences.blockedItems.isEmpty)
     }
 
+    // MARK: File-search scopes
+
+    func testFileSearchScopesDefault() {
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertEqual(preferences.fileSearchScopes, [.home])
+        XCTAssertEqual(preferences.fileSearchScopeSnapshot, [.home])
+    }
+
+    func testFileSearchScopesRoundTrip() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.fileSearchScopes = [.home, .volumes]
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertEqual(reloaded.fileSearchScopes, [.home, .volumes])
+        XCTAssertEqual(reloaded.fileSearchScopeSnapshot, [.home, .volumes])
+    }
+
+    /// A stored empty list means "user unchecked everything" — distinct
+    /// from an absent key, which falls back to the default.
+    func testEmptyFileSearchScopesPersist() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.fileSearchScopes = []
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.fileSearchScopes.isEmpty)
+    }
+
+    /// Unknown raw values in a hand-edited list drop individually, the
+    /// `compactMap` convention the pin/block dicts use too.
+    func testMalformedFileSearchScopesDrop() {
+        defaults.set(["home", "bogus", "volumes"], forKey: "fileSearchScopes")
+
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertEqual(preferences.fileSearchScopes, [.home, .volumes])
+    }
+
+    /// The snapshot the off-main walk reads mirrors every write — it must
+    /// never lag the live set, or a Settings toggle wouldn't reach the
+    /// next scan.
+    func testFileSearchScopeSnapshotMirrorsWrites() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.fileSearchScopes = [.system]
+        XCTAssertEqual(preferences.fileSearchScopeSnapshot, [.system])
+    }
+
+    /// A scope write fires its own callback — a rescan, not a reshape:
+    /// the cached walk only covered the old roots.
+    func testFileSearchScopesChangedFires() {
+        let preferences = Preferences(defaults: defaults)
+        var fired = 0
+        preferences.fileSearchScopesChanged = { fired += 1 }
+        preferences.fileSearchScopes = [.volumes]
+        XCTAssertEqual(fired, 1)
+    }
+
     /// A direct setter can't persist an out-of-range or unparseable value —
     /// the `didSet` sanitizes before writing, not just on next launch.
     func testSettersSanitizeBeforePersisting() {

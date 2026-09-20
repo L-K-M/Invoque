@@ -53,6 +53,8 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            fileSearchSection
+
             entryRulesSection
 
             updatesSection
@@ -68,6 +70,44 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    /// Where `find`/`f`/`search` looks. The boot disk is searched through
+    /// the home folder unless the whole-disk option is on; other drives
+    /// are searched whole. The last enabled scope can't be turned off —
+    /// file mode with nowhere to search could only ever show nothing.
+    private var fileSearchSection: some View {
+        Section("File Search") {
+            Toggle("Home folder", isOn: scopeBinding(.home))
+                .disabled(isSoleScope(.home))
+            Toggle("Entire startup disk", isOn: scopeBinding(.system))
+                .disabled(isSoleScope(.system))
+            Toggle("External drives", isOn: scopeBinding(.volumes))
+                .disabled(isSoleScope(.volumes))
+            Text("The startup disk skips hidden folders and packages as usual; other drives are searched whole. Network shares are never walked.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// A Set-membership toggle — writes the scope in or out of the
+    /// persisted set.
+    private func scopeBinding(_ scope: FileSearch.Scope) -> Binding<Bool> {
+        Binding(
+            get: { preferences.fileSearchScopes.contains(scope) },
+            set: { on in
+                if on {
+                    preferences.fileSearchScopes.insert(scope)
+                } else {
+                    preferences.fileSearchScopes.remove(scope)
+                }
+            })
+    }
+
+    /// Whether `scope` is the only enabled root — disabling its toggle
+    /// keeps file search from being switched into an always-empty state.
+    private func isSoleScope(_ scope: FileSearch.Scope) -> Bool {
+        preferences.fileSearchScopes == [scope]
     }
 
     /// The pinned and blocked entry lists — the only place to undo a block

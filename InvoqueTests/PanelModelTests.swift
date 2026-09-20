@@ -570,6 +570,23 @@ final class PanelModelTests: XCTestCase {
                        .openFile(URL(fileURLWithPath: "/tmp/notes.txt")))
     }
 
+    func testSearchKeywordRunsFileSearch() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "search notes"
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(model.results.first?.title, "notes.txt")
+        XCTAssertEqual(model.results.first?.action,
+                       .openFile(URL(fileURLWithPath: "/tmp/notes.txt")))
+    }
+
+    /// The keyword list is a contract — dropping one silently reroutes
+    /// those queries back to normal search.
+    func testFileSearchKeywords() {
+        XCTAssertEqual(Set(PanelModel.fileSearchKeywords),
+                       ["find", "f", "search"])
+    }
+
     func testBareFindKeywordStaysNormalSearch() {
         let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
         model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }

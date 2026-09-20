@@ -288,4 +288,61 @@ final class FileSearchTests: XCTestCase {
             NSHomeDirectory() + "/Documents/sheet.numbers")
         XCTAssertEqual(FileSearch.item(for: url).subtitle, "~/Documents")
     }
+
+    // MARK: Scopes
+
+    func testResolvedRootsHome() {
+        let roots = FileSearch.resolvedRoots(for: [.home])
+        XCTAssertEqual(roots.count, 1)
+        XCTAssertEqual(roots[0].url,
+                       FileManager.default.homeDirectoryForCurrentUser)
+        XCTAssertTrue(roots[0].skipPaths.isEmpty)
+    }
+
+    /// The system walk never descends /Volumes — those subtrees belong to
+    /// the volumes scope, not the boot disk.
+    func testResolvedRootsSystemSkipsVolumes() {
+        let roots = FileSearch.resolvedRoots(for: [.system])
+        XCTAssertEqual(roots.count, 1)
+        XCTAssertEqual(roots[0].url.path, "/")
+        XCTAssertEqual(roots[0].skipPaths, ["/Volumes"])
+    }
+
+    /// With home enabled too, the system walk skips ~ as well — otherwise
+    /// the whole home tree is walked (and listed) twice.
+    func testResolvedRootsHomeAndSystem() throws {
+        let roots = FileSearch.resolvedRoots(for: [.home, .system])
+        XCTAssertEqual(roots.count, 2)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+            .standardizedFileURL.path
+        let system = try XCTUnwrap(roots.first { $0.url.path == "/" })
+        XCTAssertTrue(system.skipPaths.contains("/Volumes"))
+        XCTAssertTrue(system.skipPaths.contains(home))
+    }
+
+    /// Volumes resolve to mounted non-boot volumes — whatever the machine
+    /// has; the boot disk itself must never appear among them.
+    func testResolvedRootsVolumesExcludeBoot() {
+        for root in FileSearch.resolvedRoots(for: [.volumes]) {
+            XCTAssertNotEqual(root.url.path, "/")
+        }
+    }
+
+    /// A skip path prunes the whole subtree: the directory itself never
+    /// matches (its name is a prefix hit here) and its contents are never
+    /// visited — the same "pruned directories are excluded entirely"
+    /// contract as a blocked dir.
+    func testSkipPathPrunesSubtree() throws {
+        try makeFile("keep/keep-notes.txt")
+        try makeFile("notes-vault/vault-notes.txt")
+        let skip = root.appendingPathComponent("notes-vault")
+            .standardizedFileURL.path
+        let matches = FileSearch.scan(
+            query: "notes",
+            roots: [FileSearch.Root(url: root, skipPaths: [skip])])
+        // setUp's root/notes.txt matches too — only the vault's entries
+        // and the vault itself must be absent.
+        XCTAssertEqual(matches.map(\.url.lastPathComponent),
+                       ["notes.txt", "keep-notes.txt"])
+    }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Spotlight-free filename search: a plain recursive directory walk, run on
-/// demand for `find <query>` / `f <query>` panel sessions.
+/// demand for `find <query>` / `f <query>` / `search <query>` sessions.
 ///
 /// No index and no metadata store — `NSMetadataQuery` (Spotlight) misses
 /// files in unsanctioned or excluded locations, so this walks the disk
@@ -24,10 +24,75 @@ import Foundation
 /// cancellation. Tests call it directly.
 enum FileSearch {
 
-    /// The roots a default scan walks. Home only — the same scope Alfred's
-    /// file search assumes.
+    /// A filesystem region the file search can walk — Settings → General
+    /// enables any subset. Persisted by raw value.
+    enum Scope: String, CaseIterable {
+        /// `~/` — the default. On the boot disk, only the home folder
+        /// makes sense to search.
+        case home
+        /// `/` — the whole startup disk, minus `/Volumes` (those belong
+        /// to `volumes`) and minus `~` when `home` is also enabled.
+        case system
+        /// Every mounted local volume that isn't the boot disk — other
+        /// drives are searched whole, not just a home folder. Network
+        /// shares are skipped: a per-keystroke recursive walk over a
+        /// remote mount isn't interactive.
+        case volumes
+    }
+
+    /// The scopes a default scan covers — home only, the same scope
+    /// Alfred's file search assumes.
+    static let defaultScopes: Set<Scope> = [.home]
+
+    /// The roots a default scan walks. Kept for the `roots:` convenience
+    /// overload — production resolves `scopes` instead.
     static var defaultRoots: [URL] {
         [FileManager.default.homeDirectoryForCurrentUser]
+    }
+
+    /// A resolved walk root: where to start, and which of its subtrees
+    /// belong to a different enabled scope. Skip paths prune whole —
+    /// overlapping scopes can't double-walk or double-list the same tree.
+    struct Root {
+        let url: URL
+        var skipPaths: Set<String> = []
+    }
+
+    /// The walk roots a scope set resolves to. Resolved per query, so a
+    /// drive mounted mid-session joins the next scan without a settings
+    /// round-trip.
+    static func resolvedRoots(for scopes: Set<Scope>) -> [Root] {
+        var roots: [Root] = []
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        if scopes.contains(.home) {
+            roots.append(Root(url: home))
+        }
+        if scopes.contains(.system) {
+            var skips: Set<String> = ["/Volumes"]
+            if scopes.contains(.home) {
+                skips.insert(home.standardizedFileURL.path)
+            }
+            roots.append(Root(url: URL(fileURLWithPath: "/"),
+                              skipPaths: skips))
+        }
+        if scopes.contains(.volumes) {
+            roots += mountedVolumeRoots()
+        }
+        return roots
+    }
+
+    /// Mounted local volumes other than the boot disk — external and
+    /// secondary drives, each searched whole.
+    private static func mountedVolumeRoots() -> [Root] {
+        let urls = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: [.volumeIsLocalKey],
+            options: [.skipHiddenVolumes]) ?? []
+        return urls.compactMap { url in
+            guard url.path != "/",
+                  (try? url.resourceValues(forKeys: [.volumeIsLocalKey]))?
+                      .volumeIsLocal == true else { return nil }
+            return Root(url: url)
+        }
     }
 
     /// Directory names never descended into — compared case-insensitively
@@ -71,10 +136,11 @@ enum FileSearch {
         let score: Int
     }
 
-    /// Ranked matches for `query` under `roots`, best first, at most
-    /// `SearchModel.maxResults`. Matching is on the last path component —
-    /// directories match like files (picking one opens it). Returns `[]` for
-    /// a blank query: "match everything" floods would defeat the point.
+    /// Ranked matches for `query` under the resolved `scopes`, best first,
+    /// at most `SearchModel.maxResults`. Matching is on the last path
+    /// component — directories match like files (picking one opens it).
+    /// Returns `[]` for a blank query: "match everything" floods would
+    /// defeat the point.
     ///
     /// `isExcluded` (on the `file:` item id) drops rows during the walk,
     /// before the cap — blocked files leave no hole in the result list
@@ -85,7 +151,29 @@ enum FileSearch {
     /// `isBoosted` (same id) lifts pinned matches ahead of the cap in rank
     /// order — a pin ranked past `maxResults` would otherwise be cut and
     /// the pin would silently do nothing in file mode.
+    static func scan(query: String, scopes: Set<Scope>,
+                     isCancelled: () -> Bool = { false },
+                     isExcluded: (String) -> Bool = { _ in false },
+                     isBoosted: (String) -> Bool = { _ in false }) -> [Match] {
+        scan(query: query, roots: resolvedRoots(for: scopes),
+             isCancelled: isCancelled, isExcluded: isExcluded,
+             isBoosted: isBoosted)
+    }
+
+    /// `scan(query:scopes:)` with explicit plain roots — no subtree
+    /// skipping. The test-facing overload; production passes scopes.
     static func scan(query: String, roots: [URL] = defaultRoots,
+                     isCancelled: () -> Bool = { false },
+                     isExcluded: (String) -> Bool = { _ in false },
+                     isBoosted: (String) -> Bool = { _ in false }) -> [Match] {
+        scan(query: query, roots: roots.map { Root(url: $0) },
+             isCancelled: isCancelled, isExcluded: isExcluded,
+             isBoosted: isBoosted)
+    }
+
+    /// The walk proper — one shared visited/matches/seenPaths across
+    /// roots so the caps and dedupe are global, not per root.
+    static func scan(query: String, roots: [Root],
                      isCancelled: () -> Bool = { false },
                      isExcluded: (String) -> Bool = { _ in false },
                      isBoosted: (String) -> Bool = { _ in false }) -> [Match] {
@@ -130,6 +218,18 @@ enum FileSearch {
 
     /// Ranked matches mapped to items — filename, `~`-abbreviated parent
     /// path, the file-type icon, and an `openFile` action.
+    static func items(query: String, scopes: Set<Scope>,
+                      isCancelled: () -> Bool = { false },
+                      isExcluded: (String) -> Bool = { _ in false },
+                      isBoosted: (String) -> Bool = { _ in false }) -> [Item] {
+        scan(query: query, scopes: scopes, isCancelled: isCancelled,
+             isExcluded: isExcluded, isBoosted: isBoosted).map {
+            item(for: $0.url)
+        }
+    }
+
+    /// `items(query:scopes:)` with explicit plain roots — the test-facing
+    /// overload; production passes scopes.
     static func items(query: String, roots: [URL] = defaultRoots,
                       isCancelled: () -> Bool = { false },
                       isExcluded: (String) -> Bool = { _ in false },
@@ -143,13 +243,13 @@ enum FileSearch {
     /// One root, deep. `isHidden` is prefetched so the per-entry check stays
     /// cheap; a hidden directory is pruned via `skipDescendants` rather than
     /// `.skipsHiddenFiles`, which would drop hidden files too.
-    private static func walk(_ root: URL, query: String,
+    private static func walk(_ root: Root, query: String,
                              isCancelled: () -> Bool,
                              isExcluded: (String) -> Bool,
                              visited: inout Int, matches: inout [Match],
                              seenPaths: inout Set<String>) {
         guard let enumerator = FileManager.default.enumerator(
-            at: root,
+            at: root.url,
             includingPropertiesForKeys: [.isHiddenKey, .isDirectoryKey],
             options: [.skipsPackageDescendants]
         ) else { return }
@@ -162,13 +262,17 @@ enum FileSearch {
             let values = try? url.resourceValues(forKeys: [.isHiddenKey, .isDirectoryKey])
             if values?.isDirectory == true {
                 let name = url.lastPathComponent.lowercased()
-                // A blocked directory prunes its whole subtree — paying the
-                // id build only for directories keeps plain files cheap.
+                // Prunes pay the standardized-path build only for
+                // directories, keeping plain files cheap: a blocked dir
+                // drops its whole subtree, and a skip path (a subtree
+                // another scope owns) is never descended either.
+                let path = url.standardizedFileURL.path
                 if values?.isHidden == true
                     || skippedDirectoryNames.contains(name)
                     || (projectScopedDirectoryNames.contains(name)
                         && hasProjectManifest(beside: url))
-                    || isExcluded(Self.fileID(for: url)) {
+                    || root.skipPaths.contains(path)
+                    || isExcluded(Self.fileID(forPath: path)) {
                     enumerator.skipDescendants()
                     continue
                 }

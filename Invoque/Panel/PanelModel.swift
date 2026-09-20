@@ -83,9 +83,9 @@ final class PanelModel: ObservableObject {
     }
 
     /// Runs a Spotlight-free filename scan (`FileSearch.items` in
-    /// production, a stub in tests). While `nil`, `find`/`f` queries stay
-    /// normal searches — the same "unwired stays normal" convention as
-    /// `filterLookup` and `maker`.
+    /// production, a stub in tests). While `nil`, `find`/`f`/`search`
+    /// queries stay normal searches — the same "unwired stays normal"
+    /// convention as `filterLookup` and `maker`.
     var fileSearcher: ((_ query: String, _ isCancelled: () -> Bool) -> [Item])? {
         didSet { refreshResults() }
     }
@@ -196,13 +196,15 @@ final class PanelModel: ObservableObject {
 
     // MARK: File-search routing
 
-    /// Keywords that route the query into file-search mode — `find ` and
-    /// `f ` (Alfred's `find` muscle memory). The bare keyword without a
-    /// trailing space stays a normal search, and the built-in wins over a
-    /// command claiming the same keyword — the `makerKeywords` policy.
-    static let fileSearchKeywords = ["find", "f"]
+    /// Keywords that route the query into file-search mode — `find `,
+    /// `f ` (Alfred's `find` muscle memory), and `search `. The bare
+    /// keyword without a trailing space stays a normal search, and the
+    /// built-in wins over a command claiming the same keyword — the
+    /// `makerKeywords` policy.
+    static let fileSearchKeywords = ["find", "f", "search"]
 
-    /// The resolved `find`/`f` session when `query` is `<keyword> <rest>`
+    /// The resolved `find`/`f`/`search` session when `query` is
+    /// `<keyword> <rest>`
     /// and a searcher is wired, else nil. `text` is whitespace-trimmed —
     /// "f  x" scans "x", and a spaces-only rest resolves blank. Blank owns
     /// an empty list until there's something worth scanning for.
