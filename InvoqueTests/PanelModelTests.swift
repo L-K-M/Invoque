@@ -603,12 +603,14 @@ final class PanelModelTests: XCTestCase {
     }
 
     /// Bare `search` must not route into file mode either — keyword
-    /// parsing is uniform across the list.
+    /// parsing is uniform across the list. (The fixture's title must
+    /// match the query text for the normal search to surface it.)
     func testBareSearchKeywordStaysNormalSearch() {
-        let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
+        let model = makeModel(items: [Self.appItem(id: "app:searcher",
+                                                  title: "Searcher")])
         model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
         model.query = "search"
-        XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+        XCTAssertEqual(model.results.map(\.id), ["app:searcher"])
     }
 
     /// Unwired, "find x" is just a query — the same convention as
