@@ -40,6 +40,8 @@ final class Preferences: ObservableObject {
         static let crtEnabled = false
         static let crtIntensity = 0.5
         static let searchEngine = SearchEngine.duckDuckGo
+        static let pinnedItems: [String: String] = [:]
+        static let blockedItems: [String: String] = [:]
     }
 
     private enum Key {
@@ -65,6 +67,8 @@ final class Preferences: ObservableObject {
         static let crtEnabled = "crtEnabled"
         static let crtIntensity = "crtIntensity"
         static let searchEngine = "searchEngine"
+        static let pinnedItems = "pinnedItems"
+        static let blockedItems = "blockedItems"
     }
 
     // MARK: Stored settings
@@ -264,6 +268,88 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(searchEngine.rawValue, forKey: Key.searchEngine) }
     }
 
+    // MARK: Pinned & blocked entries
+
+    /// The file walk reads rules off the main thread, so `isPinned`/
+    /// `isBlocked` can't touch the dictionaries directly — a read
+    /// concurrent with a didSet write would race. These key-set snapshots,
+    /// rebuilt under `rulesLock` on every write, are the thread-safe face.
+    /// The dictionaries themselves stay main-thread state.
+    private let rulesLock = NSLock()
+    private var pinnedIDSnapshot: Set<String> = []
+    private var blockedIDSnapshot: Set<String> = []
+
+    /// Entries the user pinned — item id → title at pin time. A pinned
+    /// entry ranks above ordinary matches whenever it matches the query
+    /// (the `path:` and `calc:` head rows still lead the list, and the
+    /// `web:` fallback still trails it).
+    /// The stored title only feeds the Settings list; matching keys on
+    /// the id. A stale id (uninstalled app, deleted command) is harmless:
+    /// it simply never matches again.
+    @Published var pinnedItems: [String: String] {
+        didSet {
+            defaults.set(pinnedItems, forKey: Key.pinnedItems)
+            // Snapshot before the refresh callback — a re-list reads the
+            // rules synchronously and must see the state just written.
+            rulesLock.withLock { pinnedIDSnapshot = Set(pinnedItems.keys) }
+            entryRulesChanged?()
+        }
+    }
+
+    /// Entries the user blocked — same shape. Blocked ids never appear in
+    /// results at all; block wins over pin.
+    @Published var blockedItems: [String: String] {
+        didSet {
+            defaults.set(blockedItems, forKey: Key.blockedItems)
+            rulesLock.withLock { blockedIDSnapshot = Set(blockedItems.keys) }
+            entryRulesChanged?()
+        }
+    }
+
+    /// Fires after either set changes — the AppDelegate wires it to the
+    /// panel's refresh so a pin/block applies to the visible list
+    /// immediately, including edits made from the Settings lists. DidSet
+    /// timing, so the write is already persisted.
+    var entryRulesChanged: (() -> Void)?
+
+    func isPinned(_ id: String) -> Bool {
+        rulesLock.withLock { pinnedIDSnapshot.contains(id) }
+    }
+    func isBlocked(_ id: String) -> Bool {
+        rulesLock.withLock { blockedIDSnapshot.contains(id) }
+    }
+
+    /// Toggles `id` in `pinnedItems`; returns the new state. Pinning a
+    /// blocked entry unblocks it — the sets are exclusive, and the last
+    /// explicit action wins (the mirror of `toggleBlocked` unpinning).
+    @discardableResult
+    func togglePinned(id: String, title: String) -> Bool {
+        if pinnedItems[id] != nil {
+            pinnedItems[id] = nil
+            return false
+        }
+        if blockedItems[id] != nil { blockedItems[id] = nil }
+        pinnedItems[id] = title
+        return true
+    }
+
+    /// Toggles `id` in `blockedItems`; returns the new state. Blocking
+    /// unpins — a pinned-and-blocked entry would be invisible anyway, and
+    /// keeping the pin would resurrect it on unblock.
+    @discardableResult
+    func toggleBlocked(id: String, title: String) -> Bool {
+        if blockedItems[id] != nil {
+            blockedItems[id] = nil
+            return false
+        }
+        // Only clear a pin that exists — a subscript nil-write on an
+        // absent key still fires didSet, persisting and re-listing for
+        // nothing.
+        if pinnedItems[id] != nil { pinnedItems[id] = nil }
+        blockedItems[id] = title
+        return true
+    }
+
     // MARK: Init
 
     init(defaults: UserDefaults = .standard) {
@@ -314,6 +400,16 @@ final class Preferences: ObservableObject {
             ?? Default.crtIntensity, in: Limit.unitInterval, fallback: Default.crtIntensity)
         searchEngine = SearchEngine(rawValue: defaults.string(forKey: Key.searchEngine) ?? "")
             ?? Default.searchEngine
+        // `compactMapValues` drops only the malformed entries — one bad
+        // value in a hand-edited dict must not take the whole list down.
+        pinnedItems = (defaults.dictionary(forKey: Key.pinnedItems) ?? [:])
+            .compactMapValues { $0 as? String }
+        blockedItems = (defaults.dictionary(forKey: Key.blockedItems) ?? [:])
+            .compactMapValues { $0 as? String }
+        // didSet doesn't run on init-time assignment — seed the snapshots
+        // the threaded reads use.
+        pinnedIDSnapshot = Set(pinnedItems.keys)
+        blockedIDSnapshot = Set(blockedItems.keys)
     }
 
     // MARK: Summon hotkey

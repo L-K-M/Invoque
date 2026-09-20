@@ -194,6 +194,18 @@ final class PanelController: NSObject {
 
         panel.onCancel = { [weak self] in self?.hide() }
 
+        // ⌘P pins, ⌘B blocks the selected entry. The model returns nil
+        // when the chord doesn't apply (no manageable row selected, a
+        // consent/maker card up) — no toast for a no-op.
+        panel.onPinChord = { [weak self] in
+            guard let self, let toast = self.model.togglePin() else { return }
+            HUD.show(toast, typeface: self.preferences.panelTypeface)
+        }
+        panel.onBlockChord = { [weak self] in
+            guard let self, let toast = self.model.toggleBlock() else { return }
+            HUD.show(toast, typeface: self.preferences.panelTypeface)
+        }
+
         // Hide on losing key status (click elsewhere, another window summoned).
         // Observed here rather than overridden on the window: the controller
         // owns dismissal (see LauncherPanel's class comment).

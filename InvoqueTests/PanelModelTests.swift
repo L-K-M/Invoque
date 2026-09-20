@@ -1067,6 +1067,263 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.map(\.id), ["app:notes-app"])
     }
 
+    // MARK: Pin & block
+
+    /// A mutable pin/block backing standing in for the `Preferences`
+    /// closures — the toggles write into plain sets the test can inspect,
+    /// and fire `changed` the way `Preferences.entryRulesChanged` does:
+    /// the notification, not the toggle, is what re-lists the panel.
+    private final class RulesStub {
+        var pinned = Set<String>()
+        var blocked = Set<String>()
+        var changed: (() -> Void)?
+        var entryRules: EntryRules {
+            EntryRules(
+                isPinned: { [self] in pinned.contains($0) },
+                isBlocked: { [self] in blocked.contains($0) },
+                togglePin: { [self] id, _ in
+                    defer { changed?() }
+                    if pinned.contains(id) { pinned.remove(id); return false }
+                    blocked.remove(id)
+                    pinned.insert(id)
+                    return true
+                },
+                toggleBlock: { [self] id, _ in
+                    defer { changed?() }
+                    if blocked.contains(id) { blocked.remove(id); return false }
+                    pinned.remove(id)
+                    blocked.insert(id)
+                    return true
+                })
+        }
+    }
+
+    /// A model whose panel and search layers share one rules facade —
+    /// the production wiring, minus Preferences: toggles notify through
+    /// `changed`, exactly like `entryRulesChanged` → `entryRulesDidChange`.
+    private func makeManagedModel(items: [Item], rules: RulesStub) -> PanelModel {
+        let model = PanelModel()
+        model.searchModel = SearchModel(
+            sources: [StubSource(stubbed: items)],
+            frecency: Frecency(defaults: defaults),
+            entryRules: rules.entryRules)
+        model.entryRules = rules.entryRules
+        rules.changed = { [weak model] in model?.entryRulesDidChange() }
+        return model
+    }
+
+    /// Pinning the selection boosts it above a strictly better match and
+    /// reports the change as HUD text.
+    func testTogglePinBoostsSelection() {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:winner", title: "Safari"),
+            Self.appItem(id: "app:loser", title: "SanFran"),
+        ], rules: rules)
+        model.query = "saf"
+        XCTAssertEqual(model.results.map(\.id), ["app:winner", "app:loser"])
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.togglePin(), "Pinned SanFran")
+        XCTAssertTrue(rules.pinned.contains("app:loser"))
+        XCTAssertEqual(model.results.map(\.id), ["app:loser", "app:winner"])
+        XCTAssertTrue(model.isPinned(model.results[0]))
+    }
+
+    /// A second toggle reverses the first — and the row drops back to
+    /// its ranked slot on the same refresh.
+    func testTogglePinTwiceUnpins() {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:winner", title: "Safari"),
+            Self.appItem(id: "app:loser", title: "SanFran"),
+        ], rules: rules)
+        model.query = "saf"
+        model.togglePin(on: model.results[1])
+        XCTAssertEqual(model.togglePin(on: model.results[0]), "Unpinned SanFran")
+        XCTAssertTrue(rules.pinned.isEmpty)
+        XCTAssertEqual(model.results.map(\.id), ["app:winner", "app:loser"])
+    }
+
+    /// Blocking the selection removes the row on the spot and reports it.
+    func testToggleBlockRemovesRow() {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:winner", title: "Safari"),
+            Self.appItem(id: "app:loser", title: "SanFran"),
+        ], rules: rules)
+        model.query = "saf"
+        XCTAssertEqual(model.toggleBlock(on: model.results[0]),
+                       "Blocked Safari")
+        XCTAssertTrue(rules.blocked.contains("app:winner"))
+        XCTAssertEqual(model.results.map(\.id), ["app:loser"])
+    }
+
+    /// Functional rows (`web:`/`calc:`/`path:`) and ephemeral `filter:`
+    /// rows aren't entries — no affordance, no toggle.
+    func testToggleOnNonManageableRowIsNil() throws {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:safari", title: "Safari"),
+            Item(id: "web:saf", title: "Search the web", subtitle: "",
+                 icon: .symbol("globe"),
+                 action: .openURL(URL(string: "https://example.com")!),
+                 matchText: "web"),
+        ], rules: rules)
+        model.query = "saf"
+        let web = try XCTUnwrap(model.results.last)
+        XCTAssertEqual(web.id, "web:saf")
+        XCTAssertFalse(model.canManage(web))
+        XCTAssertNil(model.togglePin(on: web))
+        XCTAssertNil(model.toggleBlock(on: web))
+        XCTAssertTrue(model.canManage(model.results[0]))
+    }
+
+    /// No selection — empty results — means the chords no-op silently.
+    func testToggleWithNoSelectionIsNil() {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [], rules: rules)
+        XCTAssertNil(model.togglePin())
+        XCTAssertNil(model.toggleBlock())
+    }
+
+    /// The consent card owns the panel: pin/block chords can't act on
+    /// the list sitting underneath it.
+    func testToggleDuringPermissionRequestIsNil() throws {
+        let grants = makeFreshGrants()
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:safari", title: "Safari"),
+        ], rules: rules)
+        model.query = "safari"
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+        XCTAssertNil(model.togglePin())
+        XCTAssertNil(model.toggleBlock())
+        XCTAssertTrue(rules.pinned.isEmpty)
+        XCTAssertTrue(rules.blocked.isEmpty)
+    }
+
+    /// Block beats pin through the wired path — the stub allows the
+    /// overlap a hand-edited defaults file could hold, and "never show"
+    /// must win at the panel, not just inside `SearchModel`.
+    func testBlockBeatsPin() {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:notes", title: "Notes"),
+        ], rules: rules)
+        rules.pinned = ["app:notes"]
+        rules.blocked = ["app:notes"]
+        model.query = "not"
+        XCTAssertTrue(model.results.isEmpty)
+    }
+
+    /// Extending the query keeps displayed order inside the pin band too:
+    /// "safi" re-tiers "Safxafi" from prefix to fuzzy — a fresh rank would
+    /// swap the two pins — but the survivor merge holds their slots.
+    func testPinnedSurvivorsKeepOrderOnExtension() {
+        let rules = RulesStub()
+        rules.pinned = ["app:long", "app:short"]
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:long", title: "Safari Tool"),
+            Self.appItem(id: "app:short", title: "Safxafi"),
+        ], rules: rules)
+        model.query = "saf"
+        // Both pinned: "Safxafi" (7-char prefix) outranks "Safari Tool"
+        // (11-char prefix) — band order [short, long].
+        XCTAssertEqual(model.results.map(\.id), ["app:short", "app:long"])
+        model.query = "safi"
+        // Fresh rank would now put the still-prefix "Safari Tool" over
+        // the now-fuzzy "Safxafi" — stability must hold the swap back.
+        XCTAssertEqual(model.results.map(\.id), ["app:short", "app:long"])
+    }
+
+    /// The Settings-list path: an outside change plus `entryRulesDidChange`
+    /// (what `Preferences.entryRulesChanged` fires) re-lists the open query.
+    func testExternalBlockRefreshesOpenResults() {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:winner", title: "Safari"),
+            Self.appItem(id: "app:loser", title: "SanFran"),
+        ], rules: rules)
+        model.query = "saf"
+        rules.blocked = ["app:winner"]
+        model.entryRulesDidChange()
+        XCTAssertEqual(model.results.map(\.id), ["app:loser"])
+    }
+
+    /// File mode: a blocked scan hit vanishes from the displayed list
+    /// without a second disk walk — the cached raw rows reshape.
+    func testFileModeBlockRemovesRowWithoutRescan() async throws {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [], rules: rules)
+        withShortFileDebounce()
+        model.fileSearcher = { _, _ in
+            [Self.fileItem("keep.txt"), Self.fileItem("drop.txt")]
+        }
+        model.query = "find txt"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["keep.txt", "drop.txt"])
+        let starts = model.fileRunsStarted
+
+        let dropped = model.results[1]
+        XCTAssertEqual(model.toggleBlock(on: dropped), "Blocked drop.txt")
+        XCTAssertEqual(model.results.map(\.title), ["keep.txt"])
+        // The rescan-free reshape: no new scan ran for the same session.
+        XCTAssertEqual(model.fileRunsStarted, starts)
+    }
+
+    /// Pinning a file row moves it to the top of the scan list — the
+    /// file-mode twin of the ranked pin band.
+    func testFileModePinLeads() async throws {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [], rules: rules)
+        withShortFileDebounce()
+        model.fileSearcher = { _, _ in
+            [Self.fileItem("alpha.txt"), Self.fileItem("beta.txt")]
+        }
+        model.query = "find txt"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["alpha.txt", "beta.txt"])
+
+        XCTAssertEqual(model.togglePin(on: model.results[1]), "Pinned beta.txt")
+        XCTAssertEqual(model.results.map(\.title), ["beta.txt", "alpha.txt"])
+        XCTAssertTrue(model.isPinned(model.results[0]))
+    }
+
+    /// A rules change while a file session is open reshapes the cached
+    /// rows — the same-session rescan `scheduleFileSearch` refuses is
+    /// exactly what this path covers.
+    func testFileModeExternalRulesChangeReshapes() async throws {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [], rules: rules)
+        withShortFileDebounce()
+        model.fileSearcher = { _, _ in
+            [Self.fileItem("alpha.txt"), Self.fileItem("beta.txt")]
+        }
+        model.query = "find txt"
+        await awaitFileCompletions(model, atLeast: 1)
+        let starts = model.fileRunsStarted
+
+        rules.blocked = [Self.fileItem("alpha.txt").id]
+        model.entryRulesDidChange()
+        XCTAssertEqual(model.results.map(\.title), ["beta.txt"])
+        XCTAssertEqual(model.fileRunsStarted, starts)
+    }
+
+    /// Leaving file mode drops the cached raw rows with the session —
+    /// a stale cache must not bleed into the next `find`.
+    func testFileModeExitClearsShapedState() async throws {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:notes", title: "Notes"),
+        ], rules: rules)
+        withShortFileDebounce()
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "find notes"
+        await awaitFileCompletions(model, atLeast: 1)
+        model.query = "notes"
+        XCTAssertEqual(model.results.map(\.id), ["app:notes"])
+    }
+
     // MARK: Helpers
 
     private final class MakerStubClient: LLMClientServing {

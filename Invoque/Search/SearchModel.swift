@@ -2,15 +2,21 @@ import Foundation
 
 /// Gathers items from every source, ranks them, and returns the top rows.
 ///
-/// Source priority: calculator exact results first, then ranked matches,
-/// then the web fallback last. Ranked ordering is class-first — an exact
-/// prefix beats an infix beats a fuzzy subsequence — then shorter match
-/// text wins inside a class, then frecency, alignment score, and title/id
-/// tie-break in that order. The pins are load-bearing, not cosmetic: the
-/// web row's text always contains the query, so without pinning it would
-/// score like a strong prefix hit and steal Return from real matches.
-/// Calculator results pin to the top for the symmetric reason: `= 4` is an
-/// exact answer, not a guess, and must outrank fuzzy noise.
+/// Source priority: `path:`/`calc:` pins first, then the user's pinned
+/// entries, then ranked matches, then the web fallback last. Ranked
+/// ordering is class-first — an exact prefix beats an infix beats a fuzzy
+/// subsequence — then shorter match text wins inside a class, then
+/// frecency, alignment score, and title/id tie-break in that order. The
+/// pins are load-bearing, not cosmetic: the web row's text always
+/// contains the query, so without pinning it would score like a strong
+/// prefix hit and steal Return from real matches. Calculator results pin
+/// to the top for the symmetric reason: `= 4` is an exact answer, not a
+/// guess, and must outrank fuzzy noise.
+///
+/// `entryRules` carries the user's pins and blocks: pinned entries form a
+/// band between the functional head pins and the ranked middle (they must
+/// still match — a pin boosts, it doesn't conjure), and blocked ids are
+/// dropped before matching, absolutely.
 ///
 /// Empty or blank queries yield no results; what an empty panel shows is a
 /// UI concern for the later panel PR, not the model's.
@@ -34,12 +40,17 @@ final class SearchModel {
 
     private let sources: [ItemSource]
     private let frecency: Frecency
+    /// The user's pin/block sets, read live per query — a Settings edit
+    /// applies to the next keystroke without rewiring the model.
+    private let entryRules: EntryRules
 
     // MARK: Init
 
-    init(sources: [ItemSource], frecency: Frecency) {
+    init(sources: [ItemSource], frecency: Frecency,
+         entryRules: EntryRules = EntryRules()) {
         self.sources = sources
         self.frecency = frecency
+        self.entryRules = entryRules
     }
 
     // MARK: Searching
@@ -91,9 +102,14 @@ final class SearchModel {
         // twice must not produce two rows.
         var pinnedIDs = Set<String>()
         var bestByID: [String: ScoredItem] = [:]
+        let rules = entryRules
 
         for source in sources {
             for item in source.items(matching: trimmed) {
+                // Block is absolute — ahead of even the pin checks, so a
+                // stored `path:`/`web:`/`calc:` id honors "never show" too
+                // (the UI can't produce those, but a hand edit can).
+                if rules.isBlocked(item.id) { continue }
                 if item.id.hasPrefix(Item.pathIDPrefix) {
                     guard pinnedIDs.insert(item.id).inserted else { continue }
                     pathHits.append(item)
@@ -120,15 +136,29 @@ final class SearchModel {
             .sorted { Self.outranks($0, over: $1) }
             .map { $0.item }
 
+        // Pinned entries form a band under the functional head pins:
+        // matched and rank-ordered like everything else (the filter
+        // preserves that order), just always above unpinned matches. The
+        // band is capped: a screenful of matching pins must not evict the
+        // web fallback and every ranked match — pins past the cap rejoin
+        // the ranked pool in their natural order instead.
+        let bandCap = max(0, Self.maxResults - pathHits.count
+            - calculatorHits.count - webHits.count - 1)
+        let pinnedBand = Array(ranked.filter { rules.isPinned($0.id) }
+            .prefix(bandCap))
+        let bandIDs = Set(pinnedBand.map(\.id))
+        let unpinned = ranked.filter { !bandIDs.contains($0.id) }
+
         // The pinned rows get their slots first: a noisy query that fills the
         // ranked list must not push the web fallback past the cap. The outer
         // clamp keeps the `maxResults` contract even if the pinned sources
         // alone would overflow it (trailing web rows go first). `path:` rows
         // lead — a typed address is a direct intent, ahead of the calculator.
-        let pinnedCount = pathHits.count + calculatorHits.count + webHits.count
+        let pinnedCount = pathHits.count + calculatorHits.count
+            + pinnedBand.count + webHits.count
         let rankedSlots = max(0, Self.maxResults - pinnedCount)
-        return Array((pathHits + calculatorHits
-            + Array(ranked.prefix(rankedSlots)) + webHits)
+        return Array((pathHits + calculatorHits + pinnedBand
+            + Array(unpinned.prefix(rankedSlots)) + webHits)
             .prefix(Self.maxResults))
     }
 

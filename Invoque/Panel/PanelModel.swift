@@ -90,6 +90,15 @@ final class PanelModel: ObservableObject {
         didSet { refreshResults() }
     }
 
+    /// The user's pin/block rules — Preferences-backed in production via
+    /// the AppDelegate's wiring; the default instance manages nothing.
+    /// Reads are live closures, so a Settings edit lands on the next
+    /// refresh; writes from Settings fire `entryRulesDidChange` through
+    /// `Preferences.entryRulesChanged`.
+    var entryRules = EntryRules() {
+        didSet { refreshResults() }
+    }
+
     /// Shared-store icon lookup: the resolved artwork for a target, or nil
     /// for "use the system icon" — `PictKit`'s miss contract, which the
     /// view reads as "draw the workspace icon". Wired to `InvoqueIcons` by
@@ -344,6 +353,7 @@ final class PanelModel: ObservableObject {
         activeFileKeyword = nil
         activeFileText = nil
         fileResultText = nil
+        rawFileRows = []
         fileGeneration += 1
     }
 
@@ -521,7 +531,13 @@ final class PanelModel: ObservableObject {
                 // it, and nil-ing here would break its cancellation.
                 guard generation == fileGeneration else { return }
                 fileTask = nil
-                let merged = stabilizedFileRows(rows, text: text)
+                // Kept unshaped so a pin/block toggle can re-derive the
+                // list without re-walking the disk. Scan-time rules are
+                // already applied — blocked ids never arrive, pinned ones
+                // survive the cap — so `shapeFileRows`' block drop only
+                // sees ids blocked since the scan.
+                rawFileRows = rows
+                let merged = stabilizedFileRows(shapeFileRows(rows), text: text)
                 fileResultText = text
                 // Identical rows must not re-assign: results' didSet resets
                 // the selection, so a no-op refresh would yank it to the top.
@@ -533,8 +549,10 @@ final class PanelModel: ObservableObject {
 
     /// The `stabilizedRankedRows` twin for file scans: when the scan text
     /// only grew, rows that still match keep their displayed positions and
-    /// the fresh list fills the remaining slots by rank. There are no pins
-    /// in file mode — every row is a ranked `file:` row.
+    /// the fresh list fills the remaining slots by rank. Runs after
+    /// `shapeFileRows`, so the merge sees the pin-ordered list — and only
+    /// ever sees a text extension, since `entryRulesDidChange` applies
+    /// rules changes wholesale instead of routing through here.
     private func stabilizedFileRows(_ freshRows: [ResultRow],
                                     text: String) -> [ResultRow] {
         guard let anchor = fileResultText, !anchor.isEmpty,
@@ -552,6 +570,75 @@ final class PanelModel: ObservableObject {
         }
         let tail = freshRows.filter { !headIDs.contains($0.id) }
         return Array((head + tail).prefix(SearchModel.maxResults))
+    }
+
+    /// The last scan's rows before pin/block shaping — cached so a rules
+    /// change mid-session re-shapes the list without re-walking the disk.
+    /// Cleared with the session in `cancelFileSearch`.
+    private var rawFileRows: [ResultRow] = []
+
+    /// Applies the entry rules to raw scan rows: blocked entries drop out,
+    /// pinned entries lead — the file-mode twin of `SearchModel`'s pin
+    /// band. `stabilizedFileRows` still owns positions on query extension.
+    private func shapeFileRows(_ rows: [ResultRow]) -> [ResultRow] {
+        let live = rows.filter { !entryRules.isBlocked($0.id) }
+        return live.filter { entryRules.isPinned($0.id) }
+            + live.filter { !entryRules.isPinned($0.id) }
+    }
+
+    // MARK: Entry rules (pin / block)
+
+    /// Whether `row` is a durable entry the user can pin or block — the
+    /// affordances never appear on functional pins or ephemeral rows.
+    func canManage(_ row: ResultRow) -> Bool {
+        Item.isManageableID(row.id)
+    }
+
+    func isPinned(_ row: ResultRow) -> Bool {
+        entryRules.isPinned(row.id)
+    }
+
+    /// Toggles the pin on `row` (default: the selection). Returns HUD text
+    /// describing the change, or nil when nothing happened — the row isn't
+    /// a manageable entry, or a card (consent prompt, maker) owns the
+    /// panel while the list sits underneath. The refresh arrives through
+    /// the `entryRulesChanged` notification the write fires — toggles
+    /// don't re-list directly, so there's exactly one refresh per write.
+    @discardableResult
+    func togglePin(on row: ResultRow? = nil) -> String? {
+        guard permissionRequest == nil, !makerIsActive,
+              let row = row ?? selectedRow, canManage(row) else { return nil }
+        let pinned = entryRules.togglePin(row.id, row.title)
+        return pinned ? "Pinned \(row.title)" : "Unpinned \(row.title)"
+    }
+
+    /// The `togglePin` twin for blocking — the row vanishes on the spot.
+    @discardableResult
+    func toggleBlock(on row: ResultRow? = nil) -> String? {
+        guard permissionRequest == nil, !makerIsActive,
+              let row = row ?? selectedRow, canManage(row) else { return nil }
+        let blocked = entryRules.toggleBlock(row.id, row.title)
+        return blocked ? "Blocked \(row.title)" : "Unblocked \(row.title)"
+    }
+
+    /// The sets changed — from a toggle here or from the Settings lists via
+    /// `Preferences.entryRulesChanged`. File mode re-shapes the cached scan
+    /// (`scheduleFileSearch` rightly refuses a same-session re-walk); a
+    /// normal search just re-runs the open query.
+    func entryRulesDidChange() {
+        if fileSearchIsActive {
+            // Wholesale replace, not `stabilizedFileRows`: its survivor
+            // merge exists for text extensions and a rules change is not
+            // one — a pin must promote and a block must vanish on the spot.
+            // `FileSearch` already caps its output at `maxResults`, but
+            // enforce the list-height invariant here so a future producer
+            // change can't push an over-cap list into the panel.
+            let shaped = Array(shapeFileRows(rawFileRows)
+                .prefix(SearchModel.maxResults))
+            if shaped != results { results = shaped }
+            return
+        }
+        refreshResults()
     }
 
     /// What picking a filter row does. `arg` is the payload: an http(s) URL

@@ -53,6 +53,8 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            entryRulesSection
+
             updatesSection
 
             makerSection
@@ -66,6 +68,63 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+
+    /// The pinned and blocked entry lists — the only place to undo a block
+    /// (a blocked row can never be selected in the panel). Entries display
+    /// by the title recorded at pin/block time, id beneath it.
+    private var entryRulesSection: some View {
+        Section("Pinned & Blocked") {
+            if preferences.pinnedItems.isEmpty && preferences.blockedItems.isEmpty {
+                Text("Right-click a result — or press ⌘P / ⌘B — to pin or block it. Pinned entries appear above other matches; blocked entries never appear.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !preferences.pinnedItems.isEmpty {
+                Text("Pinned").font(.caption).foregroundStyle(.secondary)
+                ForEach(Self.sorted(preferences.pinnedItems), id: \.key) { id, title in
+                    entryRow(id: id, title: title, actionTitle: "Unpin") {
+                        preferences.pinnedItems[id] = nil
+                    }
+                }
+            }
+            if !preferences.blockedItems.isEmpty {
+                Text("Blocked").font(.caption).foregroundStyle(.secondary)
+                ForEach(Self.sorted(preferences.blockedItems), id: \.key) { id, title in
+                    entryRow(id: id, title: title, actionTitle: "Unblock") {
+                        preferences.blockedItems[id] = nil
+                    }
+                }
+            }
+        }
+    }
+
+    /// One row of a pin/block list: the recorded title, the id it keys on,
+    /// and the remove button.
+    private func entryRow(id: String, title: String,
+                          actionTitle: String,
+                          action: @escaping () -> Void) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(id)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Button(actionTitle, action: action)
+                .accessibilityLabel("\(actionTitle) \(title)")
+        }
+    }
+
+    /// A pin/block dict's entries sorted by title for a stable list.
+    private static func sorted(_ entries: [String: String]) -> [(key: String, value: String)] {
+        entries.sorted {
+            $0.value.localizedCaseInsensitiveCompare($1.value) == .orderedAscending
+        }
+        .map { (key: $0.key, value: $0.value) }
     }
 
     // MARK: Software updates

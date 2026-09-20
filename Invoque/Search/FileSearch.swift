@@ -75,8 +75,20 @@ enum FileSearch {
     /// `SearchModel.maxResults`. Matching is on the last path component —
     /// directories match like files (picking one opens it). Returns `[]` for
     /// a blank query: "match everything" floods would defeat the point.
+    ///
+    /// `isExcluded` (on the `file:` item id) drops rows during the walk,
+    /// before the cap — blocked files leave no hole in the result list
+    /// because the next-best match backfills their slot. An excluded
+    /// *directory* is pruned whole: its subtree never matches and never
+    /// spends the visited budget — "block this folder" means its contents
+    /// too, not just the folder's own row.
+    /// `isBoosted` (same id) lifts pinned matches ahead of the cap in rank
+    /// order — a pin ranked past `maxResults` would otherwise be cut and
+    /// the pin would silently do nothing in file mode.
     static func scan(query: String, roots: [URL] = defaultRoots,
-                     isCancelled: () -> Bool = { false }) -> [Match] {
+                     isCancelled: () -> Bool = { false },
+                     isExcluded: (String) -> Bool = { _ in false },
+                     isBoosted: (String) -> Bool = { _ in false }) -> [Match] {
         let trimmed = SearchModel.normalizedQuery(query)
         guard !trimmed.isEmpty, !isCancelled() else { return [] }
 
@@ -85,6 +97,7 @@ enum FileSearch {
         var seenPaths = Set<String>()
         for root in roots {
             walk(root, query: trimmed, isCancelled: isCancelled,
+                 isExcluded: isExcluded,
                  visited: &visited, matches: &matches, seenPaths: &seenPaths)
             if visited >= maxVisited || isCancelled() { break }
         }
@@ -92,24 +105,37 @@ enum FileSearch {
         // beats infix beats fuzzy), then the shorter filename, then the
         // alignment score, then path — the total order keeps identical
         // queries producing identical lists.
-        return matches
-            .sorted { lhs, rhs in
-                if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
-                let lhsLength = lhs.url.lastPathComponent.count
-                let rhsLength = rhs.url.lastPathComponent.count
-                if lhsLength != rhsLength { return lhsLength < rhsLength }
-                if lhs.score != rhs.score { return lhs.score > rhs.score }
-                return lhs.url.path < rhs.url.path
+        let ranked = matches.sorted { lhs, rhs in
+            if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
+            let lhsLength = lhs.url.lastPathComponent.count
+            let rhsLength = rhs.url.lastPathComponent.count
+            if lhsLength != rhsLength { return lhsLength < rhsLength }
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            return lhs.url.path < rhs.url.path
+        }
+        // Boosted ids lead the capped output — a pinned match has to
+        // survive the cap or pinning it would silently do nothing. The
+        // unpinned fill the rest in rank order.
+        var boosted: [Match] = []
+        var rest: [Match] = []
+        for match in ranked {
+            if isBoosted(Self.fileID(for: match.url)) {
+                boosted.append(match)
+            } else {
+                rest.append(match)
             }
-            .prefix(SearchModel.maxResults)
-            .map { $0 }
+        }
+        return Array((boosted + rest).prefix(SearchModel.maxResults))
     }
 
     /// Ranked matches mapped to items — filename, `~`-abbreviated parent
     /// path, the file-type icon, and an `openFile` action.
     static func items(query: String, roots: [URL] = defaultRoots,
-                      isCancelled: () -> Bool = { false }) -> [Item] {
-        scan(query: query, roots: roots, isCancelled: isCancelled).map {
+                      isCancelled: () -> Bool = { false },
+                      isExcluded: (String) -> Bool = { _ in false },
+                      isBoosted: (String) -> Bool = { _ in false }) -> [Item] {
+        scan(query: query, roots: roots, isCancelled: isCancelled,
+             isExcluded: isExcluded, isBoosted: isBoosted).map {
             item(for: $0.url)
         }
     }
@@ -119,6 +145,7 @@ enum FileSearch {
     /// `.skipsHiddenFiles`, which would drop hidden files too.
     private static func walk(_ root: URL, query: String,
                              isCancelled: () -> Bool,
+                             isExcluded: (String) -> Bool,
                              visited: inout Int, matches: inout [Match],
                              seenPaths: inout Set<String>) {
         guard let enumerator = FileManager.default.enumerator(
@@ -135,10 +162,13 @@ enum FileSearch {
             let values = try? url.resourceValues(forKeys: [.isHiddenKey, .isDirectoryKey])
             if values?.isDirectory == true {
                 let name = url.lastPathComponent.lowercased()
+                // A blocked directory prunes its whole subtree — paying the
+                // id build only for directories keeps plain files cheap.
                 if values?.isHidden == true
                     || skippedDirectoryNames.contains(name)
                     || (projectScopedDirectoryNames.contains(name)
-                        && hasProjectManifest(beside: url)) {
+                        && hasProjectManifest(beside: url))
+                    || isExcluded(Self.fileID(for: url)) {
                     enumerator.skipDescendants()
                     continue
                 }
@@ -147,11 +177,14 @@ enum FileSearch {
             // keep a twice-yielded path (overlapping roots) out of the
             // results, so recording non-matches would grow the set to
             // `visited` size for nothing.
-            if let match = FuzzyMatcher.match(query, candidate: url.lastPathComponent),
-               seenPaths.insert(url.standardizedFileURL.path).inserted {
-                matches.append(Match(url: url, tier: match.tier,
-                                     score: match.score))
-                if matches.count >= maxMatches { return }
+            if let match = FuzzyMatcher.match(query, candidate: url.lastPathComponent) {
+                let path = url.standardizedFileURL.path
+                if !isExcluded(Self.fileID(forPath: path)),
+                   seenPaths.insert(path).inserted {
+                    matches.append(Match(url: url, tier: match.tier,
+                                         score: match.score))
+                    if matches.count >= maxMatches { return }
+                }
             }
         }
     }
@@ -165,6 +198,16 @@ enum FileSearch {
             FileManager.default.fileExists(
                 atPath: parent.appendingPathComponent($0).path)
         }
+    }
+
+    /// The row's stable id — one construction for every `file:` id so the
+    /// walk's exclusion keys can never drift from the id a row displays.
+    private static func fileID(for url: URL) -> String {
+        fileID(forPath: url.standardizedFileURL.path)
+    }
+
+    private static func fileID(forPath path: String) -> String {
+        Item.fileIDPrefix + path
     }
 
     /// The result row's data: stable `file:` id on the resolved path, the
@@ -188,7 +231,7 @@ enum FileSearch {
                            .flatMap { $0.isEmpty ? nil : $0 })
             : .fileURL(url)
         return Item(
-            id: Item.fileIDPrefix + url.standardizedFileURL.path,
+            id: fileID(for: url),
             title: name,
             subtitle: String(subtitle),
             icon: icon,

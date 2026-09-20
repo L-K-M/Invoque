@@ -149,6 +149,97 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.crtIntensity, Preferences.Default.crtIntensity)
     }
 
+    // MARK: Pinned & blocked entries
+
+    func testPinnedBlockedDefaultEmpty() {
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertTrue(preferences.pinnedItems.isEmpty)
+        XCTAssertTrue(preferences.blockedItems.isEmpty)
+    }
+
+    func testPinnedItemsRoundTrip() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.togglePinned(id: "app:com.apple.Safari", title: "Safari")
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertEqual(reloaded.pinnedItems, ["app:com.apple.Safari": "Safari"])
+        XCTAssertTrue(reloaded.isPinned("app:com.apple.Safari"))
+        XCTAssertFalse(reloaded.isBlocked("app:com.apple.Safari"))
+    }
+
+    func testTogglePinnedToggles() {
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertTrue(preferences.togglePinned(id: "cmd:fmt", title: "Format JSON"))
+        XCTAssertTrue(preferences.isPinned("cmd:fmt"))
+        XCTAssertFalse(preferences.togglePinned(id: "cmd:fmt", title: "Format JSON"))
+        XCTAssertFalse(preferences.isPinned("cmd:fmt"))
+        XCTAssertTrue(preferences.pinnedItems.isEmpty)
+    }
+
+    /// Blocking a pinned entry must clear the pin — otherwise unblocking
+    /// would silently resurrect it.
+    func testToggleBlockedUnpins() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.togglePinned(id: "app:x", title: "X")
+        XCTAssertTrue(preferences.toggleBlocked(id: "app:x", title: "X"))
+        XCTAssertTrue(preferences.isBlocked("app:x"))
+        XCTAssertFalse(preferences.isPinned("app:x"))
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.isBlocked("app:x"))
+        XCTAssertFalse(reloaded.isPinned("app:x"))
+
+        // Unblocking leaves the entry fully unmanaged.
+        XCTAssertFalse(reloaded.toggleBlocked(id: "app:x", title: "X"))
+        XCTAssertFalse(reloaded.isBlocked("app:x"))
+        XCTAssertFalse(reloaded.isPinned("app:x"))
+    }
+
+    /// The sets are exclusive in both directions: pinning a blocked entry
+    /// unblocks it, the mirror of `toggleBlocked` unpinning. Unreachable
+    /// through the UI (a blocked row can't be selected), but a hand edit
+    /// or future caller gets a defined semantic — last action wins.
+    func testTogglePinnedUnblocks() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.toggleBlocked(id: "app:x", title: "X")
+        XCTAssertTrue(preferences.togglePinned(id: "app:x", title: "X"))
+        XCTAssertTrue(preferences.isPinned("app:x"))
+        XCTAssertFalse(preferences.isBlocked("app:x"))
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.isPinned("app:x"))
+        XCTAssertFalse(reloaded.isBlocked("app:x"))
+    }
+
+    /// `entryRulesChanged` fires on writes to either set — the panel's
+    /// live refresh depends on it. The pin-clearing half of a block fires
+    /// twice (pin removal + block insert); only non-zero is asserted.
+    func testEntryRulesChangedFires() {
+        let preferences = Preferences(defaults: defaults)
+        var fired = 0
+        preferences.entryRulesChanged = { fired += 1 }
+        preferences.togglePinned(id: "app:x", title: "X")
+        XCTAssertGreaterThan(fired, 0)
+        let afterPin = fired
+        preferences.toggleBlocked(id: "app:x", title: "X")
+        XCTAssertGreaterThan(fired, afterPin)
+        let afterBlock = fired
+        // Direct dictionary writes (the Settings list's remove path) fire too.
+        preferences.blockedItems["app:x"] = nil
+        XCTAssertGreaterThan(fired, afterBlock)
+    }
+
+    /// A hand-edited dict with a non-string value keeps its valid entries —
+    /// `compactMapValues` drops the malformed one rather than the list.
+    func testMalformedPinEntriesDropIndividually() {
+        defaults.set(["app:ok": "OK", "app:bad": 42], forKey: "pinnedItems")
+        defaults.set("not a dict", forKey: "blockedItems")
+
+        let preferences = Preferences(defaults: defaults)
+        XCTAssertEqual(preferences.pinnedItems, ["app:ok": "OK"])
+        XCTAssertTrue(preferences.blockedItems.isEmpty)
+    }
+
     /// A direct setter can't persist an out-of-range or unparseable value —
     /// the `didSet` sanitizes before writing, not just on next launch.
     func testSettersSanitizeBeforePersisting() {

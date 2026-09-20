@@ -115,6 +115,77 @@ final class FileSearchTests: XCTestCase {
         XCTAssertTrue(matches.isEmpty)
     }
 
+    /// Exclusion runs inside the walk, before the result cap: with one
+    /// more match than the cap, dropping the top-ranked file backfills
+    /// the slot — a blocked file leaves no hole in the list.
+    func testExclusionBackfillsBeyondTheCap() throws {
+        let last = SearchModel.maxResults
+        for index in 0...last {
+            try makeFile(String(format: "fill-%04d.txt", index))
+        }
+        // Equal-length prefix matches sort by path (%04d keeps them one
+        // length whatever the cap): index 0 leads, `last` sits just past
+        // the cap. The excluded id comes from the items API so the test
+        // pins the walk's key to the id the panel actually blocks, not a
+        // hand-built mirror of it.
+        let firstName = String(format: "fill-%04d.txt", 0)
+        let pastCapName = String(format: "fill-%04d.txt", last)
+        let excludedID = try XCTUnwrap(
+            FileSearch.items(query: "fill", roots: [root])
+                .first { $0.id.hasSuffix(firstName) }?.id)
+        let matches = FileSearch.scan(query: "fill", roots: [root],
+                                      isExcluded: { $0 == excludedID })
+        XCTAssertEqual(matches.count, SearchModel.maxResults)
+        let names = matches.map { $0.url.lastPathComponent }
+        XCTAssertFalse(names.contains(firstName))
+        XCTAssertTrue(names.contains(pastCapName),
+                      "the match past the cap must backfill the hole")
+    }
+
+    /// A pinned match must survive the cap: with one more match than the
+    /// limit, boosting the file that would rank last lifts it into the
+    /// output — otherwise a deep-ranked pin would silently do nothing.
+    func testBoostedMatchSurvivesTheCap() throws {
+        let last = SearchModel.maxResults
+        for index in 0...last {
+            try makeFile(String(format: "fill-%04d.txt", index))
+        }
+        // The last index sorts last among the equal-length prefix matches
+        // (%04d keeps every filename one length, whatever the cap) — the
+        // unboosted scan drops it, the boosted scan must not.
+        let boostedName = String(format: "fill-%04d.txt", last)
+        let weakestName = String(format: "fill-%04d.txt", last - 1)
+        let boostedID = try XCTUnwrap(
+            FileSearch.items(query: String(format: "fill-%04d", last),
+                             roots: [root]).first?.id)
+        XCTAssertEqual(FileSearch.scan(query: "fill", roots: [root])
+            .last?.url.lastPathComponent, weakestName)
+        let matches = FileSearch.scan(query: "fill", roots: [root],
+                                      isBoosted: { $0 == boostedID })
+        XCTAssertEqual(matches.count, SearchModel.maxResults)
+        XCTAssertEqual(matches.first?.url.lastPathComponent, boostedName)
+        XCTAssertFalse(matches.contains {
+            $0.url.lastPathComponent == weakestName },
+            "the weakest unpinned match yields the slot")
+    }
+
+    /// Blocking a directory prunes the whole subtree — "never show" a
+    /// folder means its contents too, and pruning keeps descendants from
+    /// spending the visited budget.
+    func testExcludedDirectoryPrunesSubtree() throws {
+        // Control: `sub/deeper-doc.md` is findable while `sub` is allowed.
+        XCTAssertEqual(scannedNames("deeper-doc"), ["deeper-doc.md"])
+        let excluded = try XCTUnwrap(
+            FileSearch.items(query: "sub", roots: [root])
+                .first { $0.id.hasSuffix("/sub") }?.id)
+        XCTAssertTrue(FileSearch.scan(query: "deeper-doc", roots: [root],
+                                      isExcluded: { $0 == excluded }).isEmpty,
+                      "descendants of a blocked directory must not match")
+        // The directory's own row drops too.
+        XCTAssertTrue(FileSearch.scan(query: "sub", roots: [root],
+                                      isExcluded: { $0 == excluded }).isEmpty)
+    }
+
     /// `maxVisited` bounds the walk: with the cap at zero nothing is
     /// considered, whatever the tree holds. Restore the default so later
     /// tests in the process aren't capped.
