@@ -627,7 +627,11 @@ final class PanelModel: ObservableObject {
             // Wholesale replace, not `stabilizedFileRows`: its survivor
             // merge exists for text extensions and a rules change is not
             // one — a pin must promote and a block must vanish on the spot.
-            let shaped = shapeFileRows(rawFileRows)
+            // `FileSearch` already caps its output at `maxResults`, but
+            // enforce the list-height invariant here so a future producer
+            // change can't push an over-cap list into the panel.
+            let shaped = Array(shapeFileRows(rawFileRows)
+                .prefix(SearchModel.maxResults))
             if shaped != results { results = shaped }
             return
         }
