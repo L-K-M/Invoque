@@ -32,8 +32,9 @@ struct PanelTypeface: Hashable, Identifiable, RawRepresentable {
         }
     }
 
-    /// The bundled choices `curated` draws from.
-    private static let bundled: [PanelTypeface] = [
+    /// The bundled choices `curated` draws from — unfiltered, so tests can
+    /// verify every listed family name actually resolves.
+    static let bundled: [PanelTypeface] = [
         .system, .rounded, .serif, .monospaced,
         .avenirNext, .americanTypewriter, .courierNew, .futura, .georgia,
         .gillSans, .helveticaNeue, .menlo, .optima, .timesNewRoman,
@@ -81,7 +82,7 @@ struct PanelTypeface: Hashable, Identifiable, RawRepresentable {
     /// family that was deactivated. Main-thread only: persisted-value
     /// decoding reads `installedFamilySet` unsynchronized.
     static func refreshInstalledFamilies() {
-        assert(Thread.isMainThread, "Font cache refresh must run on main")
+        dispatchPrecondition(condition: .onQueue(.main))
         installedFamilies = currentInstalledFamilies()
         installedFamilySet = Set(installedFamilies)
     }
@@ -206,8 +207,10 @@ extension PanelTypeface {
     /// Decodes the persisted form — in an extension so the memberwise
     /// `init(face:)` survives. A `family:` value must still be installed —
     /// an uninstalled font decodes to nil so callers fall back to the
-    /// default rather than render a phantom selection.
+    /// default rather than render a phantom selection. Main-thread only:
+    /// reads `installedFamilySet` unsynchronized.
     init?(rawValue: String) {
+        dispatchPrecondition(condition: .onQueue(.main))
         switch rawValue {
         case "system": face = .system
         case "rounded": face = .rounded

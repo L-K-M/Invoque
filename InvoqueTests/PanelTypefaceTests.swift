@@ -4,12 +4,15 @@ import XCTest
 
 final class PanelTypefaceTests: XCTestCase {
 
-    /// The curated contract is that every option resolves on a stock macOS
-    /// install — a typo'd or removed family name must fail here, not at
-    /// render time. `NSFontDescriptor`'s family attribute resolves to the
-    /// real family, so `familyName` reads back the same name.
+    /// The bundled contract is that every listed option resolves on a
+    /// stock macOS install — a typo'd or removed family name must fail
+    /// here, not at render time. Iterates `bundled`, not the
+    /// installed-filtered `curated`, so a bad name can't be filtered out
+    /// before this test sees it. `NSFontDescriptor`'s family attribute
+    /// resolves to the real family, so `familyName` reads back the same
+    /// name.
     func testEveryNamedFamilyResolves() {
-        for typeface in PanelTypeface.curated {
+        for typeface in PanelTypeface.bundled {
             guard let family = typeface.family else { continue }
             XCTAssertEqual(typeface.nsFont(size: 13).familyName, family,
                            "\(typeface.label) did not resolve to its family")
