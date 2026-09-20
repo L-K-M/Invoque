@@ -481,6 +481,11 @@ final class SearchModelTests: XCTestCase {
         // to `/private/tmp`), so derive it rather than assume the literal.
         let pathID = try XCTUnwrap(
             pathSource.items(matching: "/tmp").first?.id)
+        // Baseline first — the row must surface unblocked or the drop
+        // assertion below would be vacuous. StubRules is a class, so the
+        // block must be set after the baseline model's results are read.
+        let clean = makeModel(sources: [pathSource], rules: rules)
+        XCTAssertFalse(clean.results(for: "/tmp").isEmpty)
         rules.blocked = [pathID]
         let model = makeModel(sources: [pathSource], rules: rules)
         XCTAssertTrue(model.results(for: "/tmp").isEmpty)
