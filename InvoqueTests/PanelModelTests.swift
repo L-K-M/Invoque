@@ -1070,20 +1070,25 @@ final class PanelModelTests: XCTestCase {
     // MARK: Pin & block
 
     /// A mutable pin/block backing standing in for the `Preferences`
-    /// closures — the toggles write into plain sets the test can inspect.
+    /// closures — the toggles write into plain sets the test can inspect,
+    /// and fire `changed` the way `Preferences.entryRulesChanged` does:
+    /// the notification, not the toggle, is what re-lists the panel.
     private final class RulesStub {
         var pinned = Set<String>()
         var blocked = Set<String>()
+        var changed: (() -> Void)?
         var entryRules: EntryRules {
             EntryRules(
                 isPinned: { [self] in pinned.contains($0) },
                 isBlocked: { [self] in blocked.contains($0) },
                 togglePin: { [self] id, _ in
+                    defer { changed?() }
                     if pinned.contains(id) { pinned.remove(id); return false }
                     pinned.insert(id)
                     return true
                 },
                 toggleBlock: { [self] id, _ in
+                    defer { changed?() }
                     if blocked.contains(id) { blocked.remove(id); return false }
                     pinned.remove(id)
                     blocked.insert(id)
@@ -1093,7 +1098,8 @@ final class PanelModelTests: XCTestCase {
     }
 
     /// A model whose panel and search layers share one rules facade —
-    /// the production wiring, minus Preferences.
+    /// the production wiring, minus Preferences: toggles notify through
+    /// `changed`, exactly like `entryRulesChanged` → `entryRulesDidChange`.
     private func makeManagedModel(items: [Item], rules: RulesStub) -> PanelModel {
         let model = PanelModel()
         model.searchModel = SearchModel(
@@ -1101,6 +1107,7 @@ final class PanelModelTests: XCTestCase {
             frecency: Frecency(defaults: defaults),
             entryRules: rules.entryRules)
         model.entryRules = rules.entryRules
+        rules.changed = { [weak model] in model?.entryRulesDidChange() }
         return model
     }
 
@@ -1192,6 +1199,40 @@ final class PanelModelTests: XCTestCase {
         XCTAssertNil(model.toggleBlock())
         XCTAssertTrue(rules.pinned.isEmpty)
         XCTAssertTrue(rules.blocked.isEmpty)
+    }
+
+    /// Block beats pin through the wired path — the stub allows the
+    /// overlap a hand-edited defaults file could hold, and "never show"
+    /// must win at the panel, not just inside `SearchModel`.
+    func testBlockBeatsPin() {
+        let rules = RulesStub()
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:notes", title: "Notes"),
+        ], rules: rules)
+        rules.pinned = ["app:notes"]
+        rules.blocked = ["app:notes"]
+        model.query = "not"
+        XCTAssertTrue(model.results.isEmpty)
+    }
+
+    /// Extending the query keeps displayed order inside the pin band too:
+    /// "safi" re-tiers "Safxafi" from prefix to fuzzy — a fresh rank would
+    /// swap the two pins — but the survivor merge holds their slots.
+    func testPinnedSurvivorsKeepOrderOnExtension() {
+        let rules = RulesStub()
+        rules.pinned = ["app:long", "app:short"]
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:long", title: "Safari Tool"),
+            Self.appItem(id: "app:short", title: "Safxafi"),
+        ], rules: rules)
+        model.query = "saf"
+        // Both pinned: "Safxafi" (7-char prefix) outranks "Safari Tool"
+        // (11-char prefix) — band order [short, long].
+        XCTAssertEqual(model.results.map(\.id), ["app:short", "app:long"])
+        model.query = "safi"
+        // Fresh rank would now put the still-prefix "Safari Tool" over
+        // the now-fuzzy "Safxafi" — stability must hold the swap back.
+        XCTAssertEqual(model.results.map(\.id), ["app:short", "app:long"])
     }
 
     /// The Settings-list path: an outside change plus `entryRulesDidChange`

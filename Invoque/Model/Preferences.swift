@@ -321,7 +321,10 @@ final class Preferences: ObservableObject {
             blockedItems[id] = nil
             return false
         }
-        pinnedItems[id] = nil
+        // Only clear a pin that exists — a subscript nil-write on an
+        // absent key still fires didSet, persisting and re-listing for
+        // nothing.
+        if pinnedItems[id] != nil { pinnedItems[id] = nil }
         blockedItems[id] = title
         return true
     }

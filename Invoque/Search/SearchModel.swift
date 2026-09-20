@@ -138,9 +138,16 @@ final class SearchModel {
 
         // Pinned entries form a band under the functional head pins:
         // matched and rank-ordered like everything else (the filter
-        // preserves that order), just always above unpinned matches.
-        let pinnedBand = ranked.filter { rules.isPinned($0.id) }
-        let unpinned = ranked.filter { !rules.isPinned($0.id) }
+        // preserves that order), just always above unpinned matches. The
+        // band is capped: a screenful of matching pins must not evict the
+        // web fallback and every ranked match — pins past the cap rejoin
+        // the ranked pool in their natural order instead.
+        let bandCap = max(0, Self.maxResults - pathHits.count
+            - calculatorHits.count - webHits.count - 1)
+        let pinnedBand = Array(ranked.filter { rules.isPinned($0.id) }
+            .prefix(bandCap))
+        let bandIDs = Set(pinnedBand.map(\.id))
+        let unpinned = ranked.filter { !bandIDs.contains($0.id) }
 
         // The pinned rows get their slots first: a noisy query that fills the
         // ranked list must not push the web fallback past the cap. The outer

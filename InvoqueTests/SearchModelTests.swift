@@ -437,6 +437,26 @@ final class SearchModelTests: XCTestCase {
         XCTAssertTrue(model.results(for: "safari").isEmpty)
     }
 
+    /// More matching pins than fit must not swallow the list: the band
+    /// caps so the web fallback and a ranked row keep their slots, and
+    /// overflowed pins rejoin the pool in rank order.
+    func testPinOverflowKeepsWebAndRankedSlots() {
+        let rules = StubRules()
+        rules.pinned = Set((0..<60).map { "app:safari-\($0)" })
+        let apps = StubSource()
+        apps.stubbedItems = (0..<60).map { index in
+            Self.appItem(id: "app:safari-\(index)", title: "Safari \(index)")
+        }
+        let model = makeModel(sources: [apps, WebSource()], rules: rules)
+        let results = model.results(for: "safari")
+        XCTAssertEqual(results.count, SearchModel.maxResults)
+        // Band cap = maxResults - web(1) - one ranked slot = 48.
+        XCTAssertEqual(results.prefix(48).map(\.id),
+                       (0..<48).map { "app:safari-\($0)" })
+        XCTAssertEqual(results[48].id, "app:safari-48")
+        XCTAssertEqual(results.last?.id, "web:safari")
+    }
+
     /// Blocked functional rows drop too — the filter runs ahead of pin
     /// classification, so a hand-edited `web:`/`calc:` block is honored.
     func testBlockedFunctionalRowDrops() {

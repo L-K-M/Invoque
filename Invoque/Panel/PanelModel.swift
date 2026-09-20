@@ -546,9 +546,10 @@ final class PanelModel: ObservableObject {
 
     /// The `stabilizedRankedRows` twin for file scans: when the scan text
     /// only grew, rows that still match keep their displayed positions and
-    /// the fresh list fills the remaining slots by rank. Pin ordering is
-    /// `shapeFileRows`' job — this runs after it, so a still-matching
-    /// displayed row keeps its slot even above a newly pinned arrival.
+    /// the fresh list fills the remaining slots by rank. Runs after
+    /// `shapeFileRows`, so the merge sees the pin-ordered list — and only
+    /// ever sees a text extension, since `entryRulesDidChange` applies
+    /// rules changes wholesale instead of routing through here.
     private func stabilizedFileRows(_ freshRows: [ResultRow],
                                     text: String) -> [ResultRow] {
         guard let anchor = fileResultText, !anchor.isEmpty,
@@ -597,13 +598,14 @@ final class PanelModel: ObservableObject {
     /// Toggles the pin on `row` (default: the selection). Returns HUD text
     /// describing the change, or nil when nothing happened — the row isn't
     /// a manageable entry, or a card (consent prompt, maker) owns the
-    /// panel while the list sits underneath.
+    /// panel while the list sits underneath. The refresh arrives through
+    /// the `entryRulesChanged` notification the write fires — toggles
+    /// don't re-list directly, so there's exactly one refresh per write.
     @discardableResult
     func togglePin(on row: ResultRow? = nil) -> String? {
         guard permissionRequest == nil, !makerIsActive,
               let row = row ?? selectedRow, canManage(row) else { return nil }
         let pinned = entryRules.togglePin(row.id, row.title)
-        entryRulesDidChange()
         return pinned ? "Pinned \(row.title)" : "Unpinned \(row.title)"
     }
 
@@ -613,7 +615,6 @@ final class PanelModel: ObservableObject {
         guard permissionRequest == nil, !makerIsActive,
               let row = row ?? selectedRow, canManage(row) else { return nil }
         let blocked = entryRules.toggleBlock(row.id, row.title)
-        entryRulesDidChange()
         return blocked ? "Blocked \(row.title)" : "Unblocked \(row.title)"
     }
 
@@ -623,12 +624,11 @@ final class PanelModel: ObservableObject {
     /// normal search just re-runs the open query.
     func entryRulesDidChange() {
         if fileSearchIsActive {
-            // `text == fileResultText` (or a pending scan with no anchor)
-            // skips the stability merge — the re-shaped list replaces
-            // wholesale, which is exactly what a pin/block wants.
-            let merged = stabilizedFileRows(shapeFileRows(rawFileRows),
-                                            text: fileResultText ?? "")
-            if merged != results { results = merged }
+            // Wholesale replace, not `stabilizedFileRows`: its survivor
+            // merge exists for text extensions and a rules change is not
+            // one — a pin must promote and a block must vanish on the spot.
+            let shaped = shapeFileRows(rawFileRows)
+            if shaped != results { results = shaped }
             return
         }
         refreshResults()
