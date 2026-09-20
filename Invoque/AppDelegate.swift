@@ -61,9 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the asset isn't reachable — `text.bubble` (SF Symbols 1) below
     /// that, so the item can never render invisibly.
     static func statusBarImage() -> NSImage {
-        // The imageset is generated without a template-rendering flag, so
-        // the loaded image is already non-template — and `NSImage(named:)`
-        // returns a shared instance, which must not be mutated anyway.
+        // The imageset is generated with template-rendering-intent
+        // "original", so the loaded image is non-template. Don't touch
+        // `isTemplate` regardless: `NSImage(named:)` may return a cached
+        // instance shared by every caller.
         if let mark = NSImage(named: "StatusIcon") {
             mark.accessibilityDescription = "Invoque"
             return mark

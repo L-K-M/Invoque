@@ -339,7 +339,11 @@ def status_json():
         for nominal, scale in STATUS_CONTENTS)
     return ('{\n  "images" : [\n' + images + '\n  ],\n'
             '  "info" : {\n    "author" : "xcode",\n'
-            '    "version" : 1\n  }\n}\n')
+            '    "version" : 1\n  },\n'
+            # Explicit, not actool's default: the mark must never render as
+            # a tinted silhouette — the colored plate is its legibility.
+            '  "properties" : {\n'
+            '    "template-rendering-intent" : "original"\n  }\n}\n')
 
 
 def accent_json():
