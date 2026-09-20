@@ -288,4 +288,91 @@ final class FileSearchTests: XCTestCase {
             NSHomeDirectory() + "/Documents/sheet.numbers")
         XCTAssertEqual(FileSearch.item(for: url).subtitle, "~/Documents")
     }
+
+    // MARK: Scopes
+
+    func testResolvedRootsHome() {
+        let roots = FileSearch.resolvedRoots(for: [.home])
+        XCTAssertEqual(roots.count, 1)
+        XCTAssertEqual(roots[0].url.standardizedFileURL.path,
+                       FileManager.default.homeDirectoryForCurrentUser
+                           .standardizedFileURL.path)
+        XCTAssertTrue(roots[0].skipPaths.isEmpty)
+    }
+
+    /// The system walk never descends /Volumes (those subtrees belong to
+    /// the volumes scope) or /System/Volumes — the data volume is already
+    /// reachable via the firmlinks at `/`, so walking its real mount
+    /// point would double-list every user file.
+    func testResolvedRootsSystemSkipsVolumes() {
+        let roots = FileSearch.resolvedRoots(for: [.system])
+        XCTAssertEqual(roots.count, 1)
+        XCTAssertEqual(roots[0].url.path, "/")
+        XCTAssertEqual(roots[0].skipPaths,
+                       ["/Volumes", "/System/Volumes"])
+    }
+
+    /// With home enabled too, the system walk skips ~ as well — otherwise
+    /// the whole home tree is walked (and listed) twice.
+    func testResolvedRootsHomeAndSystem() throws {
+        let roots = FileSearch.resolvedRoots(for: [.home, .system])
+        XCTAssertEqual(roots.count, 2)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+            .standardizedFileURL.path
+        let system = try XCTUnwrap(roots.first { $0.url.path == "/" })
+        XCTAssertTrue(system.skipPaths.contains("/Volumes"))
+        XCTAssertTrue(system.skipPaths.contains(home))
+    }
+
+    /// Volumes resolve to mounted non-boot volumes — the boot disk must
+    /// never appear among them, under `/`, its `/Volumes` alias, or the
+    /// `/System/Volumes/*` group. XCTSkip makes the no-external-drives
+    /// case explicit rather than a vacuous pass.
+    func testResolvedRootsVolumesExcludeBoot() throws {
+        let roots = FileSearch.resolvedRoots(for: [.volumes])
+        let mounted = Set(
+            (FileManager.default.mountedVolumeURLs(
+                includingResourceValuesForKeys: nil, options: []) ?? [])
+                .map(\.path))
+            .subtracting(["/"])
+        guard !mounted.isEmpty else {
+            throw XCTSkip("No non-boot volumes mounted — nothing to verify")
+        }
+        for root in roots {
+            let path = root.url.standardizedFileURL.path
+            XCTAssertNotEqual(path, "/")
+            XCTAssertFalse(path.hasPrefix("/System/Volumes/"))
+            XCTAssertTrue(mounted.contains(root.url.path),
+                          "\(root.url.path) is not a mounted volume")
+        }
+    }
+
+    /// An empty scope set is unreachable via the UI and unwritable via
+    /// the Preferences decode — but a stale caller gets the default
+    /// scope rather than a dead search.
+    func testResolvedRootsEmptyFallsBackToHome() {
+        XCTAssertEqual(
+            FileSearch.resolvedRoots(for: []).map(\.url.path),
+            FileSearch.resolvedRoots(for: [.home]).map(\.url.path))
+    }
+
+    /// A skip path prunes the whole subtree: the directory itself never
+    /// matches (its name is a prefix hit here) and its contents are never
+    /// visited — the same "pruned directories are excluded entirely"
+    /// contract as a blocked dir.
+    func testSkipPathPrunesSubtree() throws {
+        try makeFile("keep/keep-notes.txt")
+        try makeFile("notes-vault/vault-notes.txt")
+        let skip = root.appendingPathComponent("notes-vault")
+            .standardizedFileURL.path
+        let matches = FileSearch.scan(
+            query: "notes",
+            roots: [FileSearch.Root(url: root, skipPaths: [skip])])
+        // setUp's root/notes.txt matches too — only the vault's entries
+        // and the vault itself must be absent. Compared as a Set: rank
+        // ordering is covered elsewhere; the contract here is purely
+        // which subtrees the walk visits.
+        XCTAssertEqual(Set(matches.map(\.url.lastPathComponent)),
+                       ["notes.txt", "keep-notes.txt"])
+    }
 }

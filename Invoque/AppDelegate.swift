@@ -175,18 +175,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             toggleBlock: { [weak preferences] in
                 preferences?.toggleBlocked(id: $0, title: $1) ?? false })
         model.entryRules = entryRules
-        // `find `/`f ` — the Spotlight-free filename walk (PLAN §3). The
-        // scan runs inside the model's debounced task; the probe lets
-        // `cancelFileSearch` reach a walk mid-flight. Blocked ids are
-        // excluded inside the walk — pre-cap — so a fresh scan has no hole
-        // (the next-best match backfills). A block made against an already
-        // shown list just drops the row until the next query. Pinned ids
-        // are likewise lifted ahead of the cap — a pin ranked past it
-        // would otherwise never surface.
-        model.fileSearcher = { query, isCancelled in
-            FileSearch.items(query: query, isCancelled: isCancelled,
-                             isExcluded: entryRules.isBlocked,
-                             isBoosted: entryRules.isPinned)
+        // `find `/`f `/`search ` — the Spotlight-free filename walk
+        // (PLAN §3). The scan runs inside the model's debounced task; the
+        // probe lets `cancelFileSearch` reach a walk mid-flight. Blocked
+        // ids are excluded inside the walk — pre-cap — so a fresh scan
+        // has no hole (the next-best match backfills). A block made
+        // against an already shown list just drops the row until the
+        // next query. Pinned ids are likewise lifted ahead of the cap —
+        // a pin ranked past it would otherwise never surface. The scope
+        // snapshot is the lock-guarded read — the walk is off-main.
+        model.fileSearcher = { [weak preferences] query, isCancelled in
+            FileSearch.items(
+                query: query,
+                scopes: preferences?.fileSearchScopeSnapshot
+                    ?? FileSearch.defaultScopes,
+                isCancelled: isCancelled,
+                isExcluded: entryRules.isBlocked,
+                isBoosted: entryRules.isPinned)
         }
         // Shared icon store (PictKit) — the same ladder Zap and Jetty draw
         // from: a Pict override, then the bundle's own un-jailed artwork,
@@ -205,6 +210,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // panel's own toggles reach it through this path too.
         preferences.entryRulesChanged = { [weak model] in
             model?.entryRulesDidChange()
+        }
+        // A scope change can't reshape the cached scan — files under a
+        // newly enabled root were never walked — so it forces a full
+        // re-query, which schedules a fresh scan in file mode.
+        preferences.fileSearchScopesChanged = { [weak model] in
+            model?.refreshResults()
         }
         let sources: [ItemSource] = [
             PathSource(),

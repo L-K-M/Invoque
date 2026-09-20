@@ -42,6 +42,7 @@ final class Preferences: ObservableObject {
         static let searchEngine = SearchEngine.duckDuckGo
         static let pinnedItems: [String: String] = [:]
         static let blockedItems: [String: String] = [:]
+        static let fileSearchScopes = FileSearch.defaultScopes
     }
 
     private enum Key {
@@ -69,6 +70,7 @@ final class Preferences: ObservableObject {
         static let searchEngine = "searchEngine"
         static let pinnedItems = "pinnedItems"
         static let blockedItems = "blockedItems"
+        static let fileSearchScopes = "fileSearchScopes"
     }
 
     // MARK: Stored settings
@@ -351,6 +353,38 @@ final class Preferences: ObservableObject {
         return true
     }
 
+    // MARK: File-search scopes
+
+    private var scopeSnapshot: Set<FileSearch.Scope> = []
+
+    /// The filesystem regions `find`/`f`/`search` walks — any subset of
+    /// `FileSearch.Scope`. The set itself is main-thread state like the
+    /// rule dictionaries; the walk reads `fileSearchScopeSnapshot` off
+    /// the main thread.
+    @Published var fileSearchScopes: Set<FileSearch.Scope> {
+        didSet {
+            // A no-op write would still queue a full-disk rescan via the
+            // changed callback — don't pay that for a re-assigned value.
+            guard fileSearchScopes != oldValue else { return }
+            defaults.set(fileSearchScopes.map(\.rawValue).sorted(),
+                         forKey: Key.fileSearchScopes)
+            rulesLock.withLock { scopeSnapshot = fileSearchScopes }
+            fileSearchScopesChanged?()
+        }
+    }
+
+    /// The scopes the off-main file walk reads — lock-guarded for the
+    /// same reason as the pin/block snapshots above.
+    var fileSearchScopeSnapshot: Set<FileSearch.Scope> {
+        rulesLock.withLock { scopeSnapshot }
+    }
+
+    /// Fires after the scope set changes — the AppDelegate wires it to a
+    /// full `refreshResults`, not `entryRulesDidChange`: unlike a
+    /// pin/block, a scope change can't reshape the cached scan, since the
+    /// files it would reveal were never walked.
+    var fileSearchScopesChanged: (() -> Void)?
+
     // MARK: Init
 
     init(defaults: UserDefaults = .standard) {
@@ -407,10 +441,24 @@ final class Preferences: ObservableObject {
             .compactMapValues { $0 as? String }
         blockedItems = (defaults.dictionary(forKey: Key.blockedItems) ?? [:])
             .compactMapValues { $0 as? String }
+        // An absent key falls back to the default scope set and a stored
+        // empty list is preserved as-is on the property (FileSearch's
+        // resolvedRoots re-applies the default at search time, so it can
+        // never dead-end the mode) — but a non-empty list that decodes to
+        // nothing is stale data (a renamed/removed case), not a choice;
+        // falling back here beats silently searching nowhere.
+        if let raw = defaults.array(forKey: Key.fileSearchScopes) as? [String] {
+            let decoded = Set(raw.compactMap { FileSearch.Scope(rawValue: $0) })
+            fileSearchScopes = decoded.isEmpty && !raw.isEmpty
+                ? Default.fileSearchScopes : decoded
+        } else {
+            fileSearchScopes = Default.fileSearchScopes
+        }
         // didSet doesn't run on init-time assignment — seed the snapshots
         // the threaded reads use.
         pinnedIDSnapshot = Set(pinnedItems.keys)
         blockedIDSnapshot = Set(blockedItems.keys)
+        scopeSnapshot = fileSearchScopes
     }
 
     // MARK: Summon hotkey

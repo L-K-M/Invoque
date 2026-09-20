@@ -570,6 +570,23 @@ final class PanelModelTests: XCTestCase {
                        .openFile(URL(fileURLWithPath: "/tmp/notes.txt")))
     }
 
+    func testSearchKeywordRunsFileSearch() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "search notes"
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(model.results.first?.title, "notes.txt")
+        XCTAssertEqual(model.results.first?.action,
+                       .openFile(URL(fileURLWithPath: "/tmp/notes.txt")))
+    }
+
+    /// The keyword list is a contract — dropping one silently reroutes
+    /// those queries back to normal search.
+    func testFileSearchKeywords() {
+        XCTAssertEqual(Set(PanelModel.fileSearchKeywords),
+                       ["find", "f", "search"])
+    }
+
     func testBareFindKeywordStaysNormalSearch() {
         let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
         model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
@@ -583,6 +600,17 @@ final class PanelModelTests: XCTestCase {
         model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
         model.query = "f"
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
+    }
+
+    /// Bare `search` must not route into file mode either — keyword
+    /// parsing is uniform across the list. (The fixture's title must
+    /// match the query text for the normal search to surface it.)
+    func testBareSearchKeywordStaysNormalSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:searcher",
+                                                  title: "Searcher")])
+        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.query = "search"
+        XCTAssertEqual(model.results.map(\.id), ["app:searcher"])
     }
 
     /// Unwired, "find x" is just a query — the same convention as

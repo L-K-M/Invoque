@@ -145,9 +145,21 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   filesystem path that exists pins first — ⏎ opens folders, reveals
   files in Finder; ⌘⏎ is the inverse), `WebSource` (fallback "Search
   for X" against the configured `SearchEngine` — Settings → General).
-- File search: `find <query>` / `f <query>` routes to a built-in file mode —
-  a direct `FileManager` walk of `~`, **not** Spotlight/NSMetadataQuery
-  (metadata misses excluded locations). Hidden directories (`~/Library`,
+- File search: `find <query>` / `f <query>` / `search <query>` routes to a
+  built-in file mode — a direct `FileManager` walk, **not**
+  Spotlight/NSMetadataQuery (metadata misses excluded locations). What it
+  walks is a Settings choice (General → "File Search"), persisted as a set
+  of scopes: **home** (`~/`, the default — on the boot disk only the home
+  folder makes sense), **system** (the whole startup disk minus `/Volumes`
+  and `/System/Volumes` — the data volume is already reachable through
+  the firmlinks at `/`, and walking its real mount point would list every
+  user file twice — and minus `~` when home is also on, so overlapping
+  scopes never double-walk a tree), and **volumes** (every mounted local
+  volume that isn't the boot disk, searched in full — other drives have
+  no home folder, though a relocated `~` on one is still skipped when
+  home is on; network shares are skipped since a per-keystroke remote
+  walk isn't interactive). Scope roots resolve per query, so a drive
+  mounted mid-session joins the next scan. Hidden directories (`~/Library`,
   `.git`) and dependency trees (`node_modules`, `Pods`, `venv`) are pruned
   (case-insensitively); generic build dirs (`target`, `build`, `dist`) are
   pruned only beside a project manifest, so a hand-made `Documents/build`
@@ -464,7 +476,7 @@ Invoque/
 │   │   ├── ItemSource.swift             # protocol + Item model
 │   │   ├── FuzzyMatcher.swift           # pure, unit-tested
 │   │   ├── Frecency.swift
-│   │   ├── FileSearch.swift             # find/f mode: Spotlight-free dir walk
+│   │   ├── FileSearch.swift             # find/f/search mode: Spotlight-free dir walk, scoped roots
 │   │   └── Sources/                     # Apps, Commands, Calculator, System,
 │   │                                    #   Path (typed file paths), Web
 │   ├── Commands/
