@@ -440,10 +440,9 @@ final class Preferences: ObservableObject {
             .compactMapValues { $0 as? String }
         // An absent key falls back to the default scope set; a stored
         // (even empty) list is the user's own choice and is respected.
-        fileSearchScopes = Set(
-            (defaults.array(forKey: Key.fileSearchScopes) as? [String])?
-                .compactMap { FileSearch.Scope(rawValue: $0) }
-                ?? Default.fileSearchScopes)
+        fileSearchScopes = (defaults.array(forKey: Key.fileSearchScopes) as? [String])
+            .map { Set($0.compactMap { FileSearch.Scope(rawValue: $0) }) }
+            ?? Default.fileSearchScopes
         // didSet doesn't run on init-time assignment — seed the snapshots
         // the threaded reads use.
         pinnedIDSnapshot = Set(pinnedItems.keys)
