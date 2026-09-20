@@ -82,9 +82,13 @@ enum FileSearch {
     /// *directory* is pruned whole: its subtree never matches and never
     /// spends the visited budget — "block this folder" means its contents
     /// too, not just the folder's own row.
+    /// `isBoosted` (same id) lifts pinned matches ahead of the cap in rank
+    /// order — a pin ranked past `maxResults` would otherwise be cut and
+    /// the pin would silently do nothing in file mode.
     static func scan(query: String, roots: [URL] = defaultRoots,
                      isCancelled: () -> Bool = { false },
-                     isExcluded: (String) -> Bool = { _ in false }) -> [Match] {
+                     isExcluded: (String) -> Bool = { _ in false },
+                     isBoosted: (String) -> Bool = { _ in false }) -> [Match] {
         let trimmed = SearchModel.normalizedQuery(query)
         guard !trimmed.isEmpty, !isCancelled() else { return [] }
 
@@ -101,26 +105,37 @@ enum FileSearch {
         // beats infix beats fuzzy), then the shorter filename, then the
         // alignment score, then path — the total order keeps identical
         // queries producing identical lists.
-        return matches
-            .sorted { lhs, rhs in
-                if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
-                let lhsLength = lhs.url.lastPathComponent.count
-                let rhsLength = rhs.url.lastPathComponent.count
-                if lhsLength != rhsLength { return lhsLength < rhsLength }
-                if lhs.score != rhs.score { return lhs.score > rhs.score }
-                return lhs.url.path < rhs.url.path
+        let ranked = matches.sorted { lhs, rhs in
+            if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
+            let lhsLength = lhs.url.lastPathComponent.count
+            let rhsLength = rhs.url.lastPathComponent.count
+            if lhsLength != rhsLength { return lhsLength < rhsLength }
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            return lhs.url.path < rhs.url.path
+        }
+        // Boosted ids lead the capped output — a pinned match has to
+        // survive the cap or pinning it would silently do nothing. The
+        // unpinned fill the rest in rank order.
+        var boosted: [Match] = []
+        var rest: [Match] = []
+        for match in ranked {
+            if isBoosted(Self.fileID(for: match.url)) {
+                boosted.append(match)
+            } else {
+                rest.append(match)
             }
-            .prefix(SearchModel.maxResults)
-            .map { $0 }
+        }
+        return Array((boosted + rest).prefix(SearchModel.maxResults))
     }
 
     /// Ranked matches mapped to items — filename, `~`-abbreviated parent
     /// path, the file-type icon, and an `openFile` action.
     static func items(query: String, roots: [URL] = defaultRoots,
                       isCancelled: () -> Bool = { false },
-                      isExcluded: (String) -> Bool = { _ in false }) -> [Item] {
+                      isExcluded: (String) -> Bool = { _ in false },
+                      isBoosted: (String) -> Bool = { _ in false }) -> [Item] {
         scan(query: query, roots: roots, isCancelled: isCancelled,
-             isExcluded: isExcluded).map {
+             isExcluded: isExcluded, isBoosted: isBoosted).map {
             item(for: $0.url)
         }
     }

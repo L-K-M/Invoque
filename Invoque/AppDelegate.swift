@@ -169,10 +169,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `cancelFileSearch` reach a walk mid-flight. Blocked ids are
         // excluded inside the walk — pre-cap — so a fresh scan has no hole
         // (the next-best match backfills). A block made against an already
-        // shown list just drops the row until the next query.
+        // shown list just drops the row until the next query. Pinned ids
+        // are likewise lifted ahead of the cap — a pin ranked past it
+        // would otherwise never surface.
         model.fileSearcher = { query, isCancelled in
             FileSearch.items(query: query, isCancelled: isCancelled,
-                             isExcluded: entryRules.isBlocked)
+                             isExcluded: entryRules.isBlocked,
+                             isBoosted: entryRules.isPinned)
         }
         // Shared icon store (PictKit) — the same ladder Zap and Jetty draw
         // from: a Pict override, then the bundle's own un-jailed artwork,

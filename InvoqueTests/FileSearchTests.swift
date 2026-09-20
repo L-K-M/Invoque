@@ -138,6 +138,28 @@ final class FileSearchTests: XCTestCase {
                       "the match past the cap must backfill the hole")
     }
 
+    /// A pinned match must survive the cap: with one more match than the
+    /// limit, boosting the file that would rank last lifts it into the
+    /// output — otherwise a deep-ranked pin would silently do nothing.
+    func testBoostedMatchSurvivesTheCap() throws {
+        for index in 0...SearchModel.maxResults {
+            try makeFile(String(format: "fill-%02d.txt", index))
+        }
+        // fill-50 sorts last among the equal-length prefix matches — the
+        // unboosted scan drops it, the boosted scan must not.
+        let boostedID = try XCTUnwrap(
+            FileSearch.items(query: "fill-50", roots: [root]).first?.id)
+        XCTAssertEqual(FileSearch.scan(query: "fill", roots: [root])
+            .last?.url.lastPathComponent, "fill-49.txt")
+        let matches = FileSearch.scan(query: "fill", roots: [root],
+                                      isBoosted: { $0 == boostedID })
+        XCTAssertEqual(matches.count, SearchModel.maxResults)
+        XCTAssertEqual(matches.first?.url.lastPathComponent, "fill-50.txt")
+        XCTAssertFalse(matches.contains {
+            $0.url.lastPathComponent == "fill-49.txt" },
+            "the weakest unpinned match yields the slot")
+    }
+
     /// Blocking a directory prunes the whole subtree — "never show" a
     /// folder means its contents too, and pruning keeps descendants from
     /// spending the visited budget.
