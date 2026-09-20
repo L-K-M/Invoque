@@ -168,8 +168,9 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   total order. Pinned rows keep their slots: `PathSource` rows first (a typed
   address is a direct intent), calculator answers next, web fallback last.
 - Entry rules: the user can **pin** a durable entry (⌘P or right-click →
-  Pin — always ranks above unpinned matches when it matches; a pin boosts,
-  it doesn't conjure, and pins past the result cap rejoin ranked order) or
+  Pin — ranks above unpinned matches when it matches, beneath the `path:`
+  and `calc:` head rows; a pin boosts, it doesn't conjure, and pins past
+  the result cap rejoin ranked order) or
   **block** one (⌘B — never appears; the sets are exclusive — blocking
   unpins, pinning unblocks — so the last explicit action wins). Apps,
   commands, system actions and file hits
