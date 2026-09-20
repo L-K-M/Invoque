@@ -1,76 +1,152 @@
 import AppKit
 import SwiftUI
 
-/// The launcher's typeface — a curated choice rather than the full font
-/// book. The four system designs track whatever face the platform ships
-/// (SF Pro, SF Rounded, New York, SF Mono); the named families are all
-/// bundled with macOS, so every option resolves on every machine.
-enum PanelTypeface: String, CaseIterable, Identifiable {
+/// The launcher's typeface — the four system designs plus any installed
+/// font family. The system designs track whatever face the platform ships
+/// (SF Pro, SF Rounded, New York, SF Mono); a family choice persists the
+/// NSFont family name, so user-installed fonts are pickable too. An
+/// uninstalled family fails to decode and falls back to the system face.
+struct PanelTypeface: Hashable, Identifiable, RawRepresentable {
 
-    // System designs — the platform's own faces.
-    case system
-    case rounded
-    case serif
-    case monospaced
+    /// What a choice resolves through. `.family` carries an NSFont family
+    /// name — bundled or user-installed.
+    enum Face: Hashable {
+        case system, rounded, serif, monospaced
+        case family(String)
+    }
 
-    // Named families — fixed faces, all bundled with macOS.
-    case avenirNext
-    case americanTypewriter
-    case courierNew
-    case futura
-    case georgia
-    case gillSans
-    case helveticaNeue
-    case menlo
-    case optima
-    case timesNewRoman
+    let face: Face
 
     var id: String { rawValue }
 
+    // MARK: Catalog
+
+    /// The curated front section of the picker — the platform designs and
+    /// the bundled families this system actually reports installed (a face
+    /// the picker offers must be able to decode on relaunch). The full
+    /// installed list follows via `moreFamilies`.
+    static var curated: [PanelTypeface] {
+        bundled.filter {
+            guard let family = $0.family else { return true }
+            return installedFamilySet.contains(family)
+        }
+    }
+
+    /// The bundled choices `curated` draws from — unfiltered, so tests can
+    /// verify every listed family name actually resolves.
+    static let bundled: [PanelTypeface] = [
+        .system, .rounded, .serif, .monospaced,
+        .avenirNext, .americanTypewriter, .courierNew, .futura, .georgia,
+        .gillSans, .helveticaNeue, .menlo, .optima, .timesNewRoman,
+    ]
+
+    static let system = PanelTypeface(face: .system)
+    static let rounded = PanelTypeface(face: .rounded)
+    static let serif = PanelTypeface(face: .serif)
+    static let monospaced = PanelTypeface(face: .monospaced)
+
+    static let avenirNext = PanelTypeface(face: .family("Avenir Next"))
+    static let americanTypewriter = PanelTypeface(face: .family("American Typewriter"))
+    static let courierNew = PanelTypeface(face: .family("Courier New"))
+    static let futura = PanelTypeface(face: .family("Futura"))
+    static let georgia = PanelTypeface(face: .family("Georgia"))
+    static let gillSans = PanelTypeface(face: .family("Gill Sans"))
+    static let helveticaNeue = PanelTypeface(face: .family("Helvetica Neue"))
+    static let menlo = PanelTypeface(face: .family("Menlo"))
+    static let optima = PanelTypeface(face: .family("Optima"))
+    static let timesNewRoman = PanelTypeface(face: .family("Times New Roman"))
+
+    /// A typeface for an installed family — what the picker's full list
+    /// tags each row with.
+    static func custom(_ familyName: String) -> PanelTypeface {
+        PanelTypeface(face: .family(familyName))
+    }
+
+    /// Every family the font manager reports, minus hidden system faces
+    /// (".AppleSystemUIFont" and friends), sorted for the picker. Fonts can
+    /// be activated while the app runs, so Appearance refreshes this when
+    /// it opens — see `refreshInstalledFamilies`.
+    private(set) static var installedFamilies = currentInstalledFamilies()
+
+    /// Installed families that aren't already in `curated` — the picker's
+    /// tail section, so a curated face never tags twice.
+    static var moreFamilies: [String] {
+        let curatedNames = Set(curated.compactMap(\.family))
+        return installedFamilies.filter { !curatedNames.contains($0) }
+    }
+
+    private static var installedFamilySet = Set(installedFamilies)
+
+    /// Re-reads the font manager so a family activated while the app runs
+    /// appears in the picker without a relaunch — and stops validating a
+    /// family that was deactivated. Main-thread only: persisted-value
+    /// decoding reads `installedFamilySet` unsynchronized.
+    static func refreshInstalledFamilies() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        installedFamilies = currentInstalledFamilies()
+        installedFamilySet = Set(installedFamilies)
+    }
+
+    private static func currentInstalledFamilies() -> [String] {
+        NSFontManager.shared.availableFontFamilies
+            .filter { !$0.hasPrefix(".") }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    // MARK: Persistence
+
+    /// The persisted form: the design name for system faces, or
+    /// `family:<name>` for a named family — the prefix keeps a family
+    /// literally called "system" from colliding with a design key.
+    var rawValue: String {
+        switch face {
+        case .system: return "system"
+        case .rounded: return "rounded"
+        case .serif: return "serif"
+        case .monospaced: return "monospaced"
+        case .family(let name): return "family:" + name
+        }
+    }
+
+    /// CamelCase keys the enum form of this type persisted for the curated
+    /// families — they still decode, to their `family:` face.
+    private static let legacyFamilyKeys: [String: String] = [
+        "avenirNext": "Avenir Next",
+        "americanTypewriter": "American Typewriter",
+        "courierNew": "Courier New",
+        "futura": "Futura",
+        "georgia": "Georgia",
+        "gillSans": "Gill Sans",
+        "helveticaNeue": "Helvetica Neue",
+        "menlo": "Menlo",
+        "optima": "Optima",
+        "timesNewRoman": "Times New Roman",
+    ]
+
+    // MARK: Display
+
     /// The picker's label — each row draws in its own face.
     var label: String {
-        switch self {
+        switch face {
         case .system: return "System"
         case .rounded: return "System Rounded"
         case .serif: return "System Serif"
         case .monospaced: return "System Mono"
-        case .avenirNext: return "Avenir Next"
-        case .americanTypewriter: return "American Typewriter"
-        case .courierNew: return "Courier New"
-        case .futura: return "Futura"
-        case .georgia: return "Georgia"
-        case .gillSans: return "Gill Sans"
-        case .helveticaNeue: return "Helvetica Neue"
-        case .menlo: return "Menlo"
-        case .optima: return "Optima"
-        case .timesNewRoman: return "Times New Roman"
+        case .family(let name): return name
         }
     }
 
-    /// The family name a named case resolves through; nil for the system
-    /// designs (those go through `systemDesign` instead). Spelled out
-    /// per-case rather than reusing `label` — a display rename must never
-    /// silently break font resolution.
+    /// The family name a `.family` face resolves through; nil for the
+    /// system designs (those go through `design` instead).
     var family: String? {
-        switch self {
-        case .system, .rounded, .serif, .monospaced: return nil
-        case .avenirNext: return "Avenir Next"
-        case .americanTypewriter: return "American Typewriter"
-        case .courierNew: return "Courier New"
-        case .futura: return "Futura"
-        case .georgia: return "Georgia"
-        case .gillSans: return "Gill Sans"
-        case .helveticaNeue: return "Helvetica Neue"
-        case .menlo: return "Menlo"
-        case .optima: return "Optima"
-        case .timesNewRoman: return "Times New Roman"
-        }
+        guard case .family(let name) = face else { return nil }
+        return name
     }
 
-    /// The `Font.Design` for a system-design case — `.default` for
-    /// `.system` and unused by the named families.
+    /// The `Font.Design` for a system-design face — `.default` for
+    /// `.system` and unused by named families.
     private var design: Font.Design {
-        switch self {
+        switch face {
         case .rounded: return .rounded
         case .serif: return .serif
         case .monospaced: return .monospaced
@@ -80,7 +156,7 @@ enum PanelTypeface: String, CaseIterable, Identifiable {
 
     /// The AppKit-side twin of `design` — `withDesign` takes its own enum.
     private var nsDesign: NSFontDescriptor.SystemDesign {
-        switch self {
+        switch face {
         case .rounded: return .rounded
         case .serif: return .serif
         case .monospaced: return .monospaced
@@ -124,6 +200,33 @@ enum PanelTypeface: String, CaseIterable, Identifiable {
     /// at the same optical size the system face would.
     private static func pointSize(for style: Font.TextStyle) -> CGFloat {
         NSFont.preferredFont(forTextStyle: style.nsTextStyle).pointSize
+    }
+}
+
+extension PanelTypeface {
+    /// Decodes the persisted form — in an extension so the memberwise
+    /// `init(face:)` survives. A `family:` value must still be installed —
+    /// an uninstalled font decodes to nil so callers fall back to the
+    /// default rather than render a phantom selection. Main-thread only:
+    /// reads `installedFamilySet` unsynchronized — the precondition traps
+    /// in release builds, so every decode path (Preferences load, preset
+    /// apply) must be main-confined.
+    init?(rawValue: String) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        switch rawValue {
+        case "system": face = .system
+        case "rounded": face = .rounded
+        case "serif": face = .serif
+        case "monospaced": face = .monospaced
+        case let key where key.hasPrefix("family:"):
+            let name = String(key.dropFirst("family:".count))
+            guard Self.installedFamilySet.contains(name) else { return nil }
+            face = .family(name)
+        default:
+            guard let name = Self.legacyFamilyKeys[rawValue],
+                  Self.installedFamilySet.contains(name) else { return nil }
+            face = .family(name)
+        }
     }
 }
 

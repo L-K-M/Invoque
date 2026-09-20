@@ -12,6 +12,10 @@ struct AppearanceView: View {
     /// Nothing it can do matters — the preview swallows all hit-testing.
     @StateObject private var previewModel = AppearanceView.makePreviewModel()
 
+    /// The picker's installed-family tail — state so a font activated
+    /// mid-session appears when the refresh below re-reads the font manager.
+    @State private var extraFamilies = PanelTypeface.moreFamilies
+
     var body: some View {
         VStack(spacing: 0) {
             PanelView(model: previewModel, preferences: preferences)
@@ -132,13 +136,43 @@ struct AppearanceView: View {
         }
     }
 
+    /// Re-reads the font manager so a family activated since the pane
+    /// last refreshed joins the picker's tail without a relaunch.
+    private func refreshFontList() {
+        PanelTypeface.refreshInstalledFamilies()
+        var families = PanelTypeface.moreFamilies
+        // Keep a deactivated selected family listed so the picker never
+        // shows a blank selection. Only an *installed* curated face can
+        // be skipped — `curated` is installed-filtered, so a deactivated
+        // curated face has no row above and needs this one.
+        if let selected = preferences.panelTypeface.family,
+           !families.contains(selected),
+           !PanelTypeface.curated.compactMap(\.family).contains(selected) {
+            families.append(selected)
+        }
+        extraFamilies = families
+    }
+
     private var textSection: some View {
         Section("Text") {
             Picker("Typeface", selection: $preferences.panelTypeface) {
                 // Each option draws in its own face, like a font menu.
-                ForEach(PanelTypeface.allCases) { typeface in
+                ForEach(PanelTypeface.curated) { typeface in
                     Text(typeface.label).font(typeface.font(.body)).tag(typeface)
                 }
+                Divider()
+                // Every other installed family — user fonts included.
+                ForEach(extraFamilies, id: \.self) { family in
+                    let typeface = PanelTypeface.custom(family)
+                    Text(typeface.label).font(typeface.font(.body)).tag(typeface)
+                }
+            }
+            .onAppear(perform: refreshFontList)
+            // Covers "activate in Font Book, switch back" while the pane
+            // stays open — onAppear alone only fires once.
+            .onReceive(NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification)) { _ in
+                refreshFontList()
             }
             ColorPicker("Label", selection: colorBinding(\.labelHex), supportsOpacity: false)
                 .disabled(!preferences.panelMaterial.usesThemeTextColor)

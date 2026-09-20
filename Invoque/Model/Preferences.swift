@@ -185,8 +185,9 @@ final class Preferences: ObservableObject {
         }
     }
 
-    /// The panel's typeface — a curated choice (system designs or a bundled
-    /// macOS family), resolved by `PanelTypeface.font`/`nsFont`.
+    /// The panel's typeface — a system design or any installed font
+    /// family (curated families and user-installed alike), resolved by
+    /// `PanelTypeface.font`/`nsFont`.
     @Published var panelTypeface: PanelTypeface {
         didSet { defaults.set(panelTypeface.rawValue, forKey: Key.panelTypeface) }
     }
