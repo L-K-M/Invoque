@@ -100,25 +100,6 @@ struct PanelTypeface: Hashable, Identifiable, RawRepresentable {
         "timesNewRoman": "Times New Roman",
     ]
 
-    /// Decodes the persisted form. A `family:` value must still be
-    /// installed — an uninstalled font decodes to nil so callers fall back
-    /// to the default rather than render a phantom selection.
-    init?(rawValue: String) {
-        switch rawValue {
-        case "system": face = .system
-        case "rounded": face = .rounded
-        case "serif": face = .serif
-        case "monospaced": face = .monospaced
-        case let key where key.hasPrefix("family:"):
-            let name = String(key.dropFirst("family:".count))
-            guard Self.installedFamilySet.contains(name) else { return nil }
-            face = .family(name)
-        default:
-            guard let name = Self.legacyFamilyKeys[rawValue] else { return nil }
-            face = .family(name)
-        }
-    }
-
     // MARK: Display
 
     /// The picker's label — each row draws in its own face.
@@ -196,6 +177,28 @@ struct PanelTypeface: Hashable, Identifiable, RawRepresentable {
     /// at the same optical size the system face would.
     private static func pointSize(for style: Font.TextStyle) -> CGFloat {
         NSFont.preferredFont(forTextStyle: style.nsTextStyle).pointSize
+    }
+}
+
+extension PanelTypeface {
+    /// Decodes the persisted form — in an extension so the memberwise
+    /// `init(face:)` survives. A `family:` value must still be installed —
+    /// an uninstalled font decodes to nil so callers fall back to the
+    /// default rather than render a phantom selection.
+    init?(rawValue: String) {
+        switch rawValue {
+        case "system": face = .system
+        case "rounded": face = .rounded
+        case "serif": face = .serif
+        case "monospaced": face = .monospaced
+        case let key where key.hasPrefix("family:"):
+            let name = String(key.dropFirst("family:".count))
+            guard Self.installedFamilySet.contains(name) else { return nil }
+            face = .family(name)
+        default:
+            guard let name = Self.legacyFamilyKeys[rawValue] else { return nil }
+            face = .family(name)
+        }
     }
 }
 
