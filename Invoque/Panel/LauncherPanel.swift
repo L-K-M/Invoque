@@ -21,6 +21,12 @@ final class LauncherPanel: NSPanel {
     /// it can never outlive the SwiftUI hierarchy that owns it.
     weak var preferredFirstResponder: NSView?
 
+    /// ⌘P / ⌘B on the results list — pin and block the selected entry.
+    /// Wired by the controller; the model decides whether the chord
+    /// applies (no manageable row, a card owning the panel → no-op).
+    var onPinChord: (() -> Void)?
+    var onBlockChord: (() -> Void)?
+
     /// A borderless panel would not become key by default; the panel must
     /// become key to receive typing, which is the whole point of summoning it.
     override var canBecomeKey: Bool { true }
@@ -52,5 +58,26 @@ final class LauncherPanel: NSPanel {
     /// Esc from the focused field travels the responder chain to here.
     override func cancelOperation(_ sender: Any?) {
         onCancel?()
+    }
+
+    /// ⌘-chords land here during key dispatch — after the focused field
+    /// declines them, before the main menu sees them. ⌘P/⌘B are ours
+    /// outright: they have no other meaning in a plain search field, and
+    /// claiming them unconditionally keeps a no-op chord from beeping.
+    override func performKeyEquivalent(_ event: NSEvent) -> Bool {
+        if event.type == .keyDown,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "p":
+                onPinChord?()
+                return true
+            case "b":
+                onBlockChord?()
+                return true
+            default:
+                break
+            }
+        }
+        return super.performKeyEquivalent(event)
     }
 }

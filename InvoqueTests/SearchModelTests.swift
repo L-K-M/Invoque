@@ -50,6 +50,23 @@ final class SearchModelTests: XCTestCase {
         )
     }
 
+    /// Rules stub for pin/block tests — the `Preferences`-backed closures
+    /// production uses, replaced by sets the test mutates directly.
+    private final class StubRules {
+        var pinned = Set<String>()
+        var blocked = Set<String>()
+        var entryRules: EntryRules {
+            EntryRules(isPinned: { [self] in pinned.contains($0) },
+                       isBlocked: { [self] in blocked.contains($0) })
+        }
+    }
+
+    private func makeModel(sources: [ItemSource],
+                           rules: StubRules) -> SearchModel {
+        SearchModel(sources: sources, frecency: Frecency(defaults: defaults),
+                    entryRules: rules.entryRules)
+    }
+
     // MARK: Aggregation
 
     func testEmptyQueryYieldsNoResults() {
@@ -295,5 +312,139 @@ final class SearchModelTests: XCTestCase {
         let results = model.results(for: "safari")
         XCTAssertEqual(results.count, SearchModel.maxResults)
         XCTAssertEqual(results.last?.id, "web:safari")
+    }
+
+    // MARK: Pinned & blocked entries
+
+    /// A pinned entry leads the ranked list even when an unpinned match
+    /// outranks it on every signal — pin is a boost, not a sort key.
+    func testPinnedEntryLeadsRankedMatches() {
+        let rules = StubRules()
+        rules.pinned = ["app:loser"]
+        let source = StubSource()
+        source.stubbedItems = [
+            // Prefix hit — strictly outranks the fuzzy-only pinned item.
+            Self.appItem(id: "app:winner", title: "Safari"),
+            Self.appItem(id: "app:loser", title: "SanFran"),
+        ]
+        let model = makeModel(sources: [source], rules: rules)
+        XCTAssertEqual(model.results(for: "saf").map(\.id),
+                       ["app:loser", "app:winner"])
+    }
+
+    /// A pin boosts a matching entry; it never conjures one — a pinned id
+    /// that fails the query must not appear.
+    func testPinnedEntryMustStillMatch() {
+        let rules = StubRules()
+        rules.pinned = ["app:pinned"]
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:pinned", title: "Terminal"),
+            Self.appItem(id: "app:plain", title: "Safari"),
+        ]
+        let model = makeModel(sources: [source], rules: rules)
+        XCTAssertEqual(model.results(for: "saf").map(\.id), ["app:plain"])
+    }
+
+    /// Pins keep their rank order among themselves — the band is a boost
+    /// over the unpinned, not a scramble of the pinned.
+    func testPinnedBandKeepsRankOrder() {
+        let rules = StubRules()
+        rules.pinned = ["app:second", "app:first"]
+        let source = StubSource()
+        source.stubbedItems = [
+            // "Sa" outranks "Safari" (shorter prefix hit); pinning both
+            // must keep that order inside the band.
+            Self.appItem(id: "app:second", title: "Safari"),
+            Self.appItem(id: "app:first", title: "Sa"),
+            Self.appItem(id: "app:plain", title: "Sabre"),
+        ]
+        let model = makeModel(sources: [source], rules: rules)
+        XCTAssertEqual(model.results(for: "sa").map(\.id),
+                       ["app:first", "app:second", "app:plain"])
+    }
+
+    /// The pin band sits under the functional head pins: a live `calc:`
+    /// row still leads a user-pinned entry on the same query.
+    func testPinnedBandSitsUnderCalculatorPin() {
+        let rules = StubRules()
+        rules.pinned = ["app:pinned"]
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:pinned", title: "Safari"),
+            Self.appItem(id: "app:plain", title: "Sabre"),
+            // StubSource emits this on every query; functional pins
+            // classify by id prefix without matching, so it leads "sa".
+            Self.appItem(id: "calc:1+1", title: "= 2"),
+        ]
+        let model = makeModel(sources: [source], rules: rules)
+        XCTAssertEqual(model.results(for: "sa").map(\.id),
+                       ["calc:1+1", "app:pinned", "app:plain"])
+    }
+
+    /// Same for the leading pin: a typed path still outranks a pinned
+    /// entry that matches it.
+    func testPinnedBandSitsUnderPathPin() {
+        let rules = StubRules()
+        rules.pinned = ["app:pinned"]
+        let source = StubSource()
+        source.stubbedItems = [Self.appItem(id: "app:pinned", title: "/tmp tool")]
+        let model = makeModel(sources: [source, PathSource()], rules: rules)
+        XCTAssertEqual(model.results(for: "/tmp").map(\.id),
+                       ["path:/tmp", "app:pinned"])
+    }
+
+    /// Pinned entries draw from the same cap: they can't push the web
+    /// fallback off, and the total stays at `maxResults`.
+    func testPinnedEntriesKeepWebSlotWhenRankedFillsCap() {
+        let rules = StubRules()
+        rules.pinned = ["app:safari-0", "app:safari-1", "app:safari-2"]
+        let apps = StubSource()
+        apps.stubbedItems = (0..<60).map { index in
+            Self.appItem(id: "app:safari-\(index)", title: "Safari \(index)")
+        }
+        let model = makeModel(sources: [apps, WebSource()], rules: rules)
+        let results = model.results(for: "safari")
+        XCTAssertEqual(results.count, SearchModel.maxResults)
+        XCTAssertEqual(Array(results.map(\.id).prefix(3)),
+                       ["app:safari-0", "app:safari-1", "app:safari-2"])
+        XCTAssertEqual(results.last?.id, "web:safari")
+    }
+
+    /// Block is absolute: a matching entry simply never appears, however
+    /// strong its rank.
+    func testBlockedEntryNeverAppears() {
+        let rules = StubRules()
+        rules.blocked = ["app:blocked"]
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:blocked", title: "Safari"),
+            Self.appItem(id: "app:plain", title: "Sabre"),
+        ]
+        let model = makeModel(sources: [source], rules: rules)
+        XCTAssertEqual(model.results(for: "sa").map(\.id), ["app:plain"])
+    }
+
+    /// Block wins over pin — the states can't coexist through the UI, but
+    /// a hand edit can produce both, and "never show" must hold.
+    func testBlockBeatsPin() {
+        let rules = StubRules()
+        rules.pinned = ["app:both"]
+        rules.blocked = ["app:both"]
+        let source = StubSource()
+        source.stubbedItems = [Self.appItem(id: "app:both", title: "Safari")]
+        let model = makeModel(sources: [source], rules: rules)
+        XCTAssertTrue(model.results(for: "safari").isEmpty)
+    }
+
+    /// Blocked functional rows drop too — the filter runs ahead of pin
+    /// classification, so a hand-edited `web:`/`calc:` block is honored.
+    func testBlockedFunctionalRowDrops() {
+        let rules = StubRules()
+        rules.blocked = ["web:safari", "calc:2+2"]
+        let model = makeModel(sources: [WebSource(), CalculatorSource()],
+                              rules: rules)
+        XCTAssertTrue(model.results(for: "safari").isEmpty)
+        XCTAssertTrue(model.results(for: "2+2").isEmpty)
     }
 }

@@ -172,6 +172,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // above. (The store's onChange→onReload subscription is init-time,
         // so commands installed later still refresh the open panel.)
         Task { await commandSource.reload() }
+        // One rules facade shared by the ranker and the panel: the panel's
+        // toggles write through to Preferences, and the ranker reads the
+        // same state when it assembles each query's list.
+        let entryRules = EntryRules(
+            isPinned: { [weak preferences] in preferences?.isPinned($0) ?? false },
+            isBlocked: { [weak preferences] in preferences?.isBlocked($0) ?? false },
+            togglePin: { [weak preferences] in preferences?.togglePinned(id: $0, title: $1) },
+            toggleBlock: { [weak preferences] in preferences?.toggleBlocked(id: $0, title: $1) })
+        model.entryRules = entryRules
+        // A pin/block made in Settings must repaint the open panel; the
+        // panel's own toggles reach it through this path too.
+        preferences.entryRulesChanged = { [weak model] in
+            model?.entryRulesDidChange()
+        }
         let sources: [ItemSource] = [
             PathSource(),
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
@@ -182,7 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 preferences?.searchEngine ?? .duckDuckGo
             }),
         ]
-        let searchModel = SearchModel(sources: sources, frecency: Frecency())
+        let searchModel = SearchModel(sources: sources, frecency: Frecency(),
+                                      entryRules: entryRules)
         return PanelController(preferences: preferences, model: model,
                                searchModel: searchModel,
                                commandStore: commandStore,

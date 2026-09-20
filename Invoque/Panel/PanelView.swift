@@ -264,8 +264,9 @@ struct PanelView: View {
                             let fill = isSelected
                                 ? selectionFill(for: image, key: row.icon.backingPath)
                                 : themeHighlight
-                            ResultRowView(row: row, iconImage: image,
+                            let rowView = ResultRowView(row: row, iconImage: image,
                                           isSelected: isSelected,
+                                          pinned: model.isPinned(row),
                                           fill: fill,
                                           fillOpacity: preferences.highlightOpacity,
                                           cornerRadius: preferences.highlightCornerRadius,
@@ -284,6 +285,14 @@ struct PanelView: View {
                                     model.select(row)
                                     model.submit()
                                 }
+                            // The menu attaches only to manageable entries —
+                            // an empty `.contextMenu` still flashes a blank
+                            // menu on right-click.
+                            if model.canManage(row) {
+                                rowView.contextMenu { entryMenuItems(for: row) }
+                            } else {
+                                rowView
+                            }
                         }
                     }
                 }
@@ -309,16 +318,41 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        Text(model.permissionRequest != nil
-             ? "⌘⏎ allow · esc dismiss"
-             : model.makerIsActive
-             ? "⏎ generate/save · esc dismiss"
-             : model.fileSearchIsActive
-             ? "⏎ open · ⌘⏎ reveal in Finder · esc dismiss"
-             : "↑↓ navigate · ⏎ open · esc dismiss")
+        Text(footerHint)
             .font(preferences.panelTypeface.font(.caption))
             .foregroundStyle(tertiaryColor)
             .frame(maxWidth: .infinity)
+    }
+
+    /// The footer's key hints. The pin/block chords appear only while the
+    /// selection is a manageable entry — advertising them on the web
+    /// fallback would promise an action that can't apply.
+    private var footerHint: String {
+        if model.permissionRequest != nil { return "⌘⏎ allow · esc dismiss" }
+        if model.makerIsActive { return "⏎ generate/save · esc dismiss" }
+        let manage = model.selectedRow.map(model.canManage) == true
+            ? " · ⌘P pin · ⌘B block" : ""
+        if model.fileSearchIsActive {
+            return "⏎ open · ⌘⏎ reveal in Finder" + manage + " · esc dismiss"
+        }
+        return "↑↓ navigate · ⏎ open" + manage + " · esc dismiss"
+    }
+
+    /// The pin/block menu for one row — attached only for manageable
+    /// entries so right-click on a functional row doesn't flash an empty
+    /// menu. Toggles show the HUD toast the chord path uses.
+    @ViewBuilder
+    private func entryMenuItems(for row: ResultRow) -> some View {
+        Button(model.isPinned(row) ? "Unpin" : "Pin") {
+            if let toast = model.togglePin(on: row) {
+                HUD.show(toast, typeface: preferences.panelTypeface)
+            }
+        }
+        Button("Block", role: .destructive) {
+            if let toast = model.toggleBlock(on: row) {
+                HUD.show(toast, typeface: preferences.panelTypeface)
+            }
+        }
     }
 }
 
@@ -398,6 +432,8 @@ private struct ResultRowView: View {
     /// Unused (nil) on `.symbol` rows.
     let iconImage: NSImage?
     let isSelected: Bool
+    /// User-pinned entry — drawn as a small pin trailing the row.
+    let pinned: Bool
     /// The selection fill — the theme highlight or, under adaptive accent,
     /// the icon's dominant color.
     let fill: NSColor
@@ -426,6 +462,11 @@ private struct ResultRowView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
+            if pinned {
+                Image(systemName: "pin.fill")
+                    .font(typeface.font(.caption))
+                    .foregroundStyle(subtitleColor)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

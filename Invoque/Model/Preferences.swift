@@ -40,6 +40,8 @@ final class Preferences: ObservableObject {
         static let crtEnabled = false
         static let crtIntensity = 0.5
         static let searchEngine = SearchEngine.duckDuckGo
+        static let pinnedItems: [String: String] = [:]
+        static let blockedItems: [String: String] = [:]
     }
 
     private enum Key {
@@ -65,6 +67,8 @@ final class Preferences: ObservableObject {
         static let crtEnabled = "crtEnabled"
         static let crtIntensity = "crtIntensity"
         static let searchEngine = "searchEngine"
+        static let pinnedItems = "pinnedItems"
+        static let blockedItems = "blockedItems"
     }
 
     // MARK: Stored settings
@@ -264,6 +268,64 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(searchEngine.rawValue, forKey: Key.searchEngine) }
     }
 
+    // MARK: Pinned & blocked entries
+
+    /// Entries the user pinned — item id → title at pin time. A pinned
+    /// entry ranks above ordinary matches whenever it matches the query
+    /// (the functional `path:`/`calc:`/`web:` pins still lead the list).
+    /// The stored title only feeds the Settings list; matching keys on
+    /// the id. A stale id (uninstalled app, deleted command) is harmless:
+    /// it simply never matches again.
+    @Published var pinnedItems: [String: String] {
+        didSet {
+            defaults.set(pinnedItems, forKey: Key.pinnedItems)
+            entryRulesChanged?()
+        }
+    }
+
+    /// Entries the user blocked — same shape. Blocked ids never appear in
+    /// results at all; block wins over pin.
+    @Published var blockedItems: [String: String] {
+        didSet {
+            defaults.set(blockedItems, forKey: Key.blockedItems)
+            entryRulesChanged?()
+        }
+    }
+
+    /// Fires after either set changes — the AppDelegate wires it to the
+    /// panel's refresh so a pin/block applies to the visible list
+    /// immediately, including edits made from the Settings lists. DidSet
+    /// timing, so the write is already persisted.
+    var entryRulesChanged: (() -> Void)?
+
+    func isPinned(_ id: String) -> Bool { pinnedItems[id] != nil }
+    func isBlocked(_ id: String) -> Bool { blockedItems[id] != nil }
+
+    /// Toggles `id` in `pinnedItems`; returns the new state.
+    @discardableResult
+    func togglePinned(id: String, title: String) -> Bool {
+        if pinnedItems[id] != nil {
+            pinnedItems[id] = nil
+            return false
+        }
+        pinnedItems[id] = title
+        return true
+    }
+
+    /// Toggles `id` in `blockedItems`; returns the new state. Blocking
+    /// unpins — a pinned-and-blocked entry would be invisible anyway, and
+    /// keeping the pin would resurrect it on unblock.
+    @discardableResult
+    func toggleBlocked(id: String, title: String) -> Bool {
+        if blockedItems[id] != nil {
+            blockedItems[id] = nil
+            return false
+        }
+        pinnedItems[id] = nil
+        blockedItems[id] = title
+        return true
+    }
+
     // MARK: Init
 
     init(defaults: UserDefaults = .standard) {
@@ -314,6 +376,12 @@ final class Preferences: ObservableObject {
             ?? Default.crtIntensity, in: Limit.unitInterval, fallback: Default.crtIntensity)
         searchEngine = SearchEngine(rawValue: defaults.string(forKey: Key.searchEngine) ?? "")
             ?? Default.searchEngine
+        // `compactMapValues` drops only the malformed entries — one bad
+        // value in a hand-edited dict must not take the whole list down.
+        pinnedItems = (defaults.dictionary(forKey: Key.pinnedItems) ?? [:])
+            .compactMapValues { $0 as? String }
+        blockedItems = (defaults.dictionary(forKey: Key.blockedItems) ?? [:])
+            .compactMapValues { $0 as? String }
     }
 
     // MARK: Summon hotkey

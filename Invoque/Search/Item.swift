@@ -41,6 +41,16 @@ struct Item: Identifiable, Equatable {
         id.hasPrefix(pathIDPrefix) || id.hasPrefix(calculatorIDPrefix)
     }
 
+    /// Whether an id names a user-manageable *entry* — one that can be
+    /// pinned (rank above other matches) or blocked (never show). Apps,
+    /// commands, system actions and files have durable ids; functional
+    /// pins (`path:`/`calc:`/`web:`) and ephemeral `filter:` rows aren't
+    /// entries, so the pin/block affordances never appear on them.
+    static func isManageableID(_ id: String) -> Bool {
+        [appIDPrefix, commandIDPrefix, systemIDPrefix, fileIDPrefix]
+            .contains { id.hasPrefix($0) }
+    }
+
     /// Stable namespaced id, e.g. `"app:com.apple.Safari"`,
     /// `"cmd:format-json"`, `"sys:lockScreen"`, `"web:safari"`, `"calc:2+2"`.
     let id: String

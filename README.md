@@ -21,6 +21,9 @@ refine new commands without leaving the panel.
 - **Search the web** as the always-last fallback, against your configured
   engine — DuckDuckGo, Google, Bing, Kagi, Brave, Startpage, Qwant,
   Ecosia, or Mojeek (Settings → General).
+- **Pin and block** entries: ⌘P (or right-click → Pin) keeps an app,
+  command, action or file hit above other matches whenever it matches;
+  ⌘B blocks it outright. Manage the lists in Settings → General.
 - **System actions** — lock, sleep, restart, empty trash…
 - **Make commands** with natural language: `make command to format
   clipboard json` generates the manifest and script, runs it on real input

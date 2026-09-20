@@ -167,6 +167,16 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   counts in UserDefaults), then the alignment score, then title/id for a
   total order. Pinned rows keep their slots: `PathSource` rows first (a typed
   address is a direct intent), calculator answers next, web fallback last.
+- Entry rules: the user can **pin** a durable entry (⌘P or right-click →
+  Pin — always ranks above unpinned matches when it matches; a pin boosts,
+  it doesn't conjure) or **block** one (⌘B — never appears; block wins
+  over pin and clears it). Apps, commands, system actions and file hits
+  are entries; `path:`/`calc:`/`web:` functional pins and ephemeral
+  `filter:` rows aren't. Both sets persist in UserDefaults as id→title
+  and are managed from Settings → General ("Pinned & blocked") — the only
+  place to undo a block, since a blocked row can't be selected. A change
+  re-lists the open panel on the spot; in `find`/`f` mode the cached scan
+  reshapes without re-walking the disk.
 - Stability: extending the query preserves the displayed order of rows
   that still match — a row the user is reaching for never moves under
   them. Non-extension edits (deletion, replacement, mode switches) re-rank
@@ -474,6 +484,7 @@ Invoque/
 │   ├── Settings/                        # same pattern as Zap (+ AngleDial)
 │   ├── Updates/                         # copied from Zap (GitHub releases)
 │   ├── Model/                           # Preferences + theming value types:
+│   │   ├── EntryRules.swift             #   pin/block access — closures over Prefs
 │   │   ├── SearchEngine.swift           #   the web fallback's engine picker values
 │   │   ├── Preferences.swift            #   UserDefaults, validated on load
 │   │   ├── AppearancePreset.swift       #   shareable themes + Zap/Jetty import
