@@ -178,8 +178,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let entryRules = EntryRules(
             isPinned: { [weak preferences] in preferences?.isPinned($0) ?? false },
             isBlocked: { [weak preferences] in preferences?.isBlocked($0) ?? false },
-            togglePin: { [weak preferences] in preferences?.togglePinned(id: $0, title: $1) },
-            toggleBlock: { [weak preferences] in preferences?.toggleBlocked(id: $0, title: $1) })
+            togglePin: { [weak preferences] in
+                preferences?.togglePinned(id: $0, title: $1) ?? false },
+            toggleBlock: { [weak preferences] in
+                preferences?.toggleBlocked(id: $0, title: $1) ?? false })
         model.entryRules = entryRules
         // A pin/block made in Settings must repaint the open panel; the
         // panel's own toggles reach it through this path too.
