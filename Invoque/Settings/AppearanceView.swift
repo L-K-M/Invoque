@@ -136,7 +136,13 @@ struct AppearanceView: View {
         Section("Text") {
             Picker("Typeface", selection: $preferences.panelTypeface) {
                 // Each option draws in its own face, like a font menu.
-                ForEach(PanelTypeface.allCases) { typeface in
+                ForEach(PanelTypeface.curated) { typeface in
+                    Text(typeface.label).font(typeface.font(.body)).tag(typeface)
+                }
+                Divider()
+                // Every other installed family — user fonts included.
+                ForEach(PanelTypeface.moreFamilies, id: \.self) { family in
+                    let typeface = PanelTypeface.custom(family)
                     Text(typeface.label).font(typeface.font(.body)).tag(typeface)
                 }
             }

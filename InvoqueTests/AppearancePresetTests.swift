@@ -55,7 +55,7 @@ final class AppearancePresetTests: XCTestCase {
         preferences.panelTypeface = .futura
 
         let preset = AppearancePreset(name: "Snap", from: preferences)
-        XCTAssertEqual(preset.typeface, "futura")
+        XCTAssertEqual(preset.typeface, "family:Futura")
 
         preferences.panelTypeface = .menlo
         preset.apply(to: preferences)
