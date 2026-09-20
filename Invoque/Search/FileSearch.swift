@@ -110,12 +110,21 @@ enum FileSearch {
         let urls = FileManager.default.mountedVolumeURLs(
             includingResourceValuesForKeys: [.volumeIsLocalKey],
             options: [.skipHiddenVolumes]) ?? []
+        // A boot-disk alias (its /Volumes symlink, or however a future
+        // mount spells it) is the same APFS volume as `/` — same UUID —
+        // so identity, not path shape, is the discriminator.
+        let bootID = (try? URL(fileURLWithPath: "/")
+            .resourceValues(forKeys: [.volumeUUIDStringKey]))?
+            .volumeUUIDString
         return urls.compactMap { url in
-            // The boot disk can also appear under its /Volumes alias and —
-            // on some OS versions — via the /System/Volumes/* group;
-            // neither is "another drive".
+            // `/` itself, the /System/Volumes/* group, and any mount that
+            // is literally the boot volume — none is "another drive".
             guard url.path != "/",
                   !url.path.hasPrefix("/System/Volumes/"),
+                  bootID == nil
+                      || (try? url.resourceValues(
+                          forKeys: [.volumeUUIDStringKey]))?
+                          .volumeUUIDString != bootID,
                   (try? url.resourceValues(forKeys: [.volumeIsLocalKey]))?
                       .volumeIsLocal == true else { return nil }
             return Root(url: url)

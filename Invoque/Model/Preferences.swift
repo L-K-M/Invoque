@@ -442,9 +442,11 @@ final class Preferences: ObservableObject {
         blockedItems = (defaults.dictionary(forKey: Key.blockedItems) ?? [:])
             .compactMapValues { $0 as? String }
         // An absent key falls back to the default scope set and a stored
-        // empty list stays respected — but a non-empty list that decodes
-        // to nothing is stale data (a renamed/removed case), not a choice;
-        // falling back beats silently searching nowhere.
+        // empty list is preserved as-is on the property (FileSearch's
+        // resolvedRoots re-applies the default at search time, so it can
+        // never dead-end the mode) — but a non-empty list that decodes to
+        // nothing is stale data (a renamed/removed case), not a choice;
+        // falling back here beats silently searching nowhere.
         if let raw = defaults.array(forKey: Key.fileSearchScopes) as? [String] {
             let decoded = Set(raw.compactMap { FileSearch.Scope(rawValue: $0) })
             fileSearchScopes = decoded.isEmpty && !raw.isEmpty
