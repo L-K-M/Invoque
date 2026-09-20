@@ -22,9 +22,18 @@ struct PanelTypeface: Hashable, Identifiable, RawRepresentable {
     // MARK: Catalog
 
     /// The curated front section of the picker — the platform designs and
-    /// a set of always-bundled families. The full installed list follows
-    /// via `moreFamilies`.
-    static let curated: [PanelTypeface] = [
+    /// the bundled families this system actually reports installed (a face
+    /// the picker offers must be able to decode on relaunch). The full
+    /// installed list follows via `moreFamilies`.
+    static var curated: [PanelTypeface] {
+        bundled.filter {
+            guard let family = $0.family else { return true }
+            return installedFamilySet.contains(family)
+        }
+    }
+
+    /// The bundled choices `curated` draws from.
+    private static let bundled: [PanelTypeface] = [
         .system, .rounded, .serif, .monospaced,
         .avenirNext, .americanTypewriter, .courierNew, .futura, .georgia,
         .gillSans, .helveticaNeue, .menlo, .optima, .timesNewRoman,
@@ -60,20 +69,20 @@ struct PanelTypeface: Hashable, Identifiable, RawRepresentable {
 
     /// Installed families that aren't already in `curated` — the picker's
     /// tail section, so a curated face never tags twice.
-    private(set) static var moreFamilies: [String] = {
+    static var moreFamilies: [String] {
         let curatedNames = Set(curated.compactMap(\.family))
         return installedFamilies.filter { !curatedNames.contains($0) }
-    }()
+    }
 
     private static var installedFamilySet = Set(installedFamilies)
 
     /// Re-reads the font manager so a family activated while the app runs
     /// appears in the picker without a relaunch — and stops validating a
-    /// family that was deactivated.
+    /// family that was deactivated. Main-thread only: persisted-value
+    /// decoding reads `installedFamilySet` unsynchronized.
     static func refreshInstalledFamilies() {
+        assert(Thread.isMainThread, "Font cache refresh must run on main")
         installedFamilies = currentInstalledFamilies()
-        let curatedNames = Set(curated.compactMap(\.family))
-        moreFamilies = installedFamilies.filter { !curatedNames.contains($0) }
         installedFamilySet = Set(installedFamilies)
     }
 

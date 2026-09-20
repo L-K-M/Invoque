@@ -136,6 +136,13 @@ struct AppearanceView: View {
         }
     }
 
+    /// Re-reads the font manager so a family activated since the pane
+    /// last refreshed joins the picker's tail without a relaunch.
+    private func refreshFontList() {
+        PanelTypeface.refreshInstalledFamilies()
+        extraFamilies = PanelTypeface.moreFamilies
+    }
+
     private var textSection: some View {
         Section("Text") {
             Picker("Typeface", selection: $preferences.panelTypeface) {
@@ -150,9 +157,12 @@ struct AppearanceView: View {
                     Text(typeface.label).font(typeface.font(.body)).tag(typeface)
                 }
             }
-            .onAppear {
-                PanelTypeface.refreshInstalledFamilies()
-                extraFamilies = PanelTypeface.moreFamilies
+            .onAppear(perform: refreshFontList)
+            // Covers "activate in Font Book, switch back" while the pane
+            // stays open — onAppear alone only fires once.
+            .onReceive(NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification)) { _ in
+                refreshFontList()
             }
             ColorPicker("Label", selection: colorBinding(\.labelHex), supportsOpacity: false)
                 .disabled(!preferences.panelMaterial.usesThemeTextColor)
