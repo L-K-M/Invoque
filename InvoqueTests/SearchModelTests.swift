@@ -445,6 +445,8 @@ final class SearchModelTests: XCTestCase {
         let model = makeModel(sources: [WebSource(), CalculatorSource()],
                               rules: rules)
         XCTAssertTrue(model.results(for: "safari").isEmpty)
-        XCTAssertTrue(model.results(for: "2+2").isEmpty)
+        // Only the calc row is blocked on "2+2" — the web fallback for the
+        // same query (`web:2+2`) is a different id and still lands.
+        XCTAssertEqual(model.results(for: "2+2").map(\.id), ["web:2+2"])
     }
 }
