@@ -6,11 +6,14 @@
 
 Reads media-sources/icon2.png and writes
 Invoque/Resources/Assets.xcassets/AppIcon.appiconset/*.png plus its
-Contents.json and the AccentColor colorset — every size regenerated in
-step, so the sizes cannot drift apart. Re-run it after changing the
-source art. `--verify` regenerates in memory and compares against what's
-committed — *pixel*-level for the PNGs, because deflate bytes are not
-guaranteed stable across zlib builds — and byte-level for the JSON.
+Contents.json, the AccentColor colorset, and the StatusIcon imageset
+(the menu-bar extra — a simplified miniature of the icon's Memphis mark:
+cream plate, pink disc, navy triangle, cyan check; the full collage is
+illegible at 18pt). Every size regenerated in step, so the sizes cannot
+drift apart. Re-run it after changing the source art. `--verify`
+regenerates in memory and compares against what's committed —
+*pixel*-level for the PNGs, because deflate bytes are not guaranteed
+stable across zlib builds — and byte-level for the JSON.
 
 No dependencies on purpose: no Pillow, no ImageMagick — the PNG is decoded
 and re-encoded here with zlib, and each target size is an area-average
@@ -30,6 +33,7 @@ SOURCE = "media-sources/icon2.png"
 ASSETS = os.path.join("Invoque", "Resources", "Assets.xcassets")
 ICONSET = os.path.join(ASSETS, "AppIcon.appiconset")
 ACCENTSET = os.path.join(ASSETS, "AccentColor.colorset")
+STATUSSET = os.path.join(ASSETS, "StatusIcon.imageset")
 
 # The icon's own Memphis pink (#FB04B5 in the artwork) — the brand accent
 # for system-tinted controls (Settings pickers, the angle dial). Written
@@ -37,13 +41,29 @@ ACCENTSET = os.path.join(ASSETS, "AccentColor.colorset")
 # artwork, and `check_accent_in_artwork` keeps that true.
 ACCENT = (0xFB / 255.0, 0x04 / 255.0, 0xB5 / 255.0)
 
+# The status-mark palette — every color is sampled from icon2.png and
+# `check_mark_palette_in_artwork` keeps that true. The mark redraws the
+# icon's three-shape composition flat (the artwork's texture and text
+# are noise at 18pt).
+MARK_CREAM = (0xFE / 255.0, 0xFB / 255.0, 0xEC / 255.0)
+MARK_CYAN = (0x02 / 255.0, 0xFB / 255.0, 0xF6 / 255.0)
+MARK_NAVY = (0x00 / 255.0, 0x05 / 255.0, 0x17 / 255.0)
+
 INSET = 0.02          # fraction of the canvas left clear on every side
 SQUIRCLE_N = 5.0      # superellipse exponent; ~5 approximates Apple's corner
 # macOS wants each nominal size at 1x and 2x — ten files, seven renders.
 CONTENTS = [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1),
             (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)]
-EXPECTED_NAMES = frozenset(
-    {"Contents.json"} | {f"icon_{n}x{n}@{s}x.png" for n, s in CONTENTS})
+
+# The menu-bar image: one 18pt image at three scales — the usual status-
+# item size. `universal` idiom carries the 3x slot (mac idiom stops at 2x).
+STATUS_CONTENTS = [(18, 1), (18, 2), (18, 3)]
+
+
+def expected_names(stem, contents):
+    return frozenset(
+        {"Contents.json"}
+        | {f"{stem}_{n}x{n}@{s}x.png" for n, s in contents})
 
 
 def decode_png(path, opaque_only=False):
@@ -138,6 +158,13 @@ def squircle_coverage(x, y, half):
     return clamp(0.5 - distance)
 
 
+def _artwork_has(source, color, tolerance=2):
+    target = tuple(int(round(c * 255)) for c in color)
+    px = source[2]
+    return any(all(abs(px[i + k] - target[k]) <= tolerance for k in range(3))
+               for i in range(0, len(px), 4))
+
+
 def check_accent_in_artwork(source, tolerance=2):
     """Fail fast if the artwork's pink no longer equals ACCENT.
 
@@ -145,13 +172,20 @@ def check_accent_in_artwork(source, tolerance=2):
     re-exported with a different pink the accent must move with it —
     this is the check that keeps "can't drift" true.
     """
-    target = tuple(int(round(c * 255)) for c in ACCENT)
-    px = source[2]
-    for i in range(0, len(px), 4):
-        if all(abs(px[i + k] - target[k]) <= tolerance for k in range(3)):
-            return
-    raise ValueError("ACCENT not found in source artwork — update ACCENT "
-                     "to the artwork's pink before regenerating")
+    if not _artwork_has(source, ACCENT, tolerance):
+        raise ValueError("ACCENT not found in source artwork — update ACCENT "
+                         "to the artwork's pink before regenerating")
+
+
+def check_mark_palette_in_artwork(source, tolerance=2):
+    """Same drift guard for the status mark: its flat palette claims to be
+    sampled from icon2.png, so a re-export that shifts the colors must
+    move the mark with them."""
+    for name, color in (("cream", MARK_CREAM), ("cyan", MARK_CYAN),
+                        ("navy", MARK_NAVY)):
+        if not _artwork_has(source, color, tolerance):
+            raise ValueError(f"status-mark {name} not found in source "
+                             "artwork — resample the MARK_* palette")
 
 
 def render(source, size):
@@ -185,6 +219,79 @@ def render(source, size):
             pixels[i + 1] = g // n
             pixels[i + 2] = b // n
             pixels[i + 3] = int(round(255 * a))
+    return pixels
+
+
+def _seg_dist(px, py, ax, ay, bx, by):
+    """Distance from (px,py) to the segment (ax,ay)-(bx,by)."""
+    dx, dy = bx - ax, by - ay
+    h = clamp(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))
+    return ((px - (ax + h * dx)) ** 2 + (py - (ay + h * dy)) ** 2) ** 0.5
+
+
+def draw_status_mark(size):
+    """The menu-bar mark: icon2's composition reduced to its readable core.
+
+    The full artwork is a textured collage — at 18pt it box-averages into
+    mud. The mark keeps the three shapes that carry the design, drawn flat
+    in the artwork's own colors: the navy triangle pointing right, the
+    pink disc top-right, and the cyan brushstroke check crossing both,
+    on the cream plate with the same squircle edge as the app icon.
+
+    Anti-aliasing is a 4x supersample — every shape answers binary
+    coverage, no distance-field fudge factors.
+    """
+    supersample = 4
+    # Shapes in plate-relative coordinates (0..1, y down) — the same
+    # placement as icon2's composition.
+    disc = (0.64, 0.36, 0.24)                      # cx, cy, radius
+    tri_x0, tri_x1, tri_mid, tri_half = 0.20, 0.62, 0.52, 0.30
+    check = ((0.24, 0.52), (0.44, 0.70), (0.80, 0.30))
+    check_halfwidth = 0.075
+
+    pixels = bytearray(size * size * 4)
+    samples = supersample * supersample
+    for y in range(size):
+        for x in range(size):
+            plate = disc_c = tri_c = check_c = 0
+            for sy in range(supersample):
+                v = (y + (sy + 0.5) / supersample) / size
+                for sx in range(supersample):
+                    u = (x + (sx + 0.5) / supersample) / size
+                    half = 0.5 - INSET
+                    nx, ny = abs(u - 0.5) / half, abs(v - 0.5) / half
+                    inside = ((nx ** SQUIRCLE_N + ny ** SQUIRCLE_N)
+                              ** (1.0 / SQUIRCLE_N)) <= 1.0
+                    if not inside:
+                        continue
+                    plate += 1
+                    dx, dy, r = disc
+                    if (u - dx) ** 2 + (v - dy) ** 2 < r * r:
+                        disc_c += 1
+                    t = (u - tri_x0) / (tri_x1 - tri_x0)
+                    if t >= 0 and abs(v - tri_mid) < tri_half * (1 - t) + 0.02:
+                        tri_c += 1
+                    d = min(_seg_dist(u, v, *check[0], *check[1]),
+                            _seg_dist(u, v, *check[1], *check[2]))
+                    if d < check_halfwidth:
+                        check_c += 1
+            if plate == 0:
+                continue
+            # Layer order matches the artwork: triangle under disc under
+            # the check on top.
+            r, g, b = MARK_CREAM
+            for coverage, color in (
+                    (tri_c / samples, MARK_NAVY),
+                    (disc_c / samples, ACCENT),
+                    (check_c / samples, MARK_CYAN)):
+                r += (color[0] - r) * coverage
+                g += (color[1] - g) * coverage
+                b += (color[2] - b) * coverage
+            i = (y * size + x) * 4
+            pixels[i] = int(r * 255 + 0.5)
+            pixels[i + 1] = int(g * 255 + 0.5)
+            pixels[i + 2] = int(b * 255 + 0.5)
+            pixels[i + 3] = int(255 * plate / samples + 0.5)
     return pixels
 
 
@@ -222,6 +329,19 @@ def iconset_json():
             '    "version" : 1\n  }\n}\n')
 
 
+def status_json():
+    images = ',\n'.join(
+        '    {\n'
+        f'      "filename" : "status_{nominal}x{nominal}@{scale}x.png",\n'
+        '      "idiom" : "universal",\n'
+        f'      "scale" : "{scale}x"\n'
+        '    }'
+        for nominal, scale in STATUS_CONTENTS)
+    return ('{\n  "images" : [\n' + images + '\n  ],\n'
+            '  "info" : {\n    "author" : "xcode",\n'
+            '    "version" : 1\n  }\n}\n')
+
+
 def accent_json():
     return (
         '{\n  "colors" : [\n    {\n      "color" : {\n'
@@ -234,7 +354,8 @@ def accent_json():
 
 
 def render_all(source):
-    """Every distinct pixel size once — ten files share seven renders."""
+    """Every distinct pixel size once — the iconset shares seven renders,
+    and each status size is a drawn mark rather than a downscale."""
     drawn = {}
     for nominal, scale in CONTENTS:
         if nominal * scale not in drawn:
@@ -242,21 +363,26 @@ def render_all(source):
     return drawn
 
 
-def verify(iconset, accentset, drawn):
-    """Compare the committed assets to the regenerated output. Pixel-level
-    for the PNGs (deflate bytes can differ across zlib builds while the
-    pixels stay identical); byte-level for the JSON manifests. Returns a
-    list of failures — empty means the committed set is up to date."""
-    failures = []
-    found = set(os.listdir(iconset)) if os.path.isdir(iconset) else set()
-    for name in sorted(EXPECTED_NAMES - found):
-        failures.append(f"{name}: missing")
-    for name in sorted(found - EXPECTED_NAMES):
-        failures.append(f"{name}: unexpected file")
+def render_status_marks():
+    """One flat-shapes render per status scale — no shared source pixels."""
+    return {nominal * scale: draw_status_mark(nominal * scale)
+            for nominal, scale in STATUS_CONTENTS}
 
-    for nominal, scale in CONTENTS:
-        name = f"icon_{nominal}x{nominal}@{scale}x.png"
-        path = os.path.join(iconset, name)
+
+def check_set(directory, stem, contents, drawn, json_text):
+    """Compare one committed set against regenerated output — missing and
+    stray entries, then pixel-level PNG and byte-level JSON compares."""
+    failures = []
+    expected = expected_names(stem, contents)
+    found = set(os.listdir(directory)) if os.path.isdir(directory) else set()
+    for name in sorted(expected - found):
+        failures.append(f"{os.path.basename(directory)}/{name}: missing")
+    for name in sorted(found - expected):
+        failures.append(f"{os.path.basename(directory)}/{name}: unexpected file")
+
+    for nominal, scale in contents:
+        name = f"{stem}_{nominal}x{nominal}@{scale}x.png"
+        path = os.path.join(directory, name)
         if not os.path.exists(path):
             continue
         w, h, px = decode_png(path)
@@ -266,13 +392,49 @@ def verify(iconset, accentset, drawn):
         elif px != drawn[size]:
             failures.append(f"{name}: pixels differ")
 
-    for path, text in [(os.path.join(iconset, "Contents.json"),
-                        iconset_json()),
-                       (os.path.join(accentset, "Contents.json"),
-                        accent_json())]:
-        if not os.path.exists(path) or open(path).read() != text:
-            failures.append(f"{os.path.relpath(path)}: differs")
+    manifest = os.path.join(directory, "Contents.json")
+    if not os.path.exists(manifest) or open(manifest).read() != json_text:
+        failures.append(f"{os.path.basename(directory)}/Contents.json: differs")
     return failures
+
+
+def verify(iconset, accentset, statusset, drawn, marks):
+    """Compare the committed assets to the regenerated output. Pixel-level
+    for the PNGs (deflate bytes can differ across zlib builds while the
+    pixels stay identical); byte-level for the JSON manifests. Returns a
+    list of failures — empty means the committed set is up to date."""
+    failures = check_set(iconset, "icon", CONTENTS, drawn, iconset_json())
+    failures += check_set(statusset, "status", STATUS_CONTENTS, marks,
+                          status_json())
+    accent = os.path.join(accentset, "Contents.json")
+    if not os.path.exists(accent) or open(accent).read() != accent_json():
+        failures.append(f"{os.path.relpath(accent)}: differs")
+    return failures
+
+
+def write_set(directory, stem, contents, drawn, json_text):
+    """Regenerate one imageset: prune strays so `--verify` failures are
+    always fixable by re-running, then write every entry."""
+    os.makedirs(directory, exist_ok=True)
+    expected = expected_names(stem, contents)
+    for stale in os.listdir(directory):
+        if stale in expected:
+            continue
+        path = os.path.join(directory, stale)
+        # rmtree raises on links — detach a link itself instead.
+        if os.path.islink(path) or os.path.isfile(path):
+            os.remove(path)
+        else:
+            shutil.rmtree(path)
+        print(f"  removed stray {stale}")
+    for nominal, scale in contents:
+        name = f"{stem}_{nominal}x{nominal}@{scale}x.png"
+        pixels = nominal * scale
+        write_png(os.path.join(directory, name), pixels, drawn[pixels])
+        print(f"  {name} ({pixels}px)")
+    with open(os.path.join(directory, "Contents.json"), "w") as handle:
+        handle.write(json_text)
+    print(f"  {os.path.basename(directory)}/Contents.json")
 
 
 def main():
@@ -280,13 +442,16 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     iconset = os.path.join(root, ICONSET)
     accentset = os.path.join(root, ACCENTSET)
+    statusset = os.path.join(root, STATUSSET)
 
     source = decode_png(os.path.join(root, SOURCE), opaque_only=True)
     check_accent_in_artwork(source)
+    check_mark_palette_in_artwork(source)
     drawn = render_all(source)
+    marks = render_status_marks()
 
     if verify_only:
-        failures = verify(iconset, accentset, drawn)
+        failures = verify(iconset, accentset, statusset, drawn, marks)
         if failures:
             print("committed assets drifted from the source of truth:")
             for failure in failures:
@@ -295,30 +460,11 @@ def main():
         print("app icon assets match the regenerated output")
         return
 
-    os.makedirs(iconset, exist_ok=True)
     os.makedirs(accentset, exist_ok=True)
-    # --verify flags any stray entry as drift; regeneration must clear
-    # them too, or re-running can't fix the red check it reports.
-    for stale in os.listdir(iconset):
-        path = os.path.join(iconset, stale)
-        if stale in EXPECTED_NAMES:
-            continue
-        # rmtree raises on links — detach a link itself instead.
-        if os.path.islink(path) or os.path.isfile(path):
-            os.remove(path)
-        else:
-            shutil.rmtree(path)
-        print(f"  removed stray {stale}")
     print(f"  source {SOURCE}: {source[0]}x{source[1]}")
-    for nominal, scale in CONTENTS:
-        name = f"icon_{nominal}x{nominal}@{scale}x.png"
-        pixels = nominal * scale
-        write_png(os.path.join(iconset, name), pixels, drawn[pixels])
-        print(f"  {name} ({pixels}px)")
+    write_set(iconset, "icon", CONTENTS, drawn, iconset_json())
+    write_set(statusset, "status", STATUS_CONTENTS, marks, status_json())
 
-    with open(os.path.join(iconset, "Contents.json"), "w") as handle:
-        handle.write(iconset_json())
-    print("  Contents.json")
     with open(os.path.join(accentset, "Contents.json"), "w") as handle:
         handle.write(accent_json())
     print("  AccentColor.colorset/Contents.json")

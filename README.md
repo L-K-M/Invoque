@@ -49,7 +49,7 @@ Requires macOS 13+ and Xcode 16+ (the project uses file-system–synchronized
 groups — drop a file in, it's compiled). `scripts/build.sh` produces
 `Invoque.app`; tests via `xcodebuild -scheme Invoque test`. CI runs the
 suite plus an icon-drift check: `scripts/make-app-icon.py` renders the
-appiconset from `media-sources/icon2.png`.
+appiconset and the menu-bar StatusIcon mark from `media-sources/icon2.png`.
 
 The design and milestones live in [`PLAN.md`](PLAN.md); the research that
 led here (prior art, engine evaluation, feasibility) in
