@@ -270,6 +270,15 @@ final class Preferences: ObservableObject {
 
     // MARK: Pinned & blocked entries
 
+    /// The file walk reads rules off the main thread, so `isPinned`/
+    /// `isBlocked` can't touch the dictionaries directly — a read
+    /// concurrent with a didSet write would race. These key-set snapshots,
+    /// rebuilt under `rulesLock` on every write, are the thread-safe face.
+    /// The dictionaries themselves stay main-thread state.
+    private let rulesLock = NSLock()
+    private var pinnedIDSnapshot: Set<String> = []
+    private var blockedIDSnapshot: Set<String> = []
+
     /// Entries the user pinned — item id → title at pin time. A pinned
     /// entry ranks above ordinary matches whenever it matches the query
     /// (the `path:` and `calc:` head rows still lead the list, and the
@@ -280,6 +289,9 @@ final class Preferences: ObservableObject {
     @Published var pinnedItems: [String: String] {
         didSet {
             defaults.set(pinnedItems, forKey: Key.pinnedItems)
+            // Snapshot before the refresh callback — a re-list reads the
+            // rules synchronously and must see the state just written.
+            rulesLock.withLock { pinnedIDSnapshot = Set(pinnedItems.keys) }
             entryRulesChanged?()
         }
     }
@@ -289,6 +301,7 @@ final class Preferences: ObservableObject {
     @Published var blockedItems: [String: String] {
         didSet {
             defaults.set(blockedItems, forKey: Key.blockedItems)
+            rulesLock.withLock { blockedIDSnapshot = Set(blockedItems.keys) }
             entryRulesChanged?()
         }
     }
@@ -299,8 +312,12 @@ final class Preferences: ObservableObject {
     /// timing, so the write is already persisted.
     var entryRulesChanged: (() -> Void)?
 
-    func isPinned(_ id: String) -> Bool { pinnedItems[id] != nil }
-    func isBlocked(_ id: String) -> Bool { blockedItems[id] != nil }
+    func isPinned(_ id: String) -> Bool {
+        rulesLock.withLock { pinnedIDSnapshot.contains(id) }
+    }
+    func isBlocked(_ id: String) -> Bool {
+        rulesLock.withLock { blockedIDSnapshot.contains(id) }
+    }
 
     /// Toggles `id` in `pinnedItems`; returns the new state. Pinning a
     /// blocked entry unblocks it — the sets are exclusive, and the last
@@ -389,6 +406,10 @@ final class Preferences: ObservableObject {
             .compactMapValues { $0 as? String }
         blockedItems = (defaults.dictionary(forKey: Key.blockedItems) ?? [:])
             .compactMapValues { $0 as? String }
+        // didSet doesn't run on init-time assignment — seed the snapshots
+        // the threaded reads use.
+        pinnedIDSnapshot = Set(pinnedItems.keys)
+        blockedIDSnapshot = Set(blockedItems.keys)
     }
 
     // MARK: Summon hotkey

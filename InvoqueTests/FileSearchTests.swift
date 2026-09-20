@@ -123,10 +123,12 @@ final class FileSearchTests: XCTestCase {
             try makeFile(String(format: "fill-%02d.txt", index))
         }
         // Equal-length prefix matches sort by path — fill-00 leads,
-        // fill-50 sits just past the cap.
-        let excludedID = Item.fileIDPrefix
-            + root.appendingPathComponent("fill-00.txt")
-                .standardizedFileURL.path
+        // fill-50 sits just past the cap. The excluded id comes from the
+        // items API so the test pins the walk's key to the id the panel
+        // actually blocks, not a hand-built mirror of it.
+        let excludedID = try XCTUnwrap(
+            FileSearch.items(query: "fill", roots: [root])
+                .first { $0.id.hasSuffix("fill-00.txt") }?.id)
         let matches = FileSearch.scan(query: "fill", roots: [root],
                                       isExcluded: { $0 == excludedID })
         XCTAssertEqual(matches.count, SearchModel.maxResults)
