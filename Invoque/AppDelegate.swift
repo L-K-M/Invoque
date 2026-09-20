@@ -167,8 +167,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `find `/`f ` — the Spotlight-free filename walk (PLAN §3). The
         // scan runs inside the model's debounced task; the probe lets
         // `cancelFileSearch` reach a walk mid-flight. Blocked ids are
-        // excluded inside the walk — pre-cap — so a block can't leave a
-        // hole in the list (the next-best match backfills the slot).
+        // excluded inside the walk — pre-cap — so a fresh scan has no hole
+        // (the next-best match backfills). A block made against an already
+        // shown list just drops the row until the next query.
         model.fileSearcher = { query, isCancelled in
             FileSearch.items(query: query, isCancelled: isCancelled,
                              isExcluded: entryRules.isBlocked)

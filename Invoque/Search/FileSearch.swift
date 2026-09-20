@@ -78,7 +78,10 @@ enum FileSearch {
     ///
     /// `isExcluded` (on the `file:` item id) drops rows during the walk,
     /// before the cap — blocked files leave no hole in the result list
-    /// because the next-best match backfills their slot.
+    /// because the next-best match backfills their slot. An excluded
+    /// *directory* is pruned whole: its subtree never matches and never
+    /// spends the visited budget — "block this folder" means its contents
+    /// too, not just the folder's own row.
     static func scan(query: String, roots: [URL] = defaultRoots,
                      isCancelled: () -> Bool = { false },
                      isExcluded: (String) -> Bool = { _ in false }) -> [Match] {
@@ -144,10 +147,14 @@ enum FileSearch {
             let values = try? url.resourceValues(forKeys: [.isHiddenKey, .isDirectoryKey])
             if values?.isDirectory == true {
                 let name = url.lastPathComponent.lowercased()
+                // A blocked directory prunes its whole subtree — paying the
+                // id build only for directories keeps plain files cheap.
                 if values?.isHidden == true
                     || skippedDirectoryNames.contains(name)
                     || (projectScopedDirectoryNames.contains(name)
-                        && hasProjectManifest(beside: url)) {
+                        && hasProjectManifest(beside: url))
+                    || isExcluded(Item.fileIDPrefix
+                        + url.standardizedFileURL.path) {
                     enumerator.skipDescendants()
                     continue
                 }

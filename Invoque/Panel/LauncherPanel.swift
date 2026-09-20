@@ -65,7 +65,7 @@ final class LauncherPanel: NSPanel {
     /// outright: they have no other meaning in a plain search field, and
     /// claiming them unconditionally keeps a no-op chord from beeping.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.type == .keyDown,
+        if event.type == .keyDown, !event.isARepeat,
            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "p":

@@ -138,6 +138,23 @@ final class FileSearchTests: XCTestCase {
                       "the match past the cap must backfill the hole")
     }
 
+    /// Blocking a directory prunes the whole subtree — "never show" a
+    /// folder means its contents too, and pruning keeps descendants from
+    /// spending the visited budget.
+    func testExcludedDirectoryPrunesSubtree() throws {
+        // Control: `sub/deeper-doc.md` is findable while `sub` is allowed.
+        XCTAssertEqual(scannedNames("deeper-doc"), ["deeper-doc.md"])
+        let excluded = try XCTUnwrap(
+            FileSearch.items(query: "sub", roots: [root])
+                .first { $0.id.hasSuffix("/sub") }?.id)
+        XCTAssertTrue(FileSearch.scan(query: "deeper-doc", roots: [root],
+                                      isExcluded: { $0 == excluded }).isEmpty,
+                      "descendants of a blocked directory must not match")
+        // The directory's own row drops too.
+        XCTAssertTrue(FileSearch.scan(query: "sub", roots: [root],
+                                      isExcluded: { $0 == excluded }).isEmpty)
+    }
+
     /// `maxVisited` bounds the walk: with the cap at zero nothing is
     /// considered, whatever the tree holds. Restore the default so later
     /// tests in the process aren't capped.
