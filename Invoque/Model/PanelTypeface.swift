@@ -208,7 +208,9 @@ extension PanelTypeface {
     /// `init(face:)` survives. A `family:` value must still be installed —
     /// an uninstalled font decodes to nil so callers fall back to the
     /// default rather than render a phantom selection. Main-thread only:
-    /// reads `installedFamilySet` unsynchronized.
+    /// reads `installedFamilySet` unsynchronized — the precondition traps
+    /// in release builds, so every decode path (Preferences load, preset
+    /// apply) must be main-confined.
     init?(rawValue: String) {
         dispatchPrecondition(condition: .onQueue(.main))
         switch rawValue {

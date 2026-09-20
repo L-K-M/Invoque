@@ -140,7 +140,16 @@ struct AppearanceView: View {
     /// last refreshed joins the picker's tail without a relaunch.
     private func refreshFontList() {
         PanelTypeface.refreshInstalledFamilies()
-        extraFamilies = PanelTypeface.moreFamilies
+        var families = PanelTypeface.moreFamilies
+        // Keep a deactivated selected family listed so the picker never
+        // shows a blank selection — unless it's a curated face, which
+        // already has its own row above.
+        if let selected = preferences.panelTypeface.family,
+           !families.contains(selected),
+           !PanelTypeface.curated.compactMap(\.family).contains(selected) {
+            families.append(selected)
+        }
+        extraFamilies = families
     }
 
     private var textSection: some View {
