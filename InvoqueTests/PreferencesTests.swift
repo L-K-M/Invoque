@@ -195,6 +195,22 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(reloaded.isPinned("app:x"))
     }
 
+    /// The sets are exclusive in both directions: pinning a blocked entry
+    /// unblocks it, the mirror of `toggleBlocked` unpinning. Unreachable
+    /// through the UI (a blocked row can't be selected), but a hand edit
+    /// or future caller gets a defined semantic — last action wins.
+    func testTogglePinnedUnblocks() {
+        let preferences = Preferences(defaults: defaults)
+        preferences.toggleBlocked(id: "app:x", title: "X")
+        XCTAssertTrue(preferences.togglePinned(id: "app:x", title: "X"))
+        XCTAssertTrue(preferences.isPinned("app:x"))
+        XCTAssertFalse(preferences.isBlocked("app:x"))
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.isPinned("app:x"))
+        XCTAssertFalse(reloaded.isBlocked("app:x"))
+    }
+
     /// `entryRulesChanged` fires on writes to either set — the panel's
     /// live refresh depends on it. The pin-clearing half of a block fires
     /// twice (pin removal + block insert); only non-zero is asserted.

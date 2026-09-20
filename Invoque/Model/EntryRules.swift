@@ -3,9 +3,11 @@ import Foundation
 /// Read/write access to the user's pinned and blocked result entries.
 ///
 /// A pinned entry ranks above ordinary matches whenever it matches the
-/// query; a blocked entry never appears. Only durable ids are entries —
-/// `Item.isManageableID` — so functional pins (`path:`/`calc:`/`web:`)
-/// and ephemeral `filter:` rows can't be managed.
+/// query, until the pinned band fills the result cap (overflow rejoins
+/// ranked order — see `SearchModel`); a blocked entry never appears.
+/// Only durable ids are entries — `Item.isManageableID` — so functional
+/// pins (`path:`/`calc:`/`web:`) and ephemeral `filter:` rows can't be
+/// managed.
 ///
 /// The closures keep `SearchModel`/`PanelModel` free of `UserDefaults`:
 /// `Preferences` backs them in production, the default instance manages

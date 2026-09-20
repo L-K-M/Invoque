@@ -301,13 +301,16 @@ final class Preferences: ObservableObject {
     func isPinned(_ id: String) -> Bool { pinnedItems[id] != nil }
     func isBlocked(_ id: String) -> Bool { blockedItems[id] != nil }
 
-    /// Toggles `id` in `pinnedItems`; returns the new state.
+    /// Toggles `id` in `pinnedItems`; returns the new state. Pinning a
+    /// blocked entry unblocks it — the sets are exclusive, and the last
+    /// explicit action wins (the mirror of `toggleBlocked` unpinning).
     @discardableResult
     func togglePinned(id: String, title: String) -> Bool {
         if pinnedItems[id] != nil {
             pinnedItems[id] = nil
             return false
         }
+        if blockedItems[id] != nil { blockedItems[id] = nil }
         pinnedItems[id] = title
         return true
     }

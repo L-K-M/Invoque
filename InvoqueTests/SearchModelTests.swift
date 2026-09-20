@@ -450,10 +450,12 @@ final class SearchModelTests: XCTestCase {
         let model = makeModel(sources: [apps, WebSource()], rules: rules)
         let results = model.results(for: "safari")
         XCTAssertEqual(results.count, SearchModel.maxResults)
-        // Band cap = maxResults - web(1) - one ranked slot = 48.
-        XCTAssertEqual(results.prefix(48).map(\.id),
-                       (0..<48).map { "app:safari-\($0)" })
-        XCTAssertEqual(results[48].id, "app:safari-48")
+        // Band cap = maxResults - web(1) - one reserved ranked slot.
+        // (path/calc hits are zero for this query.)
+        let bandCap = SearchModel.maxResults - 2
+        XCTAssertEqual(results.prefix(bandCap).map(\.id),
+                       (0..<bandCap).map { "app:safari-\($0)" })
+        XCTAssertEqual(results[bandCap].id, "app:safari-\(bandCap)")
         XCTAssertEqual(results.last?.id, "web:safari")
     }
 

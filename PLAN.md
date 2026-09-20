@@ -169,8 +169,10 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   address is a direct intent), calculator answers next, web fallback last.
 - Entry rules: the user can **pin** a durable entry (⌘P or right-click →
   Pin — always ranks above unpinned matches when it matches; a pin boosts,
-  it doesn't conjure) or **block** one (⌘B — never appears; block wins
-  over pin and clears it). Apps, commands, system actions and file hits
+  it doesn't conjure, and pins past the result cap rejoin ranked order) or
+  **block** one (⌘B — never appears; the sets are exclusive — blocking
+  unpins, pinning unblocks — so the last explicit action wins). Apps,
+  commands, system actions and file hits
   are entries; `path:`/`calc:`/`web:` functional pins and ephemeral
   `filter:` rows aren't. Both sets persist in UserDefaults as id→title
   and are managed from Settings → General ("Pinned & blocked") — the only
