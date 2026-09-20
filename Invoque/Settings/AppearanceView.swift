@@ -142,8 +142,9 @@ struct AppearanceView: View {
         PanelTypeface.refreshInstalledFamilies()
         var families = PanelTypeface.moreFamilies
         // Keep a deactivated selected family listed so the picker never
-        // shows a blank selection — unless it's a curated face, which
-        // already has its own row above.
+        // shows a blank selection. Only an *installed* curated face can
+        // be skipped — `curated` is installed-filtered, so a deactivated
+        // curated face has no row above and needs this one.
         if let selected = preferences.panelTypeface.family,
            !families.contains(selected),
            !PanelTypeface.curated.compactMap(\.family).contains(selected) {
