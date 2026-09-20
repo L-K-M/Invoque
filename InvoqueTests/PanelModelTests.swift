@@ -1084,6 +1084,7 @@ final class PanelModelTests: XCTestCase {
                 togglePin: { [self] id, _ in
                     defer { changed?() }
                     if pinned.contains(id) { pinned.remove(id); return false }
+                    blocked.remove(id)
                     pinned.insert(id)
                     return true
                 },
