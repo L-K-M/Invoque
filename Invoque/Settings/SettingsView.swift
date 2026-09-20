@@ -74,8 +74,9 @@ struct SettingsView: View {
 
     /// Where `find`/`f`/`search` looks. The boot disk is searched through
     /// the home folder unless the whole-disk option is on; other drives
-    /// are searched whole. The last enabled scope can't be turned off —
-    /// file mode with nowhere to search could only ever show nothing.
+    /// are searched in full. The last enabled scope can't be turned off —
+    /// an empty set silently falls back to the home default at search
+    /// time, so all-off toggles would misrepresent what's searched.
     private var fileSearchSection: some View {
         Section("File Search") {
             Toggle("Home folder", isOn: scopeBinding(.home))

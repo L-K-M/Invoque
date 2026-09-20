@@ -108,7 +108,8 @@ enum FileSearch {
     /// secondary drives, each searched in full.
     private static func mountedVolumeRoots() -> [Root] {
         let urls = FileManager.default.mountedVolumeURLs(
-            includingResourceValuesForKeys: [.volumeIsLocalKey],
+            includingResourceValuesForKeys: [.volumeIsLocalKey,
+                                             .volumeUUIDStringKey],
             options: [.skipHiddenVolumes]) ?? []
         // A boot-disk alias (its /Volumes symlink, or however a future
         // mount spells it) is the same APFS volume as `/` — same UUID —
