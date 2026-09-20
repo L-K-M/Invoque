@@ -64,7 +64,7 @@ final class LauncherPanel: NSPanel {
     /// declines them, before the main menu sees them. ⌘P/⌘B are ours
     /// outright: they have no other meaning in a plain search field, and
     /// claiming them unconditionally keeps a no-op chord from beeping.
-    override func performKeyEquivalent(_ event: NSEvent) -> Bool {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown,
            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
             switch event.charactersIgnoringModifiers?.lowercased() {
@@ -78,6 +78,6 @@ final class LauncherPanel: NSPanel {
                 break
             }
         }
-        return super.performKeyEquivalent(event)
+        return super.performKeyEquivalent(with: event)
     }
 }
