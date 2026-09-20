@@ -115,6 +115,27 @@ final class FileSearchTests: XCTestCase {
         XCTAssertTrue(matches.isEmpty)
     }
 
+    /// Exclusion runs inside the walk, before the result cap: with one
+    /// more match than the cap, dropping the top-ranked file backfills
+    /// the slot — a blocked file leaves no hole in the list.
+    func testExclusionBackfillsBeyondTheCap() throws {
+        for index in 0...SearchModel.maxResults {
+            try makeFile(String(format: "fill-%02d.txt", index))
+        }
+        // Equal-length prefix matches sort by path — fill-00 leads,
+        // fill-50 sits just past the cap.
+        let excludedID = Item.fileIDPrefix
+            + root.appendingPathComponent("fill-00.txt")
+                .standardizedFileURL.path
+        let matches = FileSearch.scan(query: "fill", roots: [root],
+                                      isExcluded: { $0 == excludedID })
+        XCTAssertEqual(matches.count, SearchModel.maxResults)
+        let names = matches.map { $0.url.lastPathComponent }
+        XCTAssertFalse(names.contains("fill-00.txt"))
+        XCTAssertTrue(names.contains("fill-50.txt"),
+                      "the match past the cap must backfill the hole")
+    }
+
     /// `maxVisited` bounds the walk: with the cap at zero nothing is
     /// considered, whatever the tree holds. Restore the default so later
     /// tests in the process aren't capped.

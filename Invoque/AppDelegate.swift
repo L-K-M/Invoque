@@ -153,11 +153,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             writer: CommandWriter(rootURL: commandStore.primaryRootURL),
             store: commandStore,
             permissionGrants: permissionGrants)
+        // One rules facade shared by the ranker, the panel, and the file
+        // scan: the panel's toggles write through to Preferences, and the
+        // ranker and walk read the same state.
+        let entryRules = EntryRules(
+            isPinned: { [weak preferences] in preferences?.isPinned($0) ?? false },
+            isBlocked: { [weak preferences] in preferences?.isBlocked($0) ?? false },
+            togglePin: { [weak preferences] in
+                preferences?.togglePinned(id: $0, title: $1) ?? false },
+            toggleBlock: { [weak preferences] in
+                preferences?.toggleBlocked(id: $0, title: $1) ?? false })
+        model.entryRules = entryRules
         // `find `/`f ` — the Spotlight-free filename walk (PLAN §3). The
         // scan runs inside the model's debounced task; the probe lets
-        // `cancelFileSearch` reach a walk mid-flight.
+        // `cancelFileSearch` reach a walk mid-flight. Blocked ids are
+        // excluded inside the walk — pre-cap — so a block can't leave a
+        // hole in the list (the next-best match backfills the slot).
         model.fileSearcher = { query, isCancelled in
-            FileSearch.items(query: query, isCancelled: isCancelled)
+            FileSearch.items(query: query, isCancelled: isCancelled,
+                             isExcluded: entryRules.isBlocked)
         }
         // Shared icon store (PictKit) — the same ladder Zap and Jetty draw
         // from: a Pict override, then the bundle's own un-jailed artwork,
@@ -172,17 +186,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // above. (The store's onChange→onReload subscription is init-time,
         // so commands installed later still refresh the open panel.)
         Task { await commandSource.reload() }
-        // One rules facade shared by the ranker and the panel: the panel's
-        // toggles write through to Preferences, and the ranker reads the
-        // same state when it assembles each query's list.
-        let entryRules = EntryRules(
-            isPinned: { [weak preferences] in preferences?.isPinned($0) ?? false },
-            isBlocked: { [weak preferences] in preferences?.isBlocked($0) ?? false },
-            togglePin: { [weak preferences] in
-                preferences?.togglePinned(id: $0, title: $1) ?? false },
-            toggleBlock: { [weak preferences] in
-                preferences?.toggleBlocked(id: $0, title: $1) ?? false })
-        model.entryRules = entryRules
         // A pin/block made in Settings must repaint the open panel; the
         // panel's own toggles reach it through this path too.
         preferences.entryRulesChanged = { [weak model] in

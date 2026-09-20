@@ -272,7 +272,8 @@ final class Preferences: ObservableObject {
 
     /// Entries the user pinned — item id → title at pin time. A pinned
     /// entry ranks above ordinary matches whenever it matches the query
-    /// (the functional `path:`/`calc:`/`web:` pins still lead the list).
+    /// (the `path:` and `calc:` head rows still lead the list, and the
+    /// `web:` fallback still trails it).
     /// The stored title only feeds the Settings list; matching keys on
     /// the id. A stale id (uninstalled app, deleted command) is harmless:
     /// it simply never matches again.

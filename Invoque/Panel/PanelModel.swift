@@ -532,7 +532,9 @@ final class PanelModel: ObservableObject {
                 guard generation == fileGeneration else { return }
                 fileTask = nil
                 // Kept unshaped so a pin/block toggle can re-derive the
-                // list without re-walking the disk.
+                // list without re-walking the disk. Ids blocked at scan
+                // time never arrive — the walk excludes them pre-cap, so
+                // `shapeFileRows`' block drop only sees ids blocked since.
                 rawFileRows = rows
                 let merged = stabilizedFileRows(shapeFileRows(rows), text: text)
                 fileResultText = text

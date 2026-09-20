@@ -75,8 +75,13 @@ enum FileSearch {
     /// `SearchModel.maxResults`. Matching is on the last path component —
     /// directories match like files (picking one opens it). Returns `[]` for
     /// a blank query: "match everything" floods would defeat the point.
+    ///
+    /// `isExcluded` (on the `file:` item id) drops rows during the walk,
+    /// before the cap — blocked files leave no hole in the result list
+    /// because the next-best match backfills their slot.
     static func scan(query: String, roots: [URL] = defaultRoots,
-                     isCancelled: () -> Bool = { false }) -> [Match] {
+                     isCancelled: () -> Bool = { false },
+                     isExcluded: (String) -> Bool = { _ in false }) -> [Match] {
         let trimmed = SearchModel.normalizedQuery(query)
         guard !trimmed.isEmpty, !isCancelled() else { return [] }
 
@@ -85,6 +90,7 @@ enum FileSearch {
         var seenPaths = Set<String>()
         for root in roots {
             walk(root, query: trimmed, isCancelled: isCancelled,
+                 isExcluded: isExcluded,
                  visited: &visited, matches: &matches, seenPaths: &seenPaths)
             if visited >= maxVisited || isCancelled() { break }
         }
@@ -108,8 +114,10 @@ enum FileSearch {
     /// Ranked matches mapped to items — filename, `~`-abbreviated parent
     /// path, the file-type icon, and an `openFile` action.
     static func items(query: String, roots: [URL] = defaultRoots,
-                      isCancelled: () -> Bool = { false }) -> [Item] {
-        scan(query: query, roots: roots, isCancelled: isCancelled).map {
+                      isCancelled: () -> Bool = { false },
+                      isExcluded: (String) -> Bool = { _ in false }) -> [Item] {
+        scan(query: query, roots: roots, isCancelled: isCancelled,
+             isExcluded: isExcluded).map {
             item(for: $0.url)
         }
     }
@@ -119,6 +127,7 @@ enum FileSearch {
     /// `.skipsHiddenFiles`, which would drop hidden files too.
     private static func walk(_ root: URL, query: String,
                              isCancelled: () -> Bool,
+                             isExcluded: (String) -> Bool,
                              visited: inout Int, matches: inout [Match],
                              seenPaths: inout Set<String>) {
         guard let enumerator = FileManager.default.enumerator(
@@ -147,11 +156,14 @@ enum FileSearch {
             // keep a twice-yielded path (overlapping roots) out of the
             // results, so recording non-matches would grow the set to
             // `visited` size for nothing.
-            if let match = FuzzyMatcher.match(query, candidate: url.lastPathComponent),
-               seenPaths.insert(url.standardizedFileURL.path).inserted {
-                matches.append(Match(url: url, tier: match.tier,
-                                     score: match.score))
-                if matches.count >= maxMatches { return }
+            if let match = FuzzyMatcher.match(query, candidate: url.lastPathComponent) {
+                let path = url.standardizedFileURL.path
+                if !isExcluded(Item.fileIDPrefix + path),
+                   seenPaths.insert(path).inserted {
+                    matches.append(Match(url: url, tier: match.tier,
+                                         score: match.score))
+                    if matches.count >= maxMatches { return }
+                }
             }
         }
     }
