@@ -82,6 +82,17 @@ final class HotkeyRecorderTests: XCTestCase {
             keyCode: UInt32(kVK_Delete), modifiers: UInt32(optionKey)))
     }
 
+    /// Symmetric with ⌥⌫: the per-pattern `where` guard must hold for
+    /// ForwardDelete too — a shared trailing `where` broke exactly that.
+    func testModifiedForwardDeleteRecordsAsChord() {
+        let (field, box) = makeField()
+        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
+        field.keyDown(with: keyDownEvent(UInt16(kVK_ForwardDelete),
+                                         modifiers: [.command]))
+        XCTAssertEqual(box.value, HotkeyCombination(
+            keyCode: UInt32(kVK_ForwardDelete), modifiers: UInt32(cmdKey)))
+    }
+
     func testResignFirstResponderDisarms() {
         let (field, box) = makeField()
         field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
