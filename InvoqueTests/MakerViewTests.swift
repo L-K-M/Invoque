@@ -34,7 +34,7 @@ final class MakerViewTests: XCTestCase {
         ])
     }
 
-    func testReviewFilesDeduplicatesManifestEntryNameCollision() {
+    func testReviewFilesDisambiguatesManifestEntryNameCollision() {
         let generation = GeneratedCommand(
             manifestJSON: "manifest",
             entryName: "command.json",
@@ -42,6 +42,9 @@ final class MakerViewTests: XCTestCase {
             extraFiles: [:])
 
         XCTAssertEqual(MakerView.reviewFiles(generation), [
+            MakerView.ReviewFile(
+                name: "command.json (manifest)",
+                contents: "manifest"),
             MakerView.ReviewFile(name: "command.json", contents: "entry"),
         ])
     }
