@@ -26,6 +26,10 @@ struct CommandsView: View {
     /// hashes the entry file.
     @State private var pendingConsent: [String: Set<CommandManifest.Permission>] = [:]
     @State private var rescanning = false
+    /// The view's own window state — app activation alone must not rescan
+    /// (clicking the status item activates too); only a visible Settings
+    /// window benefits from the refresh.
+    @Environment(\.controlActiveState) private var controlActiveState
 
     var body: some View {
         Form {
@@ -38,8 +42,12 @@ struct CommandsView: View {
         .task { await rescan() }
         // Editing a command then clicking back to this window is the
         // "why isn't it listed" moment — refresh on activation covers it.
+        // Gated on this window being active: once Settings has opened,
+        // its content stays installed, and an ungated subscription would
+        // rescan every command directory on every app activation.
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard controlActiveState == .key else { return }
             Task { await rescan() }
         }
     }
@@ -196,6 +204,9 @@ struct CommandsView: View {
     /// I/O on the caller's thread, so the pass hops off-main — where the
     /// consent check's per-command entry-file hashing belongs too.
     private func rescan() async {
+        // The flag doubles as a reentrancy guard — an activation refresh
+        // can land while a Rescan click's pass is still on the wire.
+        guard !rescanning else { return }
         rescanning = true
         defer { rescanning = false }
         let store = self.store
