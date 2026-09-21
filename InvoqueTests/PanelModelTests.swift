@@ -2390,6 +2390,22 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.query, "beta")
     }
 
+    /// Submitting a recalled query ends the recall — `record` reorders
+    /// `entries`, so a stale `recallDepth` would index the wrong slot.
+    func testSubmitEndsRecall() {
+        let history = QueryHistory(defaults: defaults)
+        history.record("alpha")
+        history.record("beta")
+        let model = makeModel(items: [])
+        model.queryHistory = history
+        model.moveSelection(by: -1)   // → "beta"
+        model.moveSelection(by: -1)   // → "alpha"
+        model.recordSubmittedQuery()  // reorders entries; recall must end
+        model.moveSelection(by: 1)    // not recalling: no-op on empty
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.query, "alpha")
+    }
+
     /// A submitted query records; a blank one never does.
     func testRecordSubmittedQuery() {
         let history = QueryHistory(defaults: defaults)

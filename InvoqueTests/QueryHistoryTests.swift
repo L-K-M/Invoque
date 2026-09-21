@@ -35,6 +35,16 @@ final class QueryHistoryTests: XCTestCase {
         XCTAssertTrue(history.entries.isEmpty)
     }
 
+    /// Surrounding whitespace never reaches the store — recall restores
+    /// a clean query, and padded re-submits dedup against the clean one.
+    func testRecordsTrimmedQuery() {
+        let history = QueryHistory(defaults: defaults)
+        history.record("  alpha \n")
+        XCTAssertEqual(history.entries, ["alpha"])
+        history.record("\talpha")
+        XCTAssertEqual(history.entries, ["alpha"])
+    }
+
     /// Re-submitting the current front entry (a recalled query, say) must
     /// not duplicate it.
     func testConsecutiveRepeatIsANoOp() {
