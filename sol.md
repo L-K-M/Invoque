@@ -579,9 +579,9 @@ Before a generated command's first real run, offer a dry rehearsal. Bridge
 methods record intended effects such as "would open URL", "would write
 clipboard", or "would run shell" and return fixtures. Every result must carry an
 unmistakable "simulated" label. Discard fixtures after the rehearsal: never
-cache them, persist them to history/logs, or count them toward command health
-stats. This cannot perfectly simulate shell/network, but it makes common
-generated commands reviewable.
+cache them, never persist them to history/logs, and never count them toward
+command health stats. This cannot perfectly simulate shell/network, but it
+makes common generated commands reviewable.
 
 ### Universal action stack
 
