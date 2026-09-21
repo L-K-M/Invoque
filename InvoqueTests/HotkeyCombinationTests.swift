@@ -46,9 +46,14 @@ final class HotkeyCombinationTests: XCTestCase {
             "⌃ ↑")
     }
 
-    /// Letter keys render through the active keyboard layout — on CI's
-    /// US layout ANSI-A prints "A".
-    func testDisplayStringTranslatesPrintableKeys() {
+    /// Letter keys render through the active keyboard layout — the
+    /// assertion only holds where ANSI-A actually types "A" (US on CI).
+    /// AZERTY prints "Q", and layout-less input sources yield "Key 0".
+    func testDisplayStringTranslatesPrintableKeys() throws {
+        let bareA = HotkeyCombination(keyCode: UInt32(kVK_ANSI_A),
+                                      modifiers: 0)
+        try XCTSkipUnless(bareA.displayString == "A",
+                          "Active layout doesn't map ANSI-A to 'A'")
         XCTAssertEqual(
             HotkeyCombination(keyCode: UInt32(kVK_ANSI_A),
                               modifiers: UInt32(optionKey))
