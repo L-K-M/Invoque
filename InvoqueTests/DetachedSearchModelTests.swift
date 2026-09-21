@@ -180,12 +180,13 @@ final class DetachedSearchModelTests: XCTestCase {
         model.pageSelection(by: 1)
         XCTAssertEqual(model.selection, DetachedSearchModel.pageStep)
         model.pageSelection(by: 1)
-        XCTAssertEqual(model.selection, 20)
-        // 20 + pageStep overshoots the 25-row list — clamp, not wrap.
+        XCTAssertEqual(model.selection, 2 * DetachedSearchModel.pageStep)
+        // Two pages in plus one more overshoots the 25-row list —
+        // clamp, not wrap.
         model.pageSelection(by: 1)
         XCTAssertEqual(model.selection, 24)
         model.pageSelection(by: -1)
-        XCTAssertEqual(model.selection, 14)
+        XCTAssertEqual(model.selection, 24 - DetachedSearchModel.pageStep)
         model.pageSelection(by: -3)
         XCTAssertEqual(model.selection, 0)
     }
