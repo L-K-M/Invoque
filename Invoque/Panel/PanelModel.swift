@@ -258,6 +258,44 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         fileSession != nil && fileSearchIsActive
     }
 
+    // MARK: Web-search routing
+
+    /// Keywords that force a web search — `web <q>`. Without one, a query
+    /// that happens to match an app can never reach the fallback row. The
+    /// bare keyword stays a normal search; the built-in wins over a
+    /// command claiming "web" (the `makerKeywords` policy).
+    static let webSearchKeywords = ["web"]
+
+    /// Builds the single web row for the query — wired to `WebSource` in
+    /// the app; `nil` in tests that don't exercise it, where `web x`
+    /// stays a normal search ("unwired stays normal" convention).
+    var webSearchItem: ((String) -> Item?)? {
+        didSet { refreshResults() }
+    }
+
+    /// The resolved `web` session when `query` is `web <rest>` and a
+    /// provider is wired, else nil. `text` is whitespace-trimmed.
+    private func activeWebSearch() -> (keyword: String, text: String)? {
+        guard webSearchItem != nil,
+              let spaceIndex = query.firstIndex(of: " ") else { return nil }
+        let keyword = String(query[..<spaceIndex])
+        guard Self.webSearchKeywords.contains(keyword) else { return nil }
+        let text = String(query[spaceIndex...].dropFirst())
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (keyword, text)
+    }
+
+    /// Whether a forced web search owns the list right now.
+    var webSearchIsActive: Bool {
+        activeWebSearch() != nil
+    }
+
+    /// True in web mode when the text after the keyword is blank — the
+    /// view shows an input hint rather than claiming zero matches.
+    var webSearchTextIsBlank: Bool {
+        activeWebSearch()?.text.isEmpty ?? false
+    }
+
     // MARK: Searching
 
     /// The normal-search text that produced `results` — the stability
@@ -286,6 +324,16 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             rankedText = nil
             cancelFilterRun()
             scheduleFileSearch(keyword: resolved.keyword, text: resolved.text)
+            return
+        }
+        if let resolved = activeWebSearch() {
+            rankedText = nil
+            cancelFileSearch()
+            cancelFilterRun()
+            // A blank rest owns an empty list — same convention as `find `.
+            let rows = resolved.text.isEmpty ? []
+                : (webSearchItem?(resolved.text)).map { [ResultRow(item: $0)] } ?? []
+            if rows != results { results = rows }
             return
         }
         if let resolved = activeFilter() {

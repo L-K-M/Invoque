@@ -525,6 +525,87 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.first?.subtitle, "nope")
     }
 
+    // MARK: Web-search mode
+
+    /// `web <q>` bypasses ranking entirely: a query that also matches an
+    /// app still reaches the web row — the fallback's only dedicated route.
+    func testWebKeywordForcesWebSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:webster", title: "Webster")])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.query = "web elephant"
+        XCTAssertEqual(model.results.map(\.id), ["web:elephant"])
+        XCTAssertTrue(model.webSearchIsActive)
+        guard case .openURL(let url) = model.results.first?.action else {
+            return XCTFail("expected an openURL action")
+        }
+        XCTAssertEqual(url.absoluteString, "https://duckduckgo.com/?q=elephant")
+    }
+
+    /// Bare `web` (no space) stays a normal search — the same convention
+    /// the other keyword modes follow.
+    func testBareWebKeywordStaysNormalSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:webster", title: "Webster")])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.query = "web"
+        XCTAssertEqual(model.results.map(\.id), ["app:webster"])
+    }
+
+    /// `web ` with a blank rest owns an empty list, like `find ` — the
+    /// view reads `webSearchTextIsBlank` for its input hint.
+    func testBlankWebTextOwnsEmptyList() {
+        let model = makeModel(items: [Self.appItem(id: "app:webster", title: "Webster")])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.query = "web "
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertTrue(model.webSearchTextIsBlank)
+    }
+
+    /// Unwired, `web x` is just a query — the "unwired stays normal"
+    /// convention the other routed modes follow.
+    func testUnwiredWebSearchLeavesQueryAsSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:webx",
+                                                  title: "Web X Utility")])
+        model.query = "web x"
+        XCTAssertEqual(model.results.map(\.id), ["app:webx"])
+    }
+
+    /// The keyword list is a contract — dropping "web" silently reroutes
+    /// those queries back to normal search.
+    func testWebSearchKeywords() {
+        XCTAssertEqual(PanelModel.webSearchKeywords, ["web"])
+    }
+
+    /// Switching from `find x` straight into `web x` cancels the pending
+    /// scan — a late batch must not clobber the single web row.
+    func testWebKeywordCancelsPendingFileSearch() async throws {
+        let model = makeModel(items: [])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        // Gate, not a sleep: the stale emit provably lands after the
+        // switch to web mode — `onStart` posts before the searcher runs,
+        // so blocking the scan can't block `awaitFileStarts`.
+        let releaseStaleScan = DispatchSemaphore(value: 0)
+        model.fileSearcher = { _, _, emit in
+            // Bounded: an unreleased gate must fail the test, not hang
+            // the suite — that would mean the onStart-before-searcher
+            // ordering regressed.
+            if releaseStaleScan.wait(timeout: .now() + 10) == .timedOut {
+                XCTFail("stale file scan was never released")
+                return // don't let a timed-out gate emit outside the test window
+            }
+            emit([Self.fileItem("stale.txt")])
+        }
+        model.query = "find elephant"
+        await awaitFileStarts(model, atLeast: 1)
+        model.query = "web elephant"
+        XCTAssertEqual(model.results.map(\.id), ["web:elephant"])
+        XCTAssertFalse(model.fileSearchIsActive)
+        releaseStaleScan.signal()
+        // The cancelled scan still completes on its own thread — its
+        // landing is what must not overwrite the web row.
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.id), ["web:elephant"])
+    }
+
     // MARK: File-search mode
 
     /// Polls `fileRunCompletions` until `atLeast` scans have reached their
