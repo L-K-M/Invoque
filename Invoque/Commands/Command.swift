@@ -23,6 +23,10 @@ struct Command: Equatable, Identifiable, Sendable {
         directory.appendingPathComponent("data", isDirectory: true)
     }
 
+    /// Creates a command rooted at `directory`.
+    /// - Throws: `CommandManifest.ValidationError.entryEscapesDirectory`
+    ///   when `manifest.entry` resolves (symlinks included) outside
+    ///   `directory`.
     init(manifest: CommandManifest, directory: URL) throws {
         self.manifest = manifest
         self.directory = directory.standardizedFileURL

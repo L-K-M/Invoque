@@ -143,16 +143,21 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertTrue(store.scanErrors.isEmpty)
     }
 
+    /// Shared by the escape tests below — one literal, so a schema change
+    /// cannot silently weaken one test while the other still passes via an
+    /// unrelated decode failure.
+    private static let escapingEntryManifestJSON = """
+    {"schemaVersion": 1, "name": "evil", "title": "Evil",
+     "runtime": "js", "entry": "../evil.js", "mode": "action"}
+    """
+
     /// An entry escaping its directory must throw, not trap: the manifest
     /// is untrusted input, and a `precondition` here killed the process on
     /// every launch/rescan of the offending directory.
     func testEscapingEntryThrowsInsteadOfTrapping() throws {
         let manifest = try JSONDecoder().decode(
             CommandManifest.self,
-            from: Data("""
-                {"schemaVersion": 1, "name": "evil", "title": "Evil",
-                 "runtime": "js", "entry": "../evil.js", "mode": "action"}
-                """.utf8))
+            from: Data(Self.escapingEntryManifestJSON.utf8))
         XCTAssertThrowsError(
             try Command(manifest: manifest,
                         directory: root.appendingPathComponent("evil"))) { error in
@@ -167,17 +172,38 @@ final class CommandStoreTests: XCTestCase {
         try writeCommand("good", title: "Good")
         let evil = root.appendingPathComponent("evil")
         try FileManager.default.createDirectory(at: evil, withIntermediateDirectories: true)
-        try """
-        {"schemaVersion": 1, "name": "evil", "title": "Evil",
-         "runtime": "js", "entry": "../evil.js", "mode": "action"}
-        """.write(to: evil.appendingPathComponent("command.json"),
-                  atomically: true, encoding: .utf8)
+        try Self.escapingEntryManifestJSON.write(
+            to: evil.appendingPathComponent("command.json"),
+            atomically: true, encoding: .utf8)
 
         let store = CommandStore(rootPaths: [root.path])
         store.scan()
 
         XCTAssertEqual(store.commands.map(\.name), ["good"])
         XCTAssertEqual(store.scanErrors.map { $0.directory.lastPathComponent }, ["evil"])
+    }
+
+    /// The containment check compares symlink-resolved paths: an entry that
+    /// is itself a symlink pointing outside its directory must also throw.
+    func testSymlinkedEntryEscapeThrows() throws {
+        let evil = root.appendingPathComponent("evil")
+        try FileManager.default.createDirectory(at: evil, withIntermediateDirectories: true)
+        let outside = root.appendingPathComponent("outside.js")
+        try "export {}".write(to: outside, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: evil.appendingPathComponent("link.js"),
+            withDestinationURL: outside)
+        let manifest = try JSONDecoder().decode(
+            CommandManifest.self,
+            from: Data("""
+                {"schemaVersion": 1, "name": "evil", "title": "Evil",
+                 "runtime": "js", "entry": "link.js", "mode": "action"}
+                """.utf8))
+        XCTAssertThrowsError(
+            try Command(manifest: manifest, directory: evil)) { error in
+            XCTAssertEqual(error as? CommandManifest.ValidationError,
+                           .entryEscapesDirectory("link.js"))
+        }
     }
 
     // MARK: Helpers
