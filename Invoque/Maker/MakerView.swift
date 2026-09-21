@@ -244,9 +244,10 @@ struct MakerView: View {
     /// part of the Maker flow, not a promise that requires Finder or an editor.
     private func sourceReview(_ generation: GeneratedCommand) -> some View {
         let files = Self.reviewFiles(generation)
-        let selected = files.first { $0.name == selectedSourceFile }
-            ?? files.first { $0.name == generation.entryName }
-            ?? files[0]
+        let selected = Self.selectedFile(
+            in: files,
+            preferred: selectedSourceFile,
+            entryName: generation.entryName)
 
         return VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -266,6 +267,8 @@ struct MakerView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(titleColor)
+            .accessibilityLabel("Review source")
+            .accessibilityValue(sourceIsExpanded ? "expanded" : "collapsed")
 
             if sourceIsExpanded {
                 HStack(spacing: 6) {
@@ -316,10 +319,22 @@ struct MakerView: View {
             ReviewFile(name: "command.json", contents: generation.manifestJSON),
             ReviewFile(name: generation.entryName, contents: generation.entrySource),
         ]
-        files.append(contentsOf: generation.extraFiles.keys.sorted().compactMap { name in
-            generation.extraFiles[name].map { ReviewFile(name: name, contents: $0) }
-        })
+        // Parser output already reserves these names. Keep the view helper
+        // defensive because duplicate ids make SwiftUI's ForEach undefined.
+        let reserved = Set(files.map(\.name))
+        files.append(contentsOf: generation.extraFiles
+            .filter { !reserved.contains($0.key) }
+            .sorted { $0.key < $1.key }
+            .map { ReviewFile(name: $0.key, contents: $0.value) })
         return files
+    }
+
+    /// A stale selection after regeneration falls back to executable source.
+    static func selectedFile(in files: [ReviewFile], preferred: String,
+                             entryName: String) -> ReviewFile {
+        files.first { $0.name == preferred }
+            ?? files.first { $0.name == entryName }
+            ?? files[0]
     }
 
     /// The paused-test consent row — same first-run gate the panel applies

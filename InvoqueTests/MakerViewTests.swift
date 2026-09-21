@@ -18,6 +18,38 @@ final class MakerViewTests: XCTestCase {
         ])
     }
 
+    func testReviewFilesSkipsReservedNameCollisions() {
+        let generation = GeneratedCommand(
+            manifestJSON: "manifest",
+            entryName: "src/run.js",
+            entrySource: "entry",
+            extraFiles: [
+                "command.json": "rogue",
+                "src/run.js": "duplicate",
+                "b.txt": "ok",
+            ])
+
+        XCTAssertEqual(MakerView.reviewFiles(generation).map(\.name), [
+            "command.json", "src/run.js", "b.txt",
+        ])
+    }
+
+    func testStaleSourceSelectionFallsBackToEntry() {
+        let files = [
+            MakerView.ReviewFile(name: "command.json", contents: "manifest"),
+            MakerView.ReviewFile(name: "main.js", contents: "entry"),
+        ]
+
+        XCTAssertEqual(MakerView.selectedFile(
+            in: files,
+            preferred: "removed.js",
+            entryName: "main.js"), files[1])
+        XCTAssertEqual(MakerView.selectedFile(
+            in: files,
+            preferred: "command.json",
+            entryName: "main.js"), files[0])
+    }
+
     // MARK: parseArgs
 
     func testParseArgsSplitsOnWhitespace() {
