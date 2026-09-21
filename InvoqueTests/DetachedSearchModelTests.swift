@@ -169,6 +169,52 @@ final class DetachedSearchModelTests: XCTestCase {
         XCTAssertEqual(model.selectedRow?.title, "b.txt")
     }
 
+    /// Page moves jump by the page step and clamp at the ends rather than
+    /// wrapping — overshooting the last page lands on the last row.
+    func testPageSelectionClampsAtEnds() async {
+        let items = (0..<25).map { fileItem("f\($0).txt") }
+        let session = await settledSession(items)
+        let model = DetachedSearchModel(session: session,
+                                        entryRules: EntryRules(),
+                                        iconResolver: nil)
+        model.pageSelection(by: 1)
+        XCTAssertEqual(model.selection, DetachedSearchModel.pageStep)
+        model.pageSelection(by: 1)
+        XCTAssertEqual(model.selection, 20)
+        // 20 + pageStep overshoots the 25-row list — clamp, not wrap.
+        model.pageSelection(by: 1)
+        XCTAssertEqual(model.selection, 24)
+        model.pageSelection(by: -1)
+        XCTAssertEqual(model.selection, 14)
+        model.pageSelection(by: -3)
+        XCTAssertEqual(model.selection, 0)
+    }
+
+    /// Home/End (⌘↑/⌘↓ in the window) select the boundary rows directly.
+    func testSelectBoundary() async {
+        let items = [fileItem("a.txt"), fileItem("b.txt"), fileItem("c.txt")]
+        let session = await settledSession(items)
+        let model = DetachedSearchModel(session: session,
+                                        entryRules: EntryRules(),
+                                        iconResolver: nil)
+        model.selectBoundary(.last)
+        XCTAssertEqual(model.selectedRow?.title, "c.txt")
+        model.selectBoundary(.first)
+        XCTAssertEqual(model.selectedRow?.title, "a.txt")
+    }
+
+    /// Empty lists must not trap page/boundary keys — the guards keep a
+    /// pending session's navigation a no-op.
+    func testPageAndBoundaryKeysOnEmptyList() {
+        let model = DetachedSearchModel(session: pendingSession(),
+                                        entryRules: EntryRules(),
+                                        iconResolver: nil)
+        model.pageSelection(by: 1)
+        model.selectBoundary(.last)
+        XCTAssertEqual(model.selection, 0)
+        XCTAssertNil(model.selectedRow)
+    }
+
     /// A streamed batch inserting above the picked row must not snap the
     /// selection back to the top — refresh tracks it by row id.
     func testRefreshKeepsSelectionOnRow() async {
