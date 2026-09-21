@@ -99,6 +99,73 @@ final class DirectoryWatcherTests: XCTestCase {
         watcher.stop()
     }
 
+    /// Every open failing at start leaves zero live sources — and no
+    /// filesystem event can ever arrive to trigger recovery, so the
+    /// retry must be self-scheduled: once opens succeed the watcher
+    /// comes back on its own.
+    func testTotalOpenFailureRetriesWithoutEvents() throws {
+        let saved = DirectoryWatcher.retryCooldown
+        defer { DirectoryWatcher.retryCooldown = saved }
+        DirectoryWatcher.retryCooldown = 0.1
+
+        let gate = OpenGate()
+        let watcher = DirectoryWatcher(roots: [scratch], debounce: 0.05) {}
+        watcher.canOpenTarget = { _ in gate.isAllowed }
+        watcher.start()
+        XCTAssertTrue(waitFor { watcher.failedCount > 0 },
+                      "failed open never recorded")
+        XCTAssertEqual(watcher.liveSourceCount, 0)
+
+        gate.allow()
+        XCTAssertTrue(waitFor { watcher.failedCount == 0 },
+                      "failed open was never retried")
+        XCTAssertEqual(watcher.liveSourceCount, 1)
+        watcher.stop()
+    }
+
+    /// A permanently failing target retries on the cooldown — not per
+    /// event — and never drags the healthy source down with it. The
+    /// cooldown is pinned long so no retry lands inside the test: any
+    /// second attempt is a throttle regression, not a timing flake.
+    func testFailedOpenCooldownKeepsHealthySource() throws {
+        let saved = DirectoryWatcher.retryCooldown
+        defer { DirectoryWatcher.retryCooldown = saved }
+        DirectoryWatcher.retryCooldown = 60
+
+        let failing = scratch.appendingPathComponent("Failing", isDirectory: true)
+        let healthy = scratch.appendingPathComponent("Healthy", isDirectory: true)
+        try FileManager.default.createDirectory(at: failing)
+        try FileManager.default.createDirectory(at: healthy)
+
+        let attempts = LockedCounter()
+        let fires = LockedCounter()
+        let watcher = DirectoryWatcher(roots: [scratch], debounce: 0.05) {
+            fires.bump()
+        }
+        watcher.canOpenTarget = { url in
+            guard url.path == failing.path else { return true }
+            attempts.bump()
+            return false
+        }
+        watcher.start()
+        XCTAssertTrue(waitFor { watcher.failedCount == 1 },
+                      "failing open never recorded")
+        XCTAssertEqual(attempts.value, 1)
+
+        // Events on the healthy subtree keep arriving — the failed open
+        // neither tears it down nor retries inside the cooldown.
+        for i in 0..<3 {
+            let before = fires.value
+            try "x".write(to: healthy.appendingPathComponent("e\(i).txt"),
+                          atomically: true, encoding: .utf8)
+            XCTAssertTrue(waitFor { fires.value > before },
+                          "event on the healthy subtree did not fire")
+        }
+        XCTAssertEqual(attempts.value, 1,
+                       "failed open retried inside the cooldown")
+        watcher.stop()
+    }
+
     /// Polls `condition` on the run loop — filesystem events and debounce
     /// timers are asynchronous, so sleeps would just be slower and flakier.
     private func waitFor(_ condition: @escaping () -> Bool,
@@ -108,5 +175,39 @@ final class DirectoryWatcherTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
         return condition()
+    }
+
+    /// A lock-guarded flag the `canOpenTarget` seam reads on the
+    /// watcher's queue — no sleeps, just a happens-after edge.
+    private final class OpenGate {
+        private let lock = NSLock()
+        private var open = false
+        var isAllowed: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return open
+        }
+        func allow() {
+            lock.lock()
+            open = true
+            lock.unlock()
+        }
+    }
+
+    /// Lock-guarded counter for events and open attempts observed off
+    /// the test thread.
+    private final class LockedCounter {
+        private let lock = NSLock()
+        private var count = 0
+        var value: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return count
+        }
+        func bump() {
+            lock.lock()
+            count += 1
+            lock.unlock()
+        }
     }
 }

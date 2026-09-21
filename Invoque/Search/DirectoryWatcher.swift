@@ -26,8 +26,9 @@ final class DirectoryWatcher: @unchecked Sendable {
     private static let maxDepth = 4
     private static let maxTargets = 256
     /// Seconds between retries of opens that failed — bounds the churn a
-    /// permanently unopenable target can cause.
-    private static let retryCooldown: TimeInterval = 5
+    /// permanently unopenable target can cause. `var` so timing tests
+    /// shrink it instead of sleeping past the production value.
+    static var retryCooldown: TimeInterval = 5
 
     /// Invoked on the watcher's serial queue once per debounced burst.
     private let onEvent: () -> Void
@@ -43,6 +44,9 @@ final class DirectoryWatcher: @unchecked Sendable {
     /// cooldown so transient fd pressure recovers without tearing the
     /// healthy sources down.
     private var failedPaths: Set<String> = []
+    /// Test seam: return false to simulate an fd-pressure open failure.
+    /// Production never assigns this.
+    var canOpenTarget: (URL) -> Bool = { _ in true }
     private var lastFailureRetry = Date.distantPast
     private var pending: DispatchWorkItem?
     private var running = false
@@ -92,6 +96,20 @@ final class DirectoryWatcher: @unchecked Sendable {
         queue.sync { watchedPaths.count }
     }
 
+    /// Resolved targets whose `open` is currently failing — tests poll
+    /// it to observe the retry path. Same queue-sync rule as
+    /// `watchedCount`.
+    var failedCount: Int {
+        queue.sync { failedPaths.count }
+    }
+
+    /// Sources actually open — `watchedCount` counts resolved targets,
+    /// which includes paths whose open failed; this is the working set.
+    /// Same queue-sync rule as `watchedCount`.
+    var liveSourceCount: Int {
+        queue.sync { sources.count }
+    }
+
     // MARK: Events
 
     /// Schedules the debounced callback. Must run on `queue`.
@@ -112,6 +130,7 @@ final class DirectoryWatcher: @unchecked Sendable {
     /// Watches one directory vnode for writes, renames and deletes. The
     /// descriptor is closed by the source's cancel handler.
     private func makeSource(for url: URL) -> DispatchSourceFileSystemObject? {
+        guard canOpenTarget(url) else { return nil }
         let descriptor = open(url.path, O_EVTONLY)
         guard descriptor >= 0 else { return nil }
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -165,16 +184,17 @@ final class DirectoryWatcher: @unchecked Sendable {
             // Only the failed opens need another attempt, and only on a
             // cooldown — a permanently unopenable target must not force
             // a teardown (and its event-dropping window) on every event.
-            guard !failedPaths.isEmpty,
-                  Date().timeIntervalSince(lastFailureRetry) > Self.retryCooldown
-            else { return }
-            lastFailureRetry = Date()
-            for url in targets where failedPaths.contains(url.path) {
-                if let source = makeSource(for: url) {
-                    sources.append(source)
-                    failedPaths.remove(url.path)
+            if !failedPaths.isEmpty,
+               Date().timeIntervalSince(lastFailureRetry) > Self.retryCooldown {
+                lastFailureRetry = Date()
+                for url in targets where failedPaths.contains(url.path) {
+                    if let source = makeSource(for: url) {
+                        sources.append(source)
+                        failedPaths.remove(url.path)
+                    }
                 }
             }
+            scheduleRetry()
             return
         }
         teardown()
@@ -186,6 +206,22 @@ final class DirectoryWatcher: @unchecked Sendable {
             } else {
                 failedPaths.insert(url.path)
             }
+        }
+        lastFailureRetry = Date()
+        scheduleRetry()
+    }
+
+    /// Arms a cooldown retry for failed opens. Events drive the same
+    /// retry, but with zero healthy sources no event will ever fire —
+    /// recovery must not wait on unrelated filesystem activity. Re-armed
+    /// after every rebuild while failures remain, so a timer that lands
+    /// inside the cooldown just rolls one cycle forward. Must run on
+    /// `queue`.
+    private func scheduleRetry() {
+        guard running, !failedPaths.isEmpty else { return }
+        queue.asyncAfter(deadline: .now() + Self.retryCooldown) { [weak self] in
+            guard let self, self.running, !self.failedPaths.isEmpty else { return }
+            self.rebuildTargets()
         }
     }
 
