@@ -1489,16 +1489,25 @@ final class PanelModelTests: XCTestCase {
     /// The card's glyph must mirror the row the user picked — drift (filled
     /// vs outline, a flipped arrow) undermines "this is the action you chose".
     func testConfirmationCardSymbolMirrorsSourceRow() {
+        var checked = 0
         for item in SystemSource().items(matching: "") {
-            guard case .system(let action) = item.action,
-                  action.requiresConfirmation,
-                  case .symbol(let rowSymbol) = item.icon,
-                  let confirmation = SystemActionConfirmation(
-                      row: ResultRow(item: item))
-            else { continue }
-            XCTAssertEqual(confirmation.symbolName, rowSymbol,
+            guard case .system(let action) = item.action else { continue }
+            let confirmation = SystemActionConfirmation(row: ResultRow(item: item))
+            guard action.requiresConfirmation else {
+                XCTAssertNil(confirmation,
+                             "\(action) must run without a confirmation card")
+                continue
+            }
+            guard case .symbol(let rowSymbol) = item.icon else {
+                XCTFail("\(action) row has no symbol for the card to mirror")
+                continue
+            }
+            checked += 1
+            XCTAssertEqual(confirmation?.symbolName, rowSymbol,
                            "card glyph drifted from the \(action) row")
         }
+        XCTAssertGreaterThan(checked, 0,
+                             "empty query returned no confirmation rows — test ran vacuously")
     }
 
     func testCancellingSystemActionConfirmationRearmsInsteadOfRunning() {
