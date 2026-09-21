@@ -28,6 +28,11 @@ struct ResultRowView: View {
     /// adaptive-accent bloom).
     let glows: Bool
 
+    /// Mouse-over feedback — a faint fill at a fraction of the selection
+    /// opacity, so a pointer pick has an affordance before the click.
+    /// State only; nothing animates.
+    @State private var isHovered = false
+
     var body: some View {
         HStack(spacing: 12) {
             icon
@@ -37,10 +42,15 @@ struct ResultRowView: View {
                     .font(typeface.font(.body))
                     .foregroundStyle(titleColor)
                     .lineLimit(1)
-                Text(row.subtitle)
-                    .font(typeface.font(.caption))
-                    .foregroundStyle(subtitleColor)
-                    .lineLimit(1)
+                // A row with no subtitle doesn't pay for the empty line —
+                // subtitle-less rows (filter output, bare commands) run
+                // compact instead of uniformly tall.
+                if !row.subtitle.isEmpty {
+                    Text(row.subtitle)
+                        .font(typeface.font(.caption))
+                        .foregroundStyle(subtitleColor)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
             if pinned {
@@ -53,7 +63,7 @@ struct ResultRowView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(isSelected ? Color(nsColor: fill).opacity(fillOpacity) : Color.clear)
+                .fill(rowFill)
                 .shadow(color: isSelected && glows
                             ? Color(nsColor: fill).opacity(0.5)
                             : .clear,
@@ -61,8 +71,17 @@ struct ResultRowView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius,
                                        style: .continuous))
+        .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+    }
+
+    /// The row's background fill: the selection fill when selected, a
+    /// faint version of the same color on hover, clear otherwise.
+    private var rowFill: Color {
+        if isSelected { return Color(nsColor: fill).opacity(fillOpacity) }
+        if isHovered { return Color(nsColor: fill).opacity(fillOpacity * 0.45) }
+        return .clear
     }
 
     /// SF Symbols render as vectors; file/app icons arrive resolved as
