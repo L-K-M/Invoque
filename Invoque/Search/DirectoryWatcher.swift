@@ -25,6 +25,9 @@ final class DirectoryWatcher: @unchecked Sendable {
     /// process's descriptor limit.
     private static let maxDepth = 4
     private static let maxTargets = 256
+    /// Seconds between retries of opens that failed — bounds the churn a
+    /// permanently unopenable target can cause.
+    private static let retryCooldown: TimeInterval = 5
 
     /// Invoked on the watcher's serial queue once per debounced burst.
     private let onEvent: () -> Void
@@ -36,6 +39,11 @@ final class DirectoryWatcher: @unchecked Sendable {
     private let debounce: TimeInterval
     private var sources: [DispatchSourceFileSystemObject] = []
     private var watchedPaths: Set<String> = []
+    /// Targets whose `open` failed on the last rebuild — retried on a
+    /// cooldown so transient fd pressure recovers without tearing the
+    /// healthy sources down.
+    private var failedPaths: Set<String> = []
+    private var lastFailureRetry = Date.distantPast
     private var pending: DispatchWorkItem?
     private var running = false
 
@@ -125,6 +133,7 @@ final class DirectoryWatcher: @unchecked Sendable {
         sources.forEach { $0.cancel() }
         sources = []
         watchedPaths = []
+        failedPaths = []
     }
 
     /// Recomputes the watched-directory set and rebuilds sources only when
@@ -132,8 +141,9 @@ final class DirectoryWatcher: @unchecked Sendable {
     /// nothing. Must run on `queue`.
     private func rebuildTargets() {
         // Per-root fair share so one deep tree can't consume the whole
-        // cap and starve every later root — each root's base included,
-        // keeping the total under maxTargets.
+        // cap and starve every later root — each root's base included.
+        // The floor of 8 means the total can exceed maxTargets once roots
+        // outnumber maxTargets / 8, and unused shares aren't redistributed.
         let budgetPerRoot = max(8, Self.maxTargets / max(1, roots.count))
         var seen = Set<String>()
         var targets: [URL] = []
@@ -151,12 +161,32 @@ final class DirectoryWatcher: @unchecked Sendable {
             }
         }
         let paths = Set(targets.map(\.path))
-        // Also rebuild when a previous open failed so transient fd
-        // pressure doesn't leave a directory permanently unwatched.
-        guard paths != watchedPaths || sources.count != targets.count else { return }
+        if paths == watchedPaths {
+            // Only the failed opens need another attempt, and only on a
+            // cooldown — a permanently unopenable target must not force
+            // a teardown (and its event-dropping window) on every event.
+            guard !failedPaths.isEmpty,
+                  Date().timeIntervalSince(lastFailureRetry) > Self.retryCooldown
+            else { return }
+            lastFailureRetry = Date()
+            for url in targets where failedPaths.contains(url.path) {
+                if let source = makeSource(for: url) {
+                    sources.append(source)
+                    failedPaths.remove(url.path)
+                }
+            }
+            return
+        }
         teardown()
         watchedPaths = paths
-        sources = targets.compactMap { makeSource(for: $0) }
+        failedPaths = []
+        for url in targets {
+            if let source = makeSource(for: url) {
+                sources.append(source)
+            } else {
+                failedPaths.insert(url.path)
+            }
+        }
     }
 
     /// Subdirectories under `url`, recursively, bounded by depth and the
