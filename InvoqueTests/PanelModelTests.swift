@@ -1001,12 +1001,13 @@ final class PanelModelTests: XCTestCase {
     /// generation stale-drop instead of landing rows on the hidden list.
     func testPanelDidHideDropsInflightFilterRun() async throws {
         // The bounded busy-spin keeps the run in flight far longer than
-        // the observe-then-hide hop takes, so hide provably lands first —
-        // rows arriving before it would be legitimate, not dropped.
+        // the observe-then-hide hop takes even on a loaded CI main actor,
+        // so hide provably lands first — rows arriving before it would be
+        // legitimate, not dropped.
         let command = try writeFilterCommand(keyword: "jf", source: """
             async function run() {
                 const t = Date.now();
-                while (Date.now() - t < 300) {}
+                while (Date.now() - t < 2000) {}
                 return { items: [{ title: "x" }] };
             }
             """)
