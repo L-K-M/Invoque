@@ -15,8 +15,9 @@ refine new commands without leaving the panel.
 ## What it does
 
 - **Launch** apps and commands, fuzzy-matched and ranked — exact prefix
-  beats infix beats fuzzy, shorter matches win, and results stay stable
-  while you keep typing.
+  beats infix beats fuzzy, shorter matches win, results stay stable
+  while you keep typing, and the matched characters read bolder in each
+  title.
 - **Calculate** inline (`2+2*3`, unit-free — the answer row pins first, behind only a typed path).
 - **Find files** without Spotlight: `find notes`, `f notes`, or
   `search notes` walks the disk directly — hidden dirs and dependency

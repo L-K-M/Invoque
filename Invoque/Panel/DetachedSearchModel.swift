@@ -16,6 +16,10 @@ final class DetachedSearchModel: ObservableObject {
     /// title and header text.
     let query: String
 
+    /// The post-keyword scan text — "hello.pdf" — the title-highlight
+    /// text for the rows.
+    let scanText: String
+
     /// The session's rows after pin/block shaping — the display list.
     @Published private(set) var rows: [ResultRow] = [] {
         didSet { selection = 0 }
@@ -38,6 +42,7 @@ final class DetachedSearchModel: ObservableObject {
          iconResolver: ((IconTarget) -> NSImage?)?) {
         self.session = session
         self.query = session.query
+        self.scanText = session.text
         self.entryRules = entryRules
         self.iconResolver = iconResolver
         self.isPending = session.isPending
