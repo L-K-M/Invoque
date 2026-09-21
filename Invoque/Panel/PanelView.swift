@@ -47,6 +47,14 @@ struct PanelView: View {
                                       typeface: preferences.panelTypeface,
                                       onAllow: model.confirmPermissionRequest,
                                       onDecline: model.dismissPermissionRequest)
+            } else if let confirmation = model.systemActionConfirmation {
+                SystemActionConfirmationCard(
+                    confirmation: confirmation,
+                    titleColor: titleColor,
+                    secondaryColor: secondaryColor,
+                    typeface: preferences.panelTypeface,
+                    onConfirm: model.confirmSystemAction,
+                    onCancel: model.dismissSystemActionConfirmation)
             } else if model.makerIsActive, let maker = model.maker {
                 MakerView(model: maker, prompt: model.makerPrompt ?? "",
                           titleColor: titleColor, secondaryColor: secondaryColor,
@@ -344,6 +352,9 @@ struct PanelView: View {
     /// fallback would promise an action that can't apply.
     private var footerHint: String {
         if model.permissionRequest != nil { return "⌘⏎ allow · esc dismiss" }
+        if model.systemActionConfirmation != nil {
+            return "⌘⏎ confirm · esc dismiss"
+        }
         if model.makerIsActive { return "⏎ generate/save · esc dismiss" }
         let manage = model.selectedRow.map(model.canManage) == true
             ? " · ⌘P pin · ⌘B block" : ""
@@ -430,6 +441,54 @@ private struct PermissionRequestCard: View {
                 Button("Don't Run", action: onDecline)
                 Button("Allow", action: onAllow)
                     .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(.horizontal, Metrics.edgePadding + 6)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// MARK: -
+
+/// Confirmation for built-in actions that can destroy data or interrupt the
+/// current login session. Plain Return is neutral; ⌘Return or the button acts.
+private struct SystemActionConfirmationCard: View {
+
+    let confirmation: SystemActionConfirmation
+    let titleColor: Color
+    let secondaryColor: Color
+    let typeface: PanelTypeface
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: confirmation.symbolName)
+                    .font(.title3)
+                    .foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Invoque system action")
+                        .font(typeface.font(.caption2))
+                        .foregroundStyle(secondaryColor)
+                    Text(confirmation.title)
+                        .font(typeface.font(.headline))
+                        .foregroundStyle(titleColor)
+                }
+            }
+            Text(confirmation.detail)
+                .font(typeface.font(.callout))
+                .foregroundStyle(titleColor)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Spacer(minLength: 0)
+                Button("Cancel", action: onCancel)
+                Button(confirmation.confirmLabel,
+                       role: .destructive,
+                       action: onConfirm)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
             }
         }
         .padding(.horizontal, Metrics.edgePadding + 6)

@@ -111,5 +111,15 @@ struct Item: Identifiable, Equatable {
         case restart
         case shutDown
         case emptyTrash
+
+        /// Actions that can destroy data or interrupt the user's session.
+        var requiresConfirmation: Bool {
+            switch self {
+            case .restart, .shutDown, .emptyTrash:
+                return true
+            case .lockScreen, .sleep:
+                return false
+            }
+        }
     }
 }

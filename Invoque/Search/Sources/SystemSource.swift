@@ -29,7 +29,7 @@ final class SystemSource: ItemSource {
             return make(action: action, title: "Shut Down", subtitle: "Shut down your Mac",
                         symbol: "power", keywords: "shut down shutdown power off halt")
         case .emptyTrash:
-            return make(action: action, title: "Empty Trash", subtitle: "Permanently delete everything in the Trash",
+            return make(action: action, title: "Empty Trash", subtitle: "Permanently delete your home Trash",
                         symbol: "trash.fill", keywords: "empty trash delete clear bin remove")
         }
     }

@@ -1338,9 +1338,15 @@ final class PanelModelTests: XCTestCase {
 
             model.submit()
             XCTAssertNil(submitted, "\(action) ran without confirmation")
+            XCTAssertEqual(model.systemActionConfirmation?.action, action)
+
+            // A habitual double-Return remains neutral.
+            model.submit()
+            XCTAssertNil(submitted, "\(action) ran on a second plain Return")
 
             model.submit(commandModifier: true)
-            XCTAssertEqual(submitted?.action, .system(action))
+            XCTAssertEqual(submitted?.action, .system(action),
+                           "\(action) did not run after explicit confirmation")
         }
     }
 
@@ -1358,8 +1364,36 @@ final class PanelModelTests: XCTestCase {
 
             model.submit()
 
-            XCTAssertEqual(submitted?.action, .system(action))
+            XCTAssertNotNil(submitted, "\(action) did not run immediately")
+            XCTAssertEqual(submitted?.action, .system(action),
+                           "\(action) submitted the wrong action")
         }
+    }
+
+    func testSystemActionConfirmationClassificationIsExhaustive() {
+        let consequential: [Item.SystemAction] = [.restart, .shutDown, .emptyTrash]
+
+        for action in Item.SystemAction.allCases {
+            XCTAssertEqual(action.requiresConfirmation,
+                           consequential.contains(action),
+                           "\(action) confirmation classification drifted")
+        }
+    }
+
+    func testEditingQueryDismissesSystemActionConfirmation() {
+        let model = makeModel(items: [])
+        model.showCommandResults([ResultRow(
+            id: Item.systemIDPrefix + "restart",
+            title: "Restart",
+            subtitle: "",
+            icon: .symbol("arrow.clockwise"),
+            action: .system(.restart))])
+        model.submit()
+        XCTAssertNotNil(model.systemActionConfirmation)
+
+        model.query = "something else"
+
+        XCTAssertNil(model.systemActionConfirmation)
     }
 
     // MARK: Maker routing
