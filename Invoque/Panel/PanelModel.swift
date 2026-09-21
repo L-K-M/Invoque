@@ -990,6 +990,9 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         let trimmed = SearchModel.normalizedQuery(query)
         guard !trimmed.isEmpty else { return }
         queryHistory?.record(trimmed)
+        // A submit ends any live recall — `record` may have reordered
+        // `entries`, so a stale `recallDepth` would index the wrong slot.
+        recallDepth = 0
     }
 
     // MARK: State changes
