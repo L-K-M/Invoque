@@ -24,6 +24,8 @@ struct MakerView: View {
 
     @State private var feedback = ""
     @State private var testArgs = ""
+    @State private var selectedSourceFile = ""
+    @State private var sourceIsExpanded = true
 
     var body: some View {
         ScrollView {
@@ -55,6 +57,8 @@ struct MakerView: View {
             if model.phase == .idle {
                 feedback = ""
                 testArgs = ""
+                selectedSourceFile = ""
+                sourceIsExpanded = true
             }
         }
     }
@@ -155,6 +159,7 @@ struct MakerView: View {
     private var draftContent: some View {
         if let draft = model.draft {
             draftSummary(draft)
+            sourceReview(draft.generation)
             if !draft.issues.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     // Offset identity, not string identity — two identical
@@ -233,6 +238,88 @@ struct MakerView: View {
             parts.append("+ \(generation.extraFiles.keys.sorted().joined(separator: ", "))")
         }
         return parts.joined(separator: "  ")
+    }
+
+    /// Generated files stay visible before Save so inspectability is a real
+    /// part of the Maker flow, not a promise that requires Finder or an editor.
+    private func sourceReview(_ generation: GeneratedCommand) -> some View {
+        let files = Self.reviewFiles(generation)
+        let selected = files.first { $0.name == selectedSourceFile }
+            ?? files.first { $0.name == generation.entryName }
+            ?? files[0]
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                sourceIsExpanded.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: sourceIsExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                    Text("Review source")
+                        .font(typeface.font(.callout).weight(.semibold))
+                    Text("· \(files.count) \(files.count == 1 ? "file" : "files")")
+                        .font(typeface.font(.caption))
+                        .foregroundStyle(secondaryColor)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(titleColor)
+
+            if sourceIsExpanded {
+                HStack(spacing: 6) {
+                    Text("Generated code · review before saving")
+                        .font(typeface.font(.caption))
+                        .foregroundStyle(secondaryColor)
+                    Spacer(minLength: 0)
+                    Menu {
+                        ForEach(files) { file in
+                            Button(file.name) { selectedSourceFile = file.name }
+                        }
+                    } label: {
+                        Label(selected.name, systemImage: "doc.plaintext")
+                            .font(typeface.font(.caption))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+
+                ScrollView([.horizontal, .vertical]) {
+                    Text(selected.contents)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(titleColor)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: true, vertical: true)
+                        .padding(8)
+                }
+                .frame(height: 150)
+                .background(secondaryColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(secondaryColor.opacity(0.22), lineWidth: 1)
+                }
+            }
+        }
+    }
+
+    struct ReviewFile: Identifiable, Equatable {
+        let name: String
+        let contents: String
+
+        var id: String { name }
+    }
+
+    /// Stable file order keeps regeneration from shuffling the picker.
+    static func reviewFiles(_ generation: GeneratedCommand) -> [ReviewFile] {
+        var files = [
+            ReviewFile(name: "command.json", contents: generation.manifestJSON),
+            ReviewFile(name: generation.entryName, contents: generation.entrySource),
+        ]
+        files.append(contentsOf: generation.extraFiles.keys.sorted().compactMap { name in
+            generation.extraFiles[name].map { ReviewFile(name: name, contents: $0) }
+        })
+        return files
     }
 
     /// The paused-test consent row — same first-run gate the panel applies

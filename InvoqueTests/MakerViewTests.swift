@@ -3,6 +3,21 @@ import XCTest
 
 final class MakerViewTests: XCTestCase {
 
+    func testReviewFilesIncludesEveryGeneratedFileInStableOrder() {
+        let generation = GeneratedCommand(
+            manifestJSON: "manifest",
+            entryName: "src/run.js",
+            entrySource: "entry",
+            extraFiles: ["z.txt": "last", "a.txt": "first"])
+
+        XCTAssertEqual(MakerView.reviewFiles(generation), [
+            MakerView.ReviewFile(name: "command.json", contents: "manifest"),
+            MakerView.ReviewFile(name: "src/run.js", contents: "entry"),
+            MakerView.ReviewFile(name: "a.txt", contents: "first"),
+            MakerView.ReviewFile(name: "z.txt", contents: "last"),
+        ])
+    }
+
     // MARK: parseArgs
 
     func testParseArgsSplitsOnWhitespace() {
