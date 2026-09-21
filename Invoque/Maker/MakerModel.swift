@@ -74,13 +74,13 @@ final class MakerModel: ObservableObject {
 
     // Assigned once at init and frozen thereafter — `nonisolated` lets the
     // nonisolated init write them and keeps their reads out of the actor for
-    // a set that can never change anyway. The two non-Sendable types take the
-    // `unsafe` opt-out; the Sendable ones are checked.
-    nonisolated(unsafe) private let clientProvider: () -> LLMClientServing
+    // a set that can never change anyway. All five types are Sendable, so
+    // the exemption is checked rather than unsafe.
+    nonisolated private let clientProvider: @Sendable () -> LLMClientServing
     nonisolated private let runner: CommandRunner
     nonisolated private let writer: CommandWriter
     nonisolated private let store: CommandStore?
-    nonisolated(unsafe) private let permissionGrants: CommandPermissionGrants
+    nonisolated private let permissionGrants: CommandPermissionGrants
 
     private var generationTask: Task<Void, Never>?
     /// Temp directory the current draft is staged into for test runs.
@@ -98,8 +98,8 @@ final class MakerModel: ObservableObject {
     /// `store` is rescanned after a save; nil is fine for tests.
     /// Nonisolated so the model can be constructed off the main actor
     /// (AppDelegate's lazy panel factory, non-actor test helpers) — the
-    /// stored `let`s it assigns are `nonisolated(unsafe)` above.
-    nonisolated init(client: @escaping () -> LLMClientServing,
+    /// stored `let`s it assigns are `nonisolated` above.
+    nonisolated init(client: @escaping @Sendable () -> LLMClientServing,
          runner: CommandRunner,
          writer: CommandWriter,
          store: CommandStore? = nil,

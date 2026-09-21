@@ -25,7 +25,7 @@ final class MakerModelTests: XCTestCase {
 
     /// Canned responses for `LLMClientServing`; captures the transcripts it
     /// was called with so tests can check the feedback loop.
-    private final class StubClient: LLMClientServing {
+    private final class StubClient: LLMClientServing, @unchecked Sendable {
         var model = "stub-model"
         var responses: [Result<String, Error>] = []
         var calls: [[LLMMessage]] = []
@@ -223,7 +223,11 @@ final class MakerModelTests: XCTestCase {
         // it builds its own suite rather than using makeFreshGrants().
         let suiteName = "MakerModelTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        // `addTeardownBlock` takes a `@Sendable` closure; `UserDefaults` is
+        // thread-safe but not Sendable on this SDK, so the capture is
+        // exempted rather than checked.
+        nonisolated(unsafe) let teardownDefaults = defaults
+        addTeardownBlock { teardownDefaults.removePersistentDomain(forName: suiteName) }
         let grants = CommandPermissionGrants(defaults: defaults)
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],
