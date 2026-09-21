@@ -268,7 +268,8 @@ struct MakerView: View {
             .buttonStyle(.plain)
             .foregroundStyle(titleColor)
             .accessibilityLabel("Review source")
-            .accessibilityValue(sourceIsExpanded ? "expanded" : "collapsed")
+            .accessibilityValue(
+                "\(selected.name), \(sourceIsExpanded ? "expanded" : "collapsed")")
 
             if sourceIsExpanded {
                 HStack(spacing: 6) {
@@ -319,6 +320,11 @@ struct MakerView: View {
             ReviewFile(name: "command.json", contents: generation.manifestJSON),
             ReviewFile(name: generation.entryName, contents: generation.entrySource),
         ]
+        // A directly constructed malformed draft can give both seed rows the
+        // same name. Keep the executable source reviewable under one stable ID.
+        if generation.entryName == "command.json" {
+            files.removeFirst()
+        }
         // Parser output already reserves these names. Keep the view helper
         // defensive because duplicate ids make SwiftUI's ForEach undefined.
         let reserved = Set(files.map(\.name))
