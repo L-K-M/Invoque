@@ -48,7 +48,7 @@ struct PanelView: View {
                                       onAllow: model.confirmPermissionRequest,
                                       onDecline: model.dismissPermissionRequest)
             } else if model.makerIsActive, let maker = model.maker {
-                MakerView(model: maker, prompt: model.makerPrompt ?? "",
+                MakerView(model: maker, prompt: model.makerPrompt ?? model.editPrompt ?? "",
                           titleColor: titleColor, secondaryColor: secondaryColor,
                           typeface: preferences.panelTypeface)
             } else {
