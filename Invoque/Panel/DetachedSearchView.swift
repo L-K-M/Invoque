@@ -142,13 +142,8 @@ struct DetachedSearchView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
             }
-            // Arrow-key selection must keep the highlighted row visible —
-            // the same `.task(id:)` trick `PanelView` uses (macOS 13 has
-            // no non-deprecated onChange).
-            .task(id: model.selectedRow?.id) {
-                guard let id = model.selectedRow?.id else { return }
-                proxy.scrollTo(id, anchor: .center)
-            }
+            // Arrow-key selection must keep the highlighted row visible.
+            .scrollSelectionIntoView(model.selectedRow?.id, proxy: proxy)
         }
         .frame(maxHeight: .infinity)
     }
