@@ -30,7 +30,7 @@ final class GeneratorSourceTests: XCTestCase {
     func testUUIDIsFreshPerQuery() {
         var minted = 0
         let source = GeneratorSource(
-            makeUUID: { minted += 1; "uuid-\(minted)" },
+            makeUUID: { minted += 1; return "uuid-\(minted)" },
             now: { Date() }, roll: { _ in 1 })
         XCTAssertEqual(source.items(matching: "uuid").first?.title, "uuid-1")
         XCTAssertEqual(source.items(matching: "uuid").first?.title, "uuid-2")
