@@ -201,6 +201,42 @@ final class GitHubReleaseTests: XCTestCase {
         XCTAssertNil(release.preferredAsset)
     }
 
+    /// GitHub sometimes emits milliseconds — a fractional timestamp must
+    /// decode like a plain one, not silently drop `publishedAt`.
+    func testDecodesFractionalSecondsPublishedAt() throws {
+        let release = try decode("""
+        { "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false, "assets": [],
+          "published_at": "2026-05-01T12:34:56.123Z" }
+        """)
+        XCTAssertNotNil(release.publishedAt)
+    }
+
+    /// Arch hints match whole tokens, not substrings — "intel" is inside
+    /// "Intelligent", and "x64" inside "x6400", but neither names an
+    /// architecture. The unhinted dmg must not be filtered as foreign (on
+    /// arm64 the old substring check picked the zip instead).
+    func testArchHintMatchesWholeTokensOnly() throws {
+        let release = try decode("""
+        {
+          "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false,
+          "assets": [
+            {"name":"IntelligentApp.dmg","content_type":"application/x-apple-diskimage","size":1,"browser_download_url":"https://e.com/i.dmg"},
+            {"name":"App-arm64.zip","content_type":"application/zip","size":1,"browser_download_url":"https://e.com/a.zip"}
+          ]
+        }
+        """)
+        #if arch(arm64)
+        XCTAssertEqual(release.preferredAsset?.name, "IntelligentApp.dmg")
+        #else
+        var procTranslated: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        _ = sysctlbyname("sysctl.proc_translated", &procTranslated, &size, nil, 0)
+        try XCTSkipIf(procTranslated == 1,
+                      "x86_64 test slice is running under Rosetta")
+        XCTAssertEqual(release.preferredAsset?.name, "IntelligentApp.dmg")
+        #endif
+    }
+
     func testReleaseNotesAreTrimmedAndCapped() throws {
         let long = String(repeating: "x", count: 1000)
         let release = try decode("""
