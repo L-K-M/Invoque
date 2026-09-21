@@ -1355,7 +1355,7 @@ final class PanelModelTests: XCTestCase {
         var submitted: ResultRow?
         model.onSubmit = { submitted = $0 }
         model.showCommandResults([ResultRow(
-            id: Item.systemIDPrefix + "empty-trash",
+            id: Item.systemIDPrefix + Item.SystemAction.emptyTrash.rawValue,
             title: "Empty Trash",
             subtitle: "",
             icon: .symbol("trash"),
