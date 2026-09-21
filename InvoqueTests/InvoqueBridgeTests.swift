@@ -64,7 +64,7 @@ final class InvoqueBridgeTests: XCTestCase {
             fileURL: file, response: httpResponse(), error: nil) else {
             return XCTFail("expected failure")
         }
-        XCTAssertTrue(message.contains("20 MB"))
+        XCTAssertTrue(message.contains("\(InvoqueBridge.maxFetchBytes / 1024 / 1024) MB"))
     }
 
     /// A body at the cap still resolves — the limit is a bound, not a
@@ -98,5 +98,20 @@ final class InvoqueBridgeTests: XCTestCase {
             return XCTFail("expected failure")
         }
         XCTAssertTrue(message.contains("no readable body"))
+    }
+
+    /// A body that exists on disk but can't be read fails distinctly —
+    /// not as a silent empty string. A directory URL is the fixture: its
+    /// size passes the cap while `Data(contentsOf:)` throws — robust to
+    /// CI running as root, where permission bits can't force the failure.
+    func testFetchOutcomeFailsOnUnreadableBody() throws {
+        let dir = scratch.appendingPathComponent("unreadable", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir,
+                                                withIntermediateDirectories: false)
+        guard case .failure(let message) = InvoqueBridge.fetchOutcome(
+            fileURL: dir, response: httpResponse(), error: nil) else {
+            return XCTFail("expected failure")
+        }
+        XCTAssertTrue(message.contains("could not read body"))
     }
 }
