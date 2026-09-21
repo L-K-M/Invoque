@@ -85,5 +85,13 @@ final class SystemActionPerformerTests: XCTestCase {
         }
 
         XCTAssertEqual(SystemActionPerformer.emptyTrashContents(at: trash), 1)
+
+        // Prove the counted failure was the symlink itself — isSymbolicLink
+        // lstats, so a dead target can't hide the surviving link the way
+        // fileExists' target-following probe would.
+        let link = try trash.appendingPathComponent("dangling")
+            .resourceValues(forKeys: [.isSymbolicLinkKey])
+        XCTAssertEqual(link.isSymbolicLink, true,
+                       "the dangling symlink should still be there")
     }
 }
