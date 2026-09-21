@@ -176,8 +176,9 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   bonus, case bonus). Pure function — unit-test it. Zap's type-to-search
   matching is the local precedent.
 - Ranking: match tier first — exact prefix > exact infix > fuzzy
-  subsequence — then shorter displayed title (matchText carries extra
-  matchable words; its length is invisible to the user), then frecency
+  subsequence — then a match that lands in the displayed title beats a
+  hidden-surface hit (matchText carries extra matchable words invisible
+  to the user), then shorter title, then frecency
   (persisted usage counts in UserDefaults), then the alignment score,
   then title/id for a total order. Pinned rows keep their slots:
   `PathSource` rows first (a typed address is a direct intent),

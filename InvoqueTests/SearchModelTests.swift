@@ -235,6 +235,22 @@ final class SearchModelTests: XCTestCase {
             .map(\.id), ["app:zen", "app:zenmap"])
     }
 
+    /// A hit that only lives in the hidden match surface (file name,
+    /// keywords) must not outrank a same-tier hit the user can see —
+    /// short title or not.
+    func testVisibleTitleMatchBeatsHiddenMatchTextHit() {
+        let source = StubSource()
+        source.stubbedItems = [
+            // "rowser" is an infix of "Zen Zen Browser" but absent from
+            // the displayed "Zen" title.
+            Self.appItem(id: "app:zen", title: "Zen",
+                         matchText: "Zen Zen Browser"),
+            Self.appItem(id: "app:webbrowser", title: "WebBrowser"),
+        ]
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "rowser")
+            .map(\.id), ["app:webbrowser", "app:zen"])
+    }
+
     func testSelectionOfPinnedRowsIsNotRecorded() {
         // web:/calc: ids embed the raw query and are never fuzzy-scored —
         // recording them would persist queries and evict real history.
