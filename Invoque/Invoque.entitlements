@@ -2,5 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- JavaScriptCore is the command runtime; under Hardened Runtime it
+	     needs this entitlement to use its JIT instead of running every
+	     command and filter keystroke interpreter-only. Trade-off: the
+	     entitlement permits writable+executable memory for a runtime
+	     that deliberately executes untrusted code (user-installed and
+	     LLM-generated commands) — the permission gate on invoque.* APIs,
+	     not the sandbox, is what constrains what those scripts reach. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
 </dict>
 </plist>
