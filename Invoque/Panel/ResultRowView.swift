@@ -50,6 +50,8 @@ struct ResultRowView: View {
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 titleText
+                    .foregroundStyle(titleColor)
+                    .lineLimit(1)
                 // A row with no subtitle doesn't pay for the empty line —
                 // subtitle-less rows (filter output, bare commands) run
                 // compact instead of uniformly tall.
