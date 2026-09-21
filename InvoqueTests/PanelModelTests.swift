@@ -1324,6 +1324,44 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(submitted?.action, .openFile(url))
     }
 
+    func testConsequentialSystemActionsRequireCommandReturnConfirmation() {
+        for action in [Item.SystemAction.restart, .shutDown, .emptyTrash] {
+            let model = makeModel(items: [])
+            var submitted: ResultRow?
+            model.onSubmit = { submitted = $0 }
+            model.showCommandResults([ResultRow(
+                id: Item.systemIDPrefix + action.rawValue,
+                title: action.rawValue,
+                subtitle: "",
+                icon: .symbol("exclamationmark.triangle"),
+                action: .system(action))])
+
+            model.submit()
+            XCTAssertNil(submitted, "\(action) ran without confirmation")
+
+            model.submit(commandModifier: true)
+            XCTAssertEqual(submitted?.action, .system(action))
+        }
+    }
+
+    func testSafeSystemActionsRemainImmediate() {
+        for action in [Item.SystemAction.lockScreen, .sleep] {
+            let model = makeModel(items: [])
+            var submitted: ResultRow?
+            model.onSubmit = { submitted = $0 }
+            model.showCommandResults([ResultRow(
+                id: Item.systemIDPrefix + action.rawValue,
+                title: action.rawValue,
+                subtitle: "",
+                icon: .symbol("lock"),
+                action: .system(action))])
+
+            model.submit()
+
+            XCTAssertEqual(submitted?.action, .system(action))
+        }
+    }
+
     // MARK: Maker routing
 
     /// A MakerModel whose LLM is a stub — generation resolves to a clean
