@@ -73,7 +73,7 @@ final class FileSearchSession {
         let text = self.text
         let searcher = self.searcher
         let debounce = self.debounceNanoseconds
-        task = Task.detached {
+        task = Task.detached(priority: .userInitiated) {
             try? await Task.sleep(nanoseconds: debounce)
             guard !Task.isCancelled else { return }
             DispatchQueue.main.async { [weak self] in
