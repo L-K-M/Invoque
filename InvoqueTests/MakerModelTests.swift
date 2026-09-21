@@ -484,6 +484,9 @@ final class MakerModelTests: XCTestCase {
             gate.signal()
             started.cancel()
         }
+        // Cancellation is cooperative — join the task so it can't still
+        // be publishing once the test method has fully returned.
+        addTeardownBlock { await started.value }
         // Wait until the request genuinely reached the client.
         let deadline = Date().addingTimeInterval(7)
         while client.calls.isEmpty, Date() < deadline {
