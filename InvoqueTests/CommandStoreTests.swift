@@ -41,6 +41,23 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.scanErrors.first?.directory.lastPathComponent, "broken")
     }
 
+    func testStartWatchingPublishesInitialScan() throws {
+        try writeCommand("alpha", title: "Alpha")
+        let store = CommandStore(rootPaths: [root.path])
+        let published = expectation(description: "initial command snapshot")
+        store.onChange = { commands in
+            XCTAssertTrue(Thread.isMainThread)
+            guard commands.map(\.name) == ["alpha"] else { return }
+            published.fulfill()
+        }
+
+        store.startWatching()
+        wait(for: [published], timeout: 2)
+
+        XCTAssertEqual(store.commands.map(\.name), ["alpha"])
+        store.stopWatching()
+    }
+
     func testWatchBudgetIsStoreWideAndFairlySplit() throws {
         // Six commands, two nested files each; budget of 4 must give the
         // first four commands one nested target apiece rather than zero

@@ -102,13 +102,23 @@ final class CommandStore: @unchecked Sendable {
 
     /// Rescans and notifies `onChange` if the list changed. The disk pass
     /// runs on the caller's thread; only the state commit hops onto
-    /// `stateQueue`. Returns the committed commands and errors as one
-    /// atomic pair — a caller that read them separately could pair this
-    /// pass's commands with a later pass's errors.
+    /// `stateQueue`. A newer requested scan supersedes this one — its
+    /// collected pass never commits. Returns the newest committed commands
+    /// and errors as one atomic pair; a caller that read them separately
+    /// could pair this pass's commands with a later pass's errors.
     @discardableResult
     func scan() -> (commands: [Command], errors: [ScanError]) {
+        let generation = stateQueue.sync {
+            pendingRescan?.cancel()
+            pendingRescan = nil
+            rescanGeneration += 1
+            return rescanGeneration
+        }
         let outcome = collectCommands()
         return stateQueue.sync {
+            guard rescanGeneration == generation else {
+                return (_commands, _errors)
+            }
             commit(outcome)
             return (_commands, _errors)
         }
@@ -258,12 +268,14 @@ final class CommandStore: @unchecked Sendable {
 
     // MARK: Watching
 
-    /// Starts watching roots and command directories, and performs an
-    /// initial scan. The disk pass runs on the caller's thread.
+    /// Starts watching roots and command directories. The initial disk pass
+    /// runs at user-initiated QoS so panel construction never waits on command
+    /// files; `onChange` publishes the resulting snapshot on main.
     func startWatching() {
-        stateQueue.sync { watching = true }
-        let outcome = collectCommands()
-        stateQueue.sync { commit(outcome) }
+        stateQueue.sync {
+            watching = true
+            scheduleRescan(.initial)
+        }
     }
 
     func stopWatching() {
@@ -278,13 +290,29 @@ final class CommandStore: @unchecked Sendable {
         }
     }
 
-    /// Schedules a debounced rescan after a filesystem event. Runs on
-    /// `stateQueue` (the sources' target queue); the disk pass itself hops
-    /// to a utility queue so a burst of events never stalls the getters.
-    /// Weak self: the item is retained by `pendingRescan` — a strong capture
-    /// would pin the store for the debounce window, and a rescan that
-    /// outlives its store has nothing to commit to anyway.
-    private func scheduleRescan() {
+    private enum RescanKind {
+        case initial
+        case filesystemEvent
+
+        var delay: TimeInterval {
+            switch self {
+            case .initial: return 0
+            case .filesystemEvent: return CommandStore.rescanDebounce
+            }
+        }
+
+        var qos: DispatchQoS.QoSClass {
+            switch self {
+            case .initial: return .userInitiated
+            case .filesystemEvent: return .utility
+            }
+        }
+    }
+
+    /// Schedules an off-main rescan. Filesystem events debounce; the initial
+    /// pass starts immediately. Runs on `stateQueue` (the sources' target
+    /// queue). Weak self prevents pending work from extending store lifetime.
+    private func scheduleRescan(_ kind: RescanKind = .filesystemEvent) {
         dispatchPrecondition(condition: .onQueue(stateQueue))
         pendingRescan?.cancel()
         rescanGeneration += 1
@@ -296,12 +324,16 @@ final class CommandStore: @unchecked Sendable {
                 // cancel() is a no-op once the item has started running, so
                 // a superseded pass must drop its own commit — otherwise a
                 // slow stale scan could overwrite a fresher one.
-                guard self.rescanGeneration == generation else { return }
+                guard self.watching,
+                      self.rescanGeneration == generation else { return }
+                self.pendingRescan = nil
                 self.commit(outcome)
             }
         }
         pendingRescan = rescan
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.rescanDebounce, execute: rescan)
+        DispatchQueue.global(qos: kind.qos).asyncAfter(
+            deadline: .now() + kind.delay,
+            execute: rescan)
     }
 
     /// Must run on `stateQueue`.
