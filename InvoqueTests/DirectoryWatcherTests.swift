@@ -144,8 +144,14 @@ final class DirectoryWatcherTests: XCTestCase {
         let watcher = DirectoryWatcher(roots: [scratch], debounce: 0.05) {
             fires.bump()
         }
+        // Resolved-path compare: temporaryDirectory sits under /var →
+        // /private/var, and which form an enumerated URL carries is
+        // Foundation-version dependent — match the real path, not the
+        // string form.
+        let failingPath = failing.resolvingSymlinksInPath().path
         watcher.canOpenTarget = { url in
-            guard url.path == failing.path else { return true }
+            guard url.resolvingSymlinksInPath().path == failingPath
+            else { return true }
             attempts.bump()
             return false
         }
