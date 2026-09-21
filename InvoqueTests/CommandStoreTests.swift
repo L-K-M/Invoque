@@ -64,6 +64,24 @@ final class CommandStoreTests: XCTestCase {
         store.stopWatching()
     }
 
+    /// A stop/start cycle mid-flight must not let the first pass's commit
+    /// land after `stopWatching()` — the restarted initial pass republishes.
+    func testRestartWatchingPublishesFreshSnapshot() throws {
+        try writeCommand("alpha", title: "Alpha")
+        let store = CommandStore(rootPaths: [root.path])
+        let published = expectation(description: "snapshot after restart")
+        store.onChange = { commands in
+            guard commands.map(\.name) == ["alpha"] else { return }
+            published.fulfill()
+        }
+        store.startWatching()
+        store.stopWatching()
+        store.startWatching()
+        wait(for: [published], timeout: 2)
+        XCTAssertEqual(store.commands.map(\.name), ["alpha"])
+        store.stopWatching()
+    }
+
     func testWatchBudgetIsStoreWideAndFairlySplit() throws {
         // Six commands, two nested files each; budget of 4 must give the
         // first four commands one nested target apiece rather than zero

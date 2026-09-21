@@ -108,7 +108,10 @@ final class CommandStore: @unchecked Sendable {
     /// value as best-effort; eventual freshness arrives through `onChange`.
     /// Returns commands and errors as one atomic pair; a caller that read
     /// them separately could pair this pass's commands with a later pass's
-    /// errors.
+    /// errors. Cancelling a pending debounced rescan also drops its
+    /// settle-pass: this scan walks disk as it stands, so if files keep
+    /// changing without further events the settled state only arrives
+    /// with the next filesystem event.
     @discardableResult
     func scan() -> (commands: [Command], errors: [ScanError]) {
         let generation = stateQueue.sync {
