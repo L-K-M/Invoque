@@ -221,7 +221,7 @@ final class CommandPermissionGrantsTests: XCTestCase {
             """
         let manifest = try JSONDecoder().decode(CommandManifest.self,
                                                 from: Data(json.utf8))
-        return Command(manifest: manifest,
-                       directory: URL(fileURLWithPath: "/tmp/\(name)"))
+        return try Command(manifest: manifest,
+                           directory: URL(fileURLWithPath: "/tmp/\(name)"))
     }
 }
