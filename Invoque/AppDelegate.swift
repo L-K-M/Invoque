@@ -225,7 +225,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let webSource = WebSource(engine: { [weak preferences] in
             preferences?.searchEngine ?? .duckDuckGo
         })
-        model.webSearchItem = { webSource.item(for: $0) }
         let sources: [ItemSource] = [
             PathSource(),
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
@@ -236,11 +235,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
         let searchModel = SearchModel(sources: sources, frecency: Frecency(),
                                       entryRules: entryRules)
-        return PanelController(preferences: preferences, model: model,
-                               searchModel: searchModel,
-                               commandStore: commandStore,
-                               commandRunner: commandRunner,
-                               permissionGrants: permissionGrants)
+        let controller = PanelController(preferences: preferences, model: model,
+                                         searchModel: searchModel,
+                                         commandStore: commandStore,
+                                         commandRunner: commandRunner,
+                                         permissionGrants: permissionGrants)
+        // Wired after the controller so the didSet's refresh runs against
+        // a fully assembled model (searchModel is attached inside init) —
+        // one refresh, not one per wiring step.
+        model.webSearchItem = { webSource.item(for: $0) }
+        return controller
     }
 
     @objc private func quit() {

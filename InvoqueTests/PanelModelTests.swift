@@ -556,6 +556,26 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(PanelModel.webSearchKeywords, ["web"])
     }
 
+    /// Switching from `find x` straight into `web x` cancels the pending
+    /// scan — a late batch must not clobber the single web row.
+    func testWebKeywordCancelsPendingFileSearch() async throws {
+        let model = makeModel(items: [])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.fileSearcher = { _, _, emit in
+            Thread.sleep(forTimeInterval: 1.0)
+            emit([Self.fileItem("stale.txt")])
+        }
+        model.query = "find elephant"
+        await awaitFileStarts(model, atLeast: 1)
+        model.query = "web elephant"
+        XCTAssertEqual(model.results.map(\.id), ["web:elephant"])
+        XCTAssertFalse(model.fileSearchIsActive)
+        // The cancelled scan still completes on its own thread — its
+        // landing is what must not overwrite the web row.
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.id), ["web:elephant"])
+    }
+
     // MARK: File-search mode
 
     /// Polls `fileRunCompletions` until `atLeast` scans have reached their
