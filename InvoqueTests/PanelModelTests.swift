@@ -571,6 +571,7 @@ final class PanelModelTests: XCTestCase {
             // ordering regressed.
             if releaseStaleScan.wait(timeout: .now() + 10) == .timedOut {
                 XCTFail("stale file scan was never released")
+                return // don't let a timed-out gate emit outside the test window
             }
             emit([Self.fileItem("stale.txt")])
         }
