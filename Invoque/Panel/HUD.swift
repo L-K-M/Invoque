@@ -43,6 +43,7 @@ enum HUD {
         effect.wantsLayer = true
         effect.layer?.cornerRadius = 12
         effect.layer?.masksToBounds = true
+        effect.layer?.cornerCurve = .continuous
         label.frame = NSRect(
             x: padding.width / 2,
             y: padding.height / 2,
