@@ -235,6 +235,41 @@ final class DetachedSearchModelTests: XCTestCase {
         release.signal()
     }
 
+    /// When the tracked row drops out of a batch entirely (blocked, or
+    /// pushed past the cap), the selection resets to the top — one `0`
+    /// publish, no stale index left behind.
+    func testRefreshResetsSelectionWhenRowVanishes() async {
+        let emitReady = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() } // never leave the searcher blocked
+        let slot = EmitSlot()
+        let session = FileSearchSession(
+            query: "find x", text: "x", debounceNanoseconds: 0,
+            searcher: { _, _, emit in
+                slot.emit = emit
+                emitReady.signal()
+                release.wait()
+            })
+        session.start()
+        XCTAssertEqual(emitReady.wait(timeout: .now() + 5), .success,
+                       "searcher never handed off emit")
+        let model = DetachedSearchModel(session: session,
+                                        entryRules: EntryRules(),
+                                        iconResolver: nil)
+        var published: [Int] = []
+        let cancellable = model.$selection.sink { published.append($0) }
+        defer { cancellable.cancel() }
+
+        slot.emit?([fileItem("aaa.txt"), fileItem("bbb.txt")])
+        await awaitCondition { model.rows.count == 2 }
+        model.selection = 1
+        slot.emit?([fileItem("aaa.txt")])
+        await awaitCondition { model.rows.count == 1 }
+        XCTAssertEqual(published, [0, 1, 0])
+        XCTAssertEqual(model.selectedRow?.title, "aaa.txt")
+        release.signal()
+    }
+
     /// Close retires the session — the window's esc/⌘W/close button all
     /// land here.
     func testCloseCancelsSession() {

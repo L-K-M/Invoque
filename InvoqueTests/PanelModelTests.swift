@@ -830,6 +830,30 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(published, [0, 1])
     }
 
+    /// When the tracked row drops out of a streamed merge entirely
+    /// (blocked, or pushed past the cap), the selection resets to the
+    /// top — one `0` publish, no stale index left behind.
+    func testFileStreamResetsSelectionWhenRowVanishes() async throws {
+        let model = makeModel(items: [])
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("aaa.txt"), Self.fileItem("bbb.txt")])
+            gate.wait()
+            emit([Self.fileItem("aaa.txt")])
+        }
+        var published: [Int] = []
+        let cancellable = model.$selection.sink { published.append($0) }
+        defer { cancellable.cancel() }
+        model.query = "find x"
+        await awaitResults(model) { $0.count == 2 }
+        model.selection = 1
+        gate.signal()
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(published, [0, 1, 0])
+        XCTAssertEqual(model.selectedRow?.title, "aaa.txt")
+    }
+
     /// ⏎ while a scan is in flight hands the session to the detach hook —
     /// the panel releases its list, and the same walk keeps streaming for
     /// the new subscriber rather than restarting or dying with the panel.

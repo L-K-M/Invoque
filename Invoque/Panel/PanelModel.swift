@@ -36,7 +36,7 @@ struct ResultRow: Identifiable, Equatable {
 
     /// Equality covers display fields only — `matchText` is derived search
     /// metadata, and counting it would turn a visually identical rescan
-    /// into a "change" that resets the selection via `results`' didSet.
+    /// into a "change" that republishes the list.
     static func == (lhs: ResultRow, rhs: ResultRow) -> Bool {
         lhs.id == rhs.id && lhs.title == rhs.title
             && lhs.subtitle == rhs.subtitle && lhs.icon == rhs.icon
@@ -169,27 +169,32 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         }
     }
 
-    @Published private(set) var results: [ResultRow] = [] {
-        didSet {
-            // A replaced list is a new result set: restart at the top row —
-            // Spotlight-style — rather than keeping an index that now names
-            // an unrelated row. The file-scan merge arms the flag instead:
-            // it re-points `selection` at the tracked row id itself, and a
-            // reset in between would publish a phantom top selection to
-            // scroll subscribers.
-            if skipNextSelectionReset {
-                skipNextSelectionReset = false
-            } else if selection != 0 {
-                selection = 0
-            }
-        }
-    }
+    /// The displayed rows. Every write goes through `applyResults` — the
+    /// list and the selection it points into commit together, so no
+    /// subscriber ever sees a replaced list with a stale index.
+    @Published private(set) var results: [ResultRow] = []
 
     @Published var selection = 0
 
     /// The currently selected row, or `nil` when there are no results.
     var selectedRow: ResultRow? {
         results.indices.contains(selection) ? results[selection] : nil
+    }
+
+    /// Sole writer for `results`. A `tracking` id keeps the picked row
+    /// stable across a streaming merge (file-scan batches); nil restarts
+    /// at the top row — Spotlight-style, a new result set names a new
+    /// selection. Identical lists are a no-op: re-assigning would only
+    /// republish. `results` commits before `selection` re-points, so a
+    /// scroll subscriber reacting to the index already sees the new list
+    /// and never a transient reset to the top.
+    private func applyResults(_ newResults: [ResultRow], tracking id: String? = nil) {
+        guard newResults != results else { return }
+        results = newResults
+        let index = id.flatMap { id in
+            newResults.firstIndex(where: { $0.id == id })
+        } ?? 0
+        if selection != index { selection = index }
     }
 
     // MARK: Maker routing
@@ -284,7 +289,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             rankedText = nil
             cancelFileSearch()
             cancelFilterRun()
-            if !results.isEmpty { results = [] }
+            applyResults([])
             return
         }
         // Built-in keywords win over filter commands claiming them — the
@@ -308,10 +313,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         let newResults = stabilizedRankedRows(fresh)
         rankedText = query
         // A background rescan landing identical rows must not yank the
-        // selection back to the top (results' didSet resets it) or fire a
-        // redundant objectWillChange.
-        guard newResults != results else { return }
-        results = newResults
+        // selection back to the top or fire a redundant objectWillChange.
+        applyResults(newResults)
     }
 
     /// Maps fresh items to rows, preserving the displayed order of rows
@@ -489,7 +492,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         // list — otherwise the old session's rows linger during the debounce.
         if activeFilterKeyword != keyword {
             activeFilterKeyword = keyword
-            results = []
+            applyResults([])
         }
         filterGeneration += 1
         let generation = filterGeneration
@@ -505,10 +508,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
                 // after this run's effects land, so a poller that sees the
                 // tick also sees the final rows/selection state.
                 defer { filterRunCompletions += 1 }
-                // Identical rows must not re-assign: results' didSet resets
-                // the selection, so a no-op refresh would yank it to the top.
-                guard generation == filterGeneration, rows != results else { return }
-                results = rows
+                guard generation == filterGeneration else { return }
+                applyResults(rows)
             }
         }
     }
@@ -565,10 +566,6 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// anchor for scan completions, mirroring `rankedText`. `nil` whenever
     /// `results` isn't a file-scan list.
     private var fileResultText: String?
-    /// Arms the `results` didSet for one tracked-selection write: the
-    /// file-scan merge re-points `selection` itself, so the reset-to-top
-    /// must not fire between the replace and the re-point.
-    private var skipNextSelectionReset = false
 
     /// Debounced per-keystroke scan — the session streams batches into
     /// `results` as the walk finds them; a stale session's callbacks
@@ -583,7 +580,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         if activeFileKeyword != keyword {
             activeFileKeyword = keyword
             fileResultText = nil
-            results = []
+            applyResults([])
         }
         activeFileText = text
         cancelFileSession()
@@ -593,7 +590,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         // `text` arrives pre-trimmed from `activeFileSearch`.
         guard !text.isEmpty, let searcher = fileSearcher else {
             fileResultText = nil
-            if !results.isEmpty { results = [] }
+            applyResults([])
             return
         }
         let session = FileSearchSession(
@@ -633,21 +630,11 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         rawFileRows = rows
         let merged = stabilizedFileRows(shapeFileRows(rows), text: session.text)
         fileResultText = session.text
-        // Identical rows must not re-assign: results' didSet resets
-        // the selection, so a no-op refresh would yank it to the top.
-        guard merged != results else { return }
         // Streaming batches replace the list mid-scan — track the
         // selection by row id so a merge inserting above the picked row
-        // doesn't snap it back to the top. The flag keeps the didSet's
-        // reset from publishing a phantom `0` between the replace and
-        // the re-point.
-        let selectedID = selectedRow?.id
-        skipNextSelectionReset = true
-        results = merged
-        let index = selectedID.flatMap { id in
-            merged.firstIndex(where: { $0.id == id })
-        } ?? 0
-        if selection != index { selection = index }
+        // doesn't snap it back to the top. The tracked write commits the
+        // list and the re-point together (see `applyResults`).
+        applyResults(merged, tracking: selectedRow?.id)
     }
 
     /// The session's walk ended — count it (stale ones too), then drop
@@ -681,7 +668,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         activeFileText = nil
         fileResultText = nil
         rawFileRows = []
-        if !results.isEmpty { results = [] }
+        applyResults([])
         return session
     }
 
@@ -787,7 +774,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             // change can't push an over-cap list into the panel.
             let shaped = Array(shapeFileRows(rawFileRows)
                 .prefix(SearchModel.maxResults))
-            if shaped != results { results = shaped }
+            applyResults(shaped)
             return
         }
         refreshResults()
@@ -812,9 +799,9 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         rankedText = nil
         cancelFileSearch()
         cancelFilterRun()
-        // Replacing the list resets the selection to the top row via the
-        // results didSet — a fresh command output is a new result set.
-        results = rows
+        // Replacing the list resets the selection to the top row —
+        // a fresh command output is a new result set.
+        applyResults(rows)
     }
 
     /// Maps a `JSResult.Item` to a row under `command`'s filter-row
