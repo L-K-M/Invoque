@@ -26,11 +26,15 @@ final class MakerModelTests: XCTestCase {
     /// Canned responses for `LLMClientServing`; captures the transcripts it
     /// was called with so tests can check the feedback loop.
     private final class StubClient: LLMClientServing, @unchecked Sendable {
-        var model = "stub-model"
         // `complete` mutates from the generation task while assertions read
         // from the test thread — lock both sides like UpdateCheckerTests'
         // stubs do.
         private let lock = NSLock()
+        private var _model = "stub-model"
+        var model: String {
+            get { lock.withLock { _model } }
+            set { lock.withLock { _model = newValue } }
+        }
         private var _responses: [Result<String, Error>] = []
         private var _calls: [[LLMMessage]] = []
         var responses: [Result<String, Error>] {
