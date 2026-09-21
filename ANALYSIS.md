@@ -247,7 +247,7 @@ Concentrated risk is the bridge (JSC gives no ambient authority). In priority or
 
 ---
 
-## Release and supply-chain blockers
+## Release and supply-chain work
 
 ### Sign and notarize public builds
 The release workflow ad-hoc signs and tells users to bypass Gatekeeper, contrary to the documented Developer ID plan. A public stable build must use Developer ID Application signing, hardened runtime, notarization, stapling, and verification from a quarantined clean account. Document secret rotation; never make recursive quarantine removal the normal install path.
@@ -261,8 +261,8 @@ The Xcode package reference tracks Pict's mutable `main` branch and no `Package.
 ### Gate releases on CI for the exact tagged SHA
 The release job checks only that the tag is reachable from `main`; a failing or still-running revision can publish. Require a successful required workflow for the exact SHA, or rerun the complete build, tests, and icon gates before packaging.
 
-### Decide and measure the JavaScriptCore JIT policy
-PLAN says `com.apple.security.cs.allow-jit` arrives with the runtime, but the entitlement is absent. Benchmark filter/action latency under hardened release signing, then either add the entitlement with a security rationale or document interpreter-only execution as deliberate.
+### Benchmark and document the enabled JavaScriptCore JIT path
+The `com.apple.security.cs.allow-jit` entitlement landed on main in `c749e13`, resolving the PLAN/configuration mismatch. Still benchmark filter/action latency under hardened release signing and document why the broader runtime capability is justified.
 
 ---
 
@@ -331,7 +331,7 @@ A single click executes a result immediately. That is fast but unforgiving, espe
 The Memphis app artwork is distinctive at large sizes, but its wordmark, stripes, grain, and confetti collapse at 16–32 px. Supply dedicated small variants built around the cyan center mark and two or three flat colors. Evaluate an optional monochrome template status icon against light/dark menu bars.
 
 ### Panel layout papercuts
-Dividers draw above/below the consent/maker cards, doubling their padding lines (`PanelView.swift:41,58`). Footer is one centered string (no left-verbs/right-count like Raycast; long hints truncate as one unit; panel shows no result count while detached does). Placeholder hardcodes `"Search"` — never contextual (`find` / filter / `make`); no localization anywhere. No selection slide (fill crossfades but never glides — `matchedGeometryEffect` pill). `scrollTo(.center)` heaves the whole list per arrow key — top-anchored scroll with edge padding is calmer (`glm.md` B6). Glow shadow (radius 10, opacity .5 on 6pt spacing) bleeds on light themes. No hairline stroke / inner highlight — glass washes out over busy wallpaper (Raycast-style hairline missing). No focus ring (`focusRingType=.none`). Symbol-vs-bitmap optical mismatch (`.title3` vectors in a 28pt bitmap column). Status icon is full-color in a monochrome menu bar (consider `isTemplate` variant). Detached window ignores theme text (`.primary/.secondary` always, even for solid/gradient `labelHex` themes). (`glm.md` V6: MakerView's system `Button`s/`ProgressView`s keep system styling — on a dark Synthwave `solid` fill with a light label they clash; a tint/label-color pass would keep the card coherent. `glm.md` V7: the pinned-row `pin.fill` at 65 % opacity trailing the row is easy to miss — leading-position badge or stronger treatment.)
+Dividers draw above/below the consent/maker cards, doubling their padding lines (`PanelView.swift:41,58`). Footer is one centered string (no left-verbs/right-count like Raycast; long hints truncate as one unit; panel shows no result count while detached does). Placeholder hardcodes `"Search"` — never contextual (`find` / filter / `make`); no localization anywhere. No selection slide (fill crossfades but never glides — `matchedGeometryEffect` pill). Glow shadow (radius 10, opacity .5 on 6pt spacing) bleeds on light themes. No hairline stroke / inner highlight — glass washes out over busy wallpaper (Raycast-style hairline missing). No focus ring (`focusRingType=.none`). Symbol-vs-bitmap optical mismatch (`.title3` vectors in a 28pt bitmap column). Status icon is full-color in a monochrome menu bar (consider `isTemplate` variant). Detached window ignores theme text (`.primary/.secondary` always, even for solid/gradient `labelHex` themes). (`glm.md` V6: MakerView's system `Button`s/`ProgressView`s keep system styling — on a dark Synthwave `solid` fill with a light label they clash; a tint/label-color pass would keep the card coherent. `glm.md` V7: the pinned-row `pin.fill` at 65 % opacity trailing the row is easy to miss — leading-position badge or stronger treatment.)
 
 ### Accessibility gaps (also speed)
 Custom list has no listbox semantics (rows `.isButton/.isSelected`, no container role — VO may not announce arrow-key moves). Permission Allow unreachable by Tab (focus pinned in search field; ⌘⏎ only). AngleDial gesture-only (needs `.focusable()` + arrows; 46pt minimum). HUD silent to VO (no `NSAccessibility.announce`, no sound). HUD fade ignores Reduce Motion. CRT hurts contrast with no auto-gate (Increase Contrast / low vision). Increase Contrast / Differentiate Without Color unhandled (no border boost; 0.75-opacity subtitles over mid-luma fills likely fail WCAG). Dynamic Type overflows the fixed panel (`lineLimit(1)` truncation). No in-app shortcut reference.
@@ -466,6 +466,9 @@ Export a read-only preview bundle containing manifest, source, permission summar
 - ✅ HUD over fullscreen + clipped corners (+ continuous curve) — PR #30 (review round)
 - ✅ Escaping command entry throws instead of trapping — PR #33 (review round)
 - ✅ Arch hints match whole tokens; fractional dates parse — PR #34 (review round)
+- ✅ Selection scrolling uses minimal edge movement instead of recentering — `f9dc77c`
+- ✅ JavaScriptCore JIT entitlement matches PLAN — `c749e13` (release benchmarks and rationale remain above)
+- ✅ Filter-command picks now train frecency — `99e0e32`
 
 ---
 
