@@ -53,18 +53,5 @@ struct SystemActionConfirmation: Equatable {
         }
     }
 
-    var symbolName: String {
-        switch action {
-        case .restart:
-            return "arrow.counterclockwise"
-        case .shutDown:
-            return "power"
-        case .emptyTrash:
-            return "trash.fill"
-        case .lockScreen:
-            return "lock.fill"
-        case .sleep:
-            return "moon.fill"
-        }
-    }
+    var symbolName: String { action.symbolName }
 }
