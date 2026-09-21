@@ -8,10 +8,10 @@ import SwiftUI
 /// Reduce-Transparency settings automatically — but only when built with the
 /// macOS 26 SDK (`#if compiler(>=6.2)`): older toolchains can't see the `Glass`
 /// type at all, so they compile the blur fallback unconditionally. On
-/// macOS 13–15 — or when the material is `solid`/`gradient`, or Reduce
-/// Transparency is on — the fallback is an `NSVisualEffectView` blur
-/// (`.popover`, the closest match to the `.regularMaterial` the panel used to
-/// draw) or a flat fill / gradient.
+/// macOS 13–15 use an `NSVisualEffectView` blur (`.popover`, the closest
+/// match to the `.regularMaterial` the panel used to draw). Reduce Transparency
+/// replaces either glass path with an opaque tint. Solid and gradient materials
+/// use their configured fills.
 struct PanelBackground: View {
     var material: PanelMaterial
     var tint: Color
@@ -23,9 +23,8 @@ struct PanelBackground: View {
     var opacity: Double
     var cornerRadius: CGFloat
     /// The user's Reduce Transparency setting, supplied by the caller (the
-    /// `@Environment` key needs macOS 14; we target 13) — gates the
-    /// `.glassEffect` path, which has no opaque-transparency fallback of its
-    /// own.
+    /// `@Environment` key needs macOS 14; we target 13) — replaces both
+    /// native glass and the visual-effect fallback with an opaque fill.
     var reduceTransparency: Bool
 
     var body: some View {
@@ -51,29 +50,32 @@ struct PanelBackground: View {
 
     @ViewBuilder
     private func glass(in shape: RoundedRectangle) -> some View {
-        #if compiler(>=6.2)
-        // Xcode 26+ carries the macOS 26 SDK, where `Glass`/`glassEffect`
-        // exist; `#available` then decides at runtime.
-        if #available(macOS 26.0, *), !reduceTransparency {
-            let glass: Glass = {
-                switch material {
-                case .glassClear: return .clear
-                case .glassTinted: return .regular.tint(tint.opacity(max(0.0, min(opacity, 1.0))))
-                default: return .regular
-                }
-            }()
-            Color.clear.glassEffect(glass, in: shape)
+        if reduceTransparency {
+            shape.fill(tint)
         } else {
+            #if compiler(>=6.2)
+            // Xcode 26+ carries the macOS 26 SDK, where `Glass`/`glassEffect`
+            // exist; `#available` then decides at runtime.
+            if #available(macOS 26.0, *) {
+                let glass: Glass = {
+                    switch material {
+                    case .glassClear: return .clear
+                    case .glassTinted: return .regular.tint(tint.opacity(max(0.0, min(opacity, 1.0))))
+                    default: return .regular
+                    }
+                }()
+                Color.clear.glassEffect(glass, in: shape)
+            } else {
+                fallbackGlass(in: shape)
+            }
+            #else
             fallbackGlass(in: shape)
+            #endif
         }
-        #else
-        fallbackGlass(in: shape)
-        #endif
     }
 
-    /// Fallback for macOS 13–15, older SDKs, or Reduce Transparency: a
-    /// blurred panel with a faint tint wash, clipped to the same rounded
-    /// shape.
+    /// Fallback for macOS 13–15 and older SDKs: a blurred panel with a faint
+    /// tint wash, clipped to the same rounded shape.
     @ViewBuilder
     private func fallbackGlass(in shape: RoundedRectangle) -> some View {
         ZStack {
