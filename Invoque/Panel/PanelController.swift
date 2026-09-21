@@ -17,6 +17,12 @@ final class PanelController: NSObject, @unchecked Sendable {
         static let height: CGFloat = 440
     }
 
+    /// Animation constants — a short slide-in from above with fade.
+    private enum Animation {
+        static let duration: TimeInterval = 0.15
+        static let slideOffset: CGFloat = 8
+    }
+
     private let preferences: Preferences
     private let searchModel: SearchModel
     private let model: PanelModel
@@ -31,6 +37,9 @@ final class PanelController: NSObject, @unchecked Sendable {
     private var panelSession = 0
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
+    /// Tracks whether a show/hide animation is in flight — rapid toggles
+    /// cancel the in-progress animation and start a new one.
+    private var isAnimating = false
     /// Hosts the results window a pending file scan detaches into.
     private lazy var detachedSearchWindow = DetachedSearchWindowController(
         preferences: preferences)
@@ -123,7 +132,37 @@ final class PanelController: NSObject, @unchecked Sendable {
                 PanelGeometry.panelOrigin(inVisibleFrame: screen.visibleFrame, panelSize: size))
         }
 
-        panel.orderFrontRegardless()
+        // Cancel any in-flight hide animation — a rapid toggle must not
+        // leave the panel fading out while we try to show it.
+        if isAnimating {
+            NSAnimationContext.current_completionBlock = nil
+            isAnimating = false
+        }
+
+        let reduceMotion = AccessibilityDisplaySettings.shared.reduceMotion
+        if reduceMotion {
+            // No animation — show immediately.
+            panel.alphaValue = 1
+            panel.orderFrontRegardless()
+        } else {
+            // Slide-in from above with fade.
+            panel.alphaValue = 0
+            var frame = panel.frame
+            frame.origin.y += Animation.slideOffset
+            panel.setFrameOrigin(frame.origin)
+            panel.orderFrontRegardless()
+
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = Animation.duration
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                ctx.allowsImplicitAnimation = true
+                panel.animator().alphaValue = 1
+                var targetFrame = panel.frame
+                targetFrame.origin.y -= Animation.slideOffset
+                panel.setFrame(targetFrame, display: true)
+            }
+        }
+
         // Key without activating the app (`.nonactivatingPanel`), then hand
         // focus to the search field for immediate typing.
         panel.makeKey()
@@ -144,11 +183,34 @@ final class PanelController: NSObject, @unchecked Sendable {
 
     func hide() {
         panelSession += 1
-        panel?.orderOut(nil)
         // A dismissed panel must not keep working: a `find` walk would
         // scan the disk for minutes, and a `make` generation would keep
-        // spending API budget for a result nobody sees.
+        // spending API budget for a result nobody sees. Dismiss is when
+        // the user asked — cancel now, not when the fade completes.
         model.panelDidHide()
+        guard let panel, panel.isVisible else { return }
+
+        let reduceMotion = AccessibilityDisplaySettings.shared.reduceMotion
+        if reduceMotion {
+            panel.orderOut(nil)
+            return
+        }
+
+        isAnimating = true
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = Animation.duration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            ctx.allowsImplicitAnimation = true
+            panel.animator().alphaValue = 0
+            var frame = panel.frame
+            frame.origin.y += Animation.slideOffset
+            panel.setFrame(frame, display: true)
+        }, completionHandler: { [weak self] in
+            self?.isAnimating = false
+            panel.orderOut(nil)
+            // Restore alpha for the next show.
+            panel.alphaValue = 1
+        })
     }
 
     // MARK: Commands
