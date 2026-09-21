@@ -686,11 +686,15 @@ final class PanelModel: ObservableObject {
         var head: [RankedRow] = []
         var headIDs = Set<String>()
         for row in results {
+            // Same rule as the ranked twin: the keep-check and the merge
+            // key both read the fresh copy's surface when one exists —
+            // a rescan that renames what the item matches must not keep
+            // (or worse, promote) a row that no longer qualifies.
+            let merged = freshByID[row.id] ?? row
             guard let match = FuzzyMatcher.match(text,
-                                                 candidate: row.matchText),
+                                                 candidate: merged.matchText),
                   headIDs.insert(row.id).inserted else { continue }
-            head.append(rankedRow(freshByID[row.id] ?? row,
-                                  match: match, text: text))
+            head.append(rankedRow(merged, match: match, text: text))
         }
         let tail = freshRows
             .filter { !headIDs.contains($0.id) }

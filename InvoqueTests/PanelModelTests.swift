@@ -1154,7 +1154,7 @@ final class PanelModelTests: XCTestCase {
             Self.appItem(id: "app:stable", title: "Xsafa"),
         ])
         model.query = "saf"
-        // Prefix hit outranks the fuzzy one.
+        // Prefix hit outranks the infix one.
         XCTAssertEqual(model.results.map(\.id), ["app:degrades", "app:stable"])
         model.query = "safa"
         // Both are now infix hits visible in the title — equal merge
@@ -1200,6 +1200,25 @@ final class PanelModelTests: XCTestCase {
         // Parallels is the prefix hit — it rises to the top.
         XCTAssertEqual(model.results.map(\.id),
                        ["app:parallels", "app:pandora"])
+    }
+
+    /// The third merge key: between same-tier survivors, the row whose
+    /// title visibly contains the query promotes over one whose match
+    /// only lives in the hidden matchText surface.
+    func testTitleVisibleHitPromotesOnExtension() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:hidden", title: "Safx",
+                         matchText: "Safx qsafa"),
+            Self.appItem(id: "app:visible", title: "Xsafa"),
+        ])
+        model.query = "saf"
+        // Prefix beats infix: the hidden-surface row leads for now.
+        XCTAssertEqual(model.results.map(\.id), ["app:hidden", "app:visible"])
+        model.query = "safa"
+        // Both land infix-tier ("safa" sits inside "qsafa" and inside
+        // "Xsafa") — only Xsafa's *title* shows the query, so it
+        // promotes past the hidden hit.
+        XCTAssertEqual(model.results.map(\.id), ["app:visible", "app:hidden"])
     }
 
     /// A pin's lead is part of the promotion key: an unpinned row whose
@@ -1387,6 +1406,38 @@ final class PanelModelTests: XCTestCase {
         // takes the top slot rather than appending unseen.
         XCTAssertEqual(model.results.map(\.title),
                        ["safarilong.txt", "safxa.txt"])
+    }
+
+    /// A survivor whose fresh copy renamed its match surface can't keep
+    /// its slot on the stale one — the keep-check and the merge key both
+    /// read the surface that would actually display.
+    func testFileSurvivorMatchesOnFreshSurface() async throws {
+        let model = makeModel(items: [])
+        withShortFileDebounce()
+        let renamed = Item(id: Item.fileIDPrefix + "/tmp/safa-first.txt",
+                           title: "safa-first.txt", subtitle: "/tmp",
+                           icon: .fileURL(URL(fileURLWithPath:
+                                              "/tmp/safa-first.txt")),
+                           action: .openFile(URL(fileURLWithPath:
+                                                 "/tmp/safa-first.txt")),
+                           matchText: "renamed.txt")
+        model.fileSearcher = { text, _, emit in
+            if text == "saf" {
+                emit([Self.fileItem("safa-first.txt")])
+            } else {
+                // Same id, renamed surface — "safa" no longer hits it.
+                emit([renamed, Self.fileItem("safa-second.txt")])
+            }
+        }
+        model.query = "find saf"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["safa-first.txt"])
+        model.query = "find safa"
+        await awaitFileCompletions(model, atLeast: 2)
+        // The stale surface would have kept "safa-first.txt" promoted on
+        // a phantom prefix; on its real surface it sinks below the hit.
+        XCTAssertEqual(model.results.map(\.title),
+                       ["safa-second.txt", "safa-first.txt"])
     }
 
     /// A mode change can't leak the last search's stability anchor — rows
