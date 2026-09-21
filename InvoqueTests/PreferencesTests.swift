@@ -128,6 +128,7 @@ final class PreferencesTests: XCTestCase {
         let preferences = Preferences(defaults: defaults)
         AppearancePreset.vaporwave.apply(to: preferences)
         preferences.decorationSize = 29
+        preferences.panelTypeface = .monospaced
         preferences.resetAppearanceToDefaults()
 
         XCTAssertEqual(preferences.panelMaterial, Preferences.Default.panelMaterial)
@@ -138,6 +139,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.highlightHex, Preferences.Default.highlightHex)
         XCTAssertEqual(preferences.highlightOpacity, Preferences.Default.highlightOpacity)
         XCTAssertEqual(preferences.labelHex, Preferences.Default.labelHex)
+        XCTAssertEqual(preferences.panelTypeface, Preferences.Default.panelTypeface)
         XCTAssertEqual(preferences.panelCornerRadius, Preferences.Default.panelCornerRadius)
         XCTAssertEqual(preferences.highlightCornerRadius, Preferences.Default.highlightCornerRadius)
         XCTAssertEqual(preferences.adaptiveAccent, Preferences.Default.adaptiveAccent)
