@@ -90,6 +90,12 @@ final class CalculatorSourceTests: XCTestCase {
         XCTAssertEqual(item.action, .copyText("15"))
     }
 
+    func testUppercasePrefixesResolve() throws {
+        let item = try XCTUnwrap(source.items(matching: "0X1A").first)
+        XCTAssertEqual(item.title, "0X1A = 26")
+        XCTAssertEqual(item.action, .copyText("26"))
+    }
+
     /// A single digit is likelier an app-search fragment than a
     /// conversion request — and the row is a head pin that would outrank
     /// real matches — so decimal input needs two digits.
