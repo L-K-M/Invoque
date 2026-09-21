@@ -65,8 +65,11 @@ final class DetachedSearchModel: ObservableObject {
         guard shaped != rows else { return }
         let selectedID = selectedRow?.id
         rows = shaped
-        selection = selectedID
+        // Guard the write: `@Published` emits on every assignment, so an
+        // unchanged re-point would still publish a phantom selection.
+        let index = selectedID
             .flatMap { id in shaped.firstIndex(where: { $0.id == id }) } ?? 0
+        if selection != index { selection = index }
     }
 
     /// `PanelModel.shapeFileRows`' twin — blocked ids drop, pinned lead,
