@@ -799,8 +799,10 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         rankedText = nil
         cancelFileSearch()
         cancelFilterRun()
-        // Replacing the list resets the selection to the top row —
-        // a fresh command output is a new result set.
+        // A changed list restarts the selection at the top row — a fresh
+        // command output is a new result set. Identical output is a no-op
+        // under applyResults' guard: re-emitting the same rows keeps the
+        // pick rather than yanking it to the top.
         applyResults(rows)
     }
 

@@ -289,6 +289,20 @@ final class PanelModelTests: XCTestCase {
                       "Timed out waiting for results", file: file, line: line)
     }
 
+    /// Polls `predicate` until it holds or ~7 s pass — for conditions that
+    /// aren't `model.results` (published sequences, session flags).
+    private func awaitCondition(
+        _ predicate: () -> Bool,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        let deadline = Date().addingTimeInterval(7)
+        while !predicate(), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertTrue(predicate(), "Timed out waiting for the model",
+                      file: file, line: line)
+    }
+
     /// Polls `filterRunCompletions` until `atLeast` filter runs have reached
     /// their completion point — the deterministic way to await debounced
     /// runs whose rows may be dropped (stale) or deduplicated (identical).
@@ -815,10 +829,13 @@ final class PanelModelTests: XCTestCase {
         defer { gate.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             emit([Self.fileItem("bbb.txt")])
-            gate.wait()
+            // Bounded: a wedged pipeline must fail the test, not hang CI.
+            _ = gate.wait(timeout: .now() + 5)
             emit([Self.fileItem("aaa.txt"), Self.fileItem("bbb.txt")])
         }
-        var published: [Int] = []
+        // `$selection` sinks fire on the publishing thread — the log's
+        // lock makes the assertions a synchronized read.
+        let published = IntLog()
         let cancellable = model.$selection.sink { published.append($0) }
         defer { cancellable.cancel() }
         model.query = "find x"
@@ -826,31 +843,46 @@ final class PanelModelTests: XCTestCase {
         gate.signal()
         await awaitResults(model) { $0.count == 2 }
         // Subscribe-emit baseline `0`, then the single re-point — a
-        // didSet reset between the writes would land `0` again mid-pair.
-        XCTAssertEqual(published, [0, 1])
+        // reset between the writes would land `0` again mid-pair.
+        await awaitCondition { published.snapshot.count >= 2 }
+        XCTAssertEqual(published.snapshot, [0, 1])
     }
 
     /// When the tracked row drops out of a streamed merge entirely
     /// (blocked, or pushed past the cap), the selection resets to the
-    /// top — one `0` publish, no stale index left behind.
+    /// top — one `0` publish, no stale index left behind. The middle emit
+    /// keeps the row while inserting above it: that's the negative control
+    /// proving the reset fires on *vanish*, not on every emit, and it
+    /// covers the index-shift re-point at the same time.
     func testFileStreamResetsSelectionWhenRowVanishes() async throws {
         let model = makeModel(items: [])
         let gate = DispatchSemaphore(value: 0)
-        defer { gate.signal() } // never leave the searcher blocked
+        let gate2 = DispatchSemaphore(value: 0)
+        defer { gate.signal(); gate2.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             emit([Self.fileItem("aaa.txt"), Self.fileItem("bbb.txt")])
-            gate.wait()
+            _ = gate.wait(timeout: .now() + 5)
+            emit([Self.fileItem("ccc.txt"), Self.fileItem("aaa.txt"),
+                  Self.fileItem("bbb.txt")])
+            _ = gate2.wait(timeout: .now() + 5)
             emit([Self.fileItem("aaa.txt")])
         }
-        var published: [Int] = []
+        let published = IntLog()
         let cancellable = model.$selection.sink { published.append($0) }
         defer { cancellable.cancel() }
         model.query = "find x"
         await awaitResults(model) { $0.count == 2 }
-        model.selection = 1
+        model.selection = 1 // bbb.txt
         gate.signal()
+        await awaitResults(model) { $0.count == 3 }
+        // bbb.txt survived at a shifted index — the re-point publishes 2.
+        await awaitCondition { published.snapshot.count >= 3 }
+        XCTAssertEqual(published.snapshot, [0, 1, 2])
+        XCTAssertEqual(model.selectedRow?.title, "bbb.txt")
+        gate2.signal()
         await awaitResults(model) { $0.count == 1 }
-        XCTAssertEqual(published, [0, 1, 0])
+        await awaitCondition { published.snapshot.count >= 4 }
+        XCTAssertEqual(published.snapshot, [0, 1, 2, 0])
         XCTAssertEqual(model.selectedRow?.title, "aaa.txt")
     }
 
@@ -1793,6 +1825,16 @@ final class PanelModelTests: XCTestCase {
         private var flag = false
         func raise() { lock.withLock { flag = true } }
         var raised: Bool { lock.withLock { flag } }
+    }
+
+    /// A thread-safe `Int` log — `$selection` sinks fire on whichever
+    /// thread assigns, so a plain array would race with the asserting
+    /// test thread (Thread Sanitizer would flag it).
+    private final class IntLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Int] = []
+        func append(_ value: Int) { lock.withLock { values.append(value) } }
+        var snapshot: [Int] { lock.withLock { values } }
     }
 
     private final class MakerStubClient: LLMClientServing, @unchecked Sendable {

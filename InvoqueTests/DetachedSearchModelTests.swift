@@ -221,7 +221,9 @@ final class DetachedSearchModelTests: XCTestCase {
         let model = DetachedSearchModel(session: session,
                                         entryRules: EntryRules(),
                                         iconResolver: nil)
-        var published: [Int] = []
+        // The sink fires on the emit-delivery thread — the log's lock is
+        // what makes the test-thread assertion a synchronized read.
+        let published = IntLog()
         let cancellable = model.$selection.sink { published.append($0) }
         defer { cancellable.cancel() }
 
@@ -231,7 +233,8 @@ final class DetachedSearchModelTests: XCTestCase {
         await awaitCondition { model.rows.count == 2 }
         // Subscribe-emit baseline `0`, then the single re-point — a
         // reset-first write pair would land `0` again between them.
-        XCTAssertEqual(published, [0, 1])
+        await awaitCondition { published.snapshot.count >= 2 }
+        XCTAssertEqual(published.snapshot, [0, 1])
         release.signal()
     }
 
@@ -256,7 +259,9 @@ final class DetachedSearchModelTests: XCTestCase {
         let model = DetachedSearchModel(session: session,
                                         entryRules: EntryRules(),
                                         iconResolver: nil)
-        var published: [Int] = []
+        // The sink fires on the emit-delivery thread — the log's lock is
+        // what makes the test-thread assertion a synchronized read.
+        let published = IntLog()
         let cancellable = model.$selection.sink { published.append($0) }
         defer { cancellable.cancel() }
 
@@ -265,7 +270,11 @@ final class DetachedSearchModelTests: XCTestCase {
         model.selection = 1
         slot.emit?([fileItem("aaa.txt")])
         await awaitCondition { model.rows.count == 1 }
-        XCTAssertEqual(published, [0, 1, 0])
+        // Wait on the sequence itself — `rows` is written before the
+        // re-point inside `refresh`, so polling rows alone could read the
+        // log before the final `0` lands.
+        await awaitCondition { published.snapshot == [0, 1, 0] }
+        XCTAssertEqual(published.snapshot, [0, 1, 0])
         XCTAssertEqual(model.selectedRow?.title, "aaa.txt")
         release.signal()
     }
@@ -286,6 +295,24 @@ final class DetachedSearchModelTests: XCTestCase {
     /// `emitReady`'s wait establishes the happens-before.
     private final class EmitSlot {
         var emit: (([Item]) -> Void)?
+    }
+
+    /// A thread-safe `Int` log — `$selection` sinks fire on whichever
+    /// thread assigns, so a plain array would race with the asserting
+    /// test thread (Thread Sanitizer would flag it).
+    private final class IntLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Int] = []
+        func append(_ value: Int) {
+            lock.lock()
+            values.append(value)
+            lock.unlock()
+        }
+        var snapshot: [Int] {
+            lock.lock()
+            defer { lock.unlock() }
+            return values
+        }
     }
 
     /// The `EntryRules` stub — records the writes pin/block generate.
