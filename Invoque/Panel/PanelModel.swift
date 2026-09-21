@@ -729,6 +729,32 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         Item.isManageableID(row.id)
     }
 
+    /// The ⌘C payload for `row`: the target for file and app rows (the
+    /// filesystem path), the address for URL rows, the row's own payload
+    /// for copy rows (a calculator result), else the title. Never nil —
+    /// every row has something worth copying.
+    static func copyPayload(for row: ResultRow) -> String {
+        switch row.action {
+        case .openApp(let url), .openFile(let url), .revealInFinder(let url):
+            return url.path
+        case .openURL(let url):
+            return url.absoluteString
+        case .copyText(let text):
+            return text
+        case .runCommand, .enterFilter, .system:
+            return row.title
+        }
+    }
+
+    /// The ⌘C payload for the selected row — nil when a card (consent,
+    /// maker) owns the panel or no row is selected, so the chord is a
+    /// no-op rather than copying a row nobody can see.
+    func copySelectedRowPayload() -> String? {
+        guard permissionRequest == nil, !makerIsActive else { return nil }
+        guard let row = selectedRow else { return nil }
+        return Self.copyPayload(for: row)
+    }
+
     func isPinned(_ row: ResultRow) -> Bool {
         entryRules.isPinned(row.id)
     }

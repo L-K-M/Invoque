@@ -21,11 +21,11 @@ final class LauncherPanel: NSPanel {
     /// it can never outlive the SwiftUI hierarchy that owns it.
     weak var preferredFirstResponder: NSView?
 
-    /// ⌘P / ⌘B on the results list — pin and block the selected entry.
-    /// Wired by the controller; the model decides whether the chord
-    /// applies (no manageable row, a card owning the panel → no-op).
+    /// ⌘P pins, ⌘B blocks, ⌘C copies — the selected entry. Wired by the
+    /// controller; the model decides whether the chord applies.
     var onPinChord: (() -> Void)?
     var onBlockChord: (() -> Void)?
+    var onCopyChord: (() -> Void)?
 
     /// A borderless panel would not become key by default; the panel must
     /// become key to receive typing, which is the whole point of summoning it.
@@ -61,9 +61,11 @@ final class LauncherPanel: NSPanel {
     }
 
     /// ⌘-chords land here during key dispatch — after the focused field
-    /// declines them, before the main menu sees them. ⌘P/⌘B are ours
+    /// declines them, before the main menu sees them. ⌘P/⌘B/⌘C are ours
     /// outright: they have no other meaning in a plain search field, and
     /// claiming them unconditionally keeps a no-op chord from beeping.
+    /// ⌘C's one exception: a text selection in the search field (or a
+    /// Maker input) keeps the normal copy — the Edit menu handles it.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown,
            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
@@ -75,6 +77,12 @@ final class LauncherPanel: NSPanel {
                 return true
             case "b":
                 if !event.isARepeat { onBlockChord?() }
+                return true
+            case "c":
+                if (firstResponder as? NSTextView)?.selectedRange().length ?? 0 > 0 {
+                    return super.performKeyEquivalent(with: event)
+                }
+                if !event.isARepeat { onCopyChord?() }
                 return true
             default:
                 break
