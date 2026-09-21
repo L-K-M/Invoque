@@ -72,11 +72,14 @@ final class MakerModel: ObservableObject {
     /// is the published projection for the view.
     private(set) var transcript: [LLMMessage] = []
 
-    private let clientProvider: () -> LLMClientServing
-    private let runner: CommandRunner
-    private let writer: CommandWriter
-    private let store: CommandStore?
-    private let permissionGrants: CommandPermissionGrants
+    // Assigned once at init and frozen thereafter — `nonisolated(unsafe)`
+    // lets the nonisolated init write them and keeps their reads out of the
+    // actor for a set that can never change anyway.
+    nonisolated(unsafe) private let clientProvider: () -> LLMClientServing
+    nonisolated(unsafe) private let runner: CommandRunner
+    nonisolated(unsafe) private let writer: CommandWriter
+    nonisolated(unsafe) private let store: CommandStore?
+    nonisolated(unsafe) private let permissionGrants: CommandPermissionGrants
 
     private var generationTask: Task<Void, Never>?
     /// Temp directory the current draft is staged into for test runs.
@@ -92,10 +95,10 @@ final class MakerModel: ObservableObject {
     /// `client` is a factory, not an instance, so each generation snapshots
     /// the current Settings (a mid-session model change applies at once).
     /// `store` is rescanned after a save; nil is fine for tests.
-    /// Actor-isolated like the rest of the class — a `nonisolated` init
-    /// could not assign the actor-isolated stored `let`s below, so callers
-    /// (AppDelegate, the test helpers) construct on the main actor.
-    init(client: @escaping () -> LLMClientServing,
+    /// Nonisolated so the model can be constructed off the main actor
+    /// (AppDelegate's lazy panel factory, non-actor test helpers) — the
+    /// stored `let`s it assigns are `nonisolated(unsafe)` above.
+    nonisolated init(client: @escaping () -> LLMClientServing,
          runner: CommandRunner,
          writer: CommandWriter,
          store: CommandStore? = nil,

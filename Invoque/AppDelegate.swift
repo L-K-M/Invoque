@@ -23,7 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: NSApplicationDelegate
 
-    @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Don't install global hooks or UI while running under XCTest.
         guard !Self.isRunningTests else { return }

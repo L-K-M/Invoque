@@ -1,7 +1,6 @@
 import XCTest
 @testable import Invoque
 
-@MainActor
 final class PanelModelTests: XCTestCase {
 
     private var defaults: UserDefaults!
