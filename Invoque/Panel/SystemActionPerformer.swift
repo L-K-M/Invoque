@@ -71,6 +71,12 @@ enum SystemActionPerformer {
         DispatchQueue.global(qos: .utility).async {
             let trash = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".Trash", isDirectory: true)
+            // A fresh account may have no ~/.Trash at all — that is an
+            // empty Trash, not a read failure.
+            guard FileManager.default.fileExists(atPath: trash.path) else {
+                HUD.show("Trash emptied")
+                return
+            }
             guard let failures = emptyTrashContents(at: trash) else {
                 HUD.show("Couldn't read the Trash")
                 return
@@ -93,6 +99,11 @@ enum SystemActionPerformer {
             do {
                 try FileManager.default.removeItem(at: item)
             } catch {
+                // Finder or a second Empty Trash may have removed it
+                // first — a vanished entry is not a failure.
+                if !FileManager.default.fileExists(atPath: item.path) {
+                    continue
+                }
                 failures += 1
                 NSLog("Invoque: could not remove %@ from Trash: %@",
                       item.lastPathComponent, error.localizedDescription)

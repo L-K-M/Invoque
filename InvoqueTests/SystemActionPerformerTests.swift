@@ -47,6 +47,7 @@ final class SystemActionPerformerTests: XCTestCase {
     /// A read-only Trash keeps its entries — removal needs write on the
     /// parent — and the failures come back counted, not silently dropped.
     func testEmptyTrashContentsCountsUnremovableEntries() throws {
+        try XCTSkipIf(geteuid() == 0, "Root ignores directory permissions")
         try "a".write(to: trash.appendingPathComponent("a.txt"),
                       atomically: true, encoding: .utf8)
         try "b".write(to: trash.appendingPathComponent("b.txt"),
