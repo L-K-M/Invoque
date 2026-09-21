@@ -308,10 +308,12 @@ struct PanelView: View {
             // `.task(id:)` instead of `.onChange`: the non-deprecated
             // onChange signature requires macOS 14 and we target 13. The key
             // is the selected row's identity, not the index — a new query can
-            // replace every row while the index stays the same.
+            // replace every row while the index stays the same. No anchor:
+            // scrolls the minimum needed, so a visible row doesn't drag the
+            // list to center on every keypress.
             .task(id: model.selectedRow?.id) {
                 guard let id = model.selectedRow?.id else { return }
-                proxy.scrollTo(id, anchor: .center)
+                proxy.scrollTo(id)
             }
         }
         .frame(maxHeight: .infinity)
