@@ -479,6 +479,49 @@ final class SearchModelTests: XCTestCase {
         XCTAssertEqual(results.last?.id, "web:safari")
     }
 
+    /// A typed/pasted URL pins ahead of ranked matches and the web
+    /// fallback — the address is the intent, and searching for it (what
+    /// the fallback row does) must not own ⏎.
+    func testURLRowPinsFirst() {
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:spoiler", title: "https://example.com app"),
+        ]
+        let model = makeModel(sources: [source, URLSource(), WebSource()])
+        let results = model.results(for: "https://example.com/docs")
+        XCTAssertEqual(results.first?.id,
+                       "url:https://example.com/docs")
+        XCTAssertEqual(results.last?.id, "web:https://example.com/docs")
+    }
+
+    /// The URL pin reserves its slot — a noisy ranked list can't push it
+    /// off the page, exactly when the address is what the user wants.
+    func testURLRowKeepsSlotWhenRankedFillsCap() {
+        let apps = StubSource()
+        apps.stubbedItems = (0..<60).map { index in
+            Self.appItem(id: "app:item-\(index)",
+                         title: "https://example.com/release \(index)")
+        }
+        let model = makeModel(sources: [apps, URLSource(), WebSource()])
+        let results = model.results(for: "https://example.com/release")
+        XCTAssertEqual(results.first?.id, "url:https://example.com/release")
+        XCTAssertEqual(results.count, SearchModel.maxResults)
+        XCTAssertEqual(results.last?.id, "web:https://example.com/release")
+    }
+
+    /// Blocked functional rows drop too — a hand-edited `url:` block is
+    /// honored ahead of the pin classification, like `path:`/`web:`.
+    func testBlockedURLRowDrops() {
+        let rules = StubRules()
+        rules.blocked = ["url:https://example.com"]
+        let model = makeModel(sources: [URLSource(), WebSource()],
+                              rules: rules)
+        // Only the url row is blocked; the web fallback (a different id)
+        // still lands, so ⏎ degrades to a search instead of nothing.
+        XCTAssertEqual(model.results(for: "https://example.com").map(\.id),
+                       ["web:https://example.com"])
+    }
+
     // MARK: Pinned & blocked entries
 
     /// A pinned entry leads the ranked list even when an unpinned match

@@ -149,8 +149,11 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   copies), `SystemSource`
   (lock/sleep/restart/empty trash…), `PathSource` (a pasted/typed
   filesystem path that exists pins first — ⏎ opens folders, reveals
-  files in Finder; ⌘⏎ is the inverse), `WebSource` (fallback "Search
-  for X" against the configured `SearchEngine` — Settings → General).
+  files in Finder; ⌘⏎ is the inverse), `URLSource` (a pasted/typed
+  http(s) URL pins first alongside paths — ⏎ opens it in the browser,
+  so the web fallback can't turn an address into a search), `WebSource`
+  (fallback "Search for X" against the configured `SearchEngine` —
+  Settings → General).
 - `CommandStore` performs its initial disk scan and watcher setup off-main;
   the panel can render immediately and `CommandSource` republishes on arrival.
 - Consequential system actions (restart, shutdown, empty Trash) replace the
@@ -198,8 +201,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   to the user), then shorter title, then frecency
   (persisted usage counts in UserDefaults), then the alignment score,
   then title/id for a total order. Pinned rows keep their slots:
-  `PathSource` rows first (a typed address is a direct intent),
-  calculator answers next, web fallback last.
+  `PathSource`/`URLSource` rows first (a typed address is a direct
+  intent), calculator answers next, web fallback last.
 - Empty query — top hits: the freshly summoned panel lists what the user
   actually launches — frecency-recorded apps, commands, and system
   actions, best score first, capped at nine (blocked ids honored, and
