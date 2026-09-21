@@ -433,6 +433,15 @@ final class MakerModelTests: XCTestCase {
 
     // MARK: Cancel generation
 
+    /// Lock-guarded one-way flag for cross-thread signals observed from
+    /// `async` tests — `DispatchSemaphore.wait` is unavailable there.
+    private final class LockedFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var flag = false
+        func raise() { lock.withLock { flag = true } }
+        var raised: Bool { lock.withLock { flag } }
+    }
+
     /// A provider that never answers — the cancel path is what ends the
     /// spend, so the stub hangs until its task is cancelled.
     private final class HangingClient: LLMClientServing, @unchecked Sendable {
@@ -481,20 +490,17 @@ final class MakerModelTests: XCTestCase {
             return
         }
         // The phase poll exits on its first .idle read — the real unwind
-        // signal is `started` resolving. Bound that too: a no-op'd cancel
-        // leaves it unresolved, and an unbounded await would hang the
-        // suite on exactly the regression this test exists to catch.
-        let unwound = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { _ = await started.value; return true }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                return false
-            }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
+        // signal is `started` resolving. Observe it via a flag and poll:
+        // `await started.value` — directly or inside a task group (a group
+        // joins ALL children even after cancelAll) — would hang the suite
+        // on exactly the regression this test exists to catch.
+        let unwound = LockedFlag()
+        Task { await started.value; unwound.raise() }
+        let unwindDeadline = Date().addingTimeInterval(5)
+        while !unwound.raised, Date() < unwindDeadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
         }
-        XCTAssertTrue(unwound,
+        XCTAssertTrue(unwound.raised,
                       "cancelled generation did not unwind — did generate() suspend between the phase flip and the generationTask assignment?")
         let transcript = await model.transcript
         XCTAssertEqual(transcript.map(\.role), [.system, .user])
