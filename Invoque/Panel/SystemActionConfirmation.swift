@@ -20,8 +20,10 @@ struct SystemActionConfirmation: Equatable {
             return "Shut down this Mac?"
         case .emptyTrash:
             return "Empty Trash?"
-        case .lockScreen, .sleep:
-            return ""
+        case .lockScreen:
+            return "Lock this Mac?"
+        case .sleep:
+            return "Put this Mac to sleep?"
         }
     }
 
@@ -32,7 +34,7 @@ struct SystemActionConfirmation: Equatable {
         case .emptyTrash:
             return "This permanently deletes items in your home Trash. This cannot be undone."
         case .lockScreen, .sleep:
-            return ""
+            return "You can unlock or wake this Mac to continue."
         }
     }
 
@@ -44,8 +46,10 @@ struct SystemActionConfirmation: Equatable {
             return "Shut Down"
         case .emptyTrash:
             return "Empty Trash"
-        case .lockScreen, .sleep:
-            return "Confirm"
+        case .lockScreen:
+            return "Lock Screen"
+        case .sleep:
+            return "Sleep"
         }
     }
 

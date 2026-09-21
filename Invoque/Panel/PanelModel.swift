@@ -930,7 +930,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
 
     /// Moves the selection by `delta` rows, wrapping at both ends.
     func moveSelection(by delta: Int) {
-        guard !results.isEmpty else { return }
+        guard permissionRequest == nil, systemActionConfirmation == nil,
+              !results.isEmpty else { return }
         let count = results.count
         // Double modulo: plain `%` would go out of range for negative deltas.
         selection = ((selection + delta) % count + count) % count
