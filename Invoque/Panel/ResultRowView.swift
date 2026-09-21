@@ -40,6 +40,8 @@ struct ResultRowView: View {
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 titleText
+                    .foregroundStyle(titleColor)
+                    .lineLimit(1)
                 Text(row.subtitle)
                     .font(typeface.font(.caption))
                     .foregroundStyle(subtitleColor)
