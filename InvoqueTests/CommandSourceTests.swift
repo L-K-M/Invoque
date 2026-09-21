@@ -132,19 +132,46 @@ final class CommandSourceTests: XCTestCase {
                        .enterFilter(keyword: "em", commandName: "emoji"))
     }
 
-    /// The store's off-main initial pass publishes through onChange — a
-    /// source wired before startWatching must see the first snapshot.
+    /// The app's ordering: the store starts watching at launch and the
+    /// panel's source comes up while the initial pass is in flight. The
+    /// publish is delivered on main, so it cannot land between these
+    /// synchronous statements — the source must still catch it.
     func testWatchedInitialScanReloadsWiredSource() throws {
         try writeCommand("fresh", title: "Fresh")
         let store = CommandStore(rootPaths: [root.path])
+        store.startWatching()
         let source = CommandSource(store: store, autoReload: false)
         let reloaded = expectation(description: "source reload")
         source.onReload = { reloaded.fulfill() }
 
-        store.startWatching()
         wait(for: [reloaded], timeout: 2)
 
         XCTAssertEqual(source.items(matching: "").map(\.title), ["Fresh"])
+        store.stopWatching()
+    }
+
+    /// A source created after the initial publish already fired — a lazily
+    /// built panel — must read the committed snapshot immediately and still
+    /// receive later publishes. `items(matching:)` reads `store.commands`
+    /// live, so there is no snapshot to hydrate and no empty window.
+    func testSourceCreatedAfterInitialPublishReadsCommittedState() throws {
+        try writeCommand("fresh", title: "Fresh")
+        let store = CommandStore(rootPaths: [root.path])
+        let initial = expectation(description: "initial publish")
+        store.onChange = { _ in initial.fulfill() }
+        store.startWatching()
+        wait(for: [initial], timeout: 2)
+
+        let source = CommandSource(store: store, autoReload: false)
+        XCTAssertEqual(source.items(matching: "").map(\.title), ["Fresh"])
+
+        let reloaded = expectation(description: "source reload")
+        source.onReload = { reloaded.fulfill() }
+        try writeCommand("beta", title: "Beta")
+        store.scan()
+        wait(for: [reloaded], timeout: 2)
+        XCTAssertEqual(source.items(matching: "").map(\.title),
+                       ["Beta", "Fresh"])
         store.stopWatching()
     }
 
