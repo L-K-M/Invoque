@@ -28,6 +28,9 @@ struct Item: Identifiable, Equatable {
     /// filesystem path. Pinned first — a typed address is a direct intent,
     /// not a candidate among fuzzy matches.
     static let pathIDPrefix = "path:"
+    /// Rows produced by `ClipboardSource` — recent clipboard entries.
+    /// Not frecency-eligible: clipboard history is transient by nature.
+    static let clipboardIDPrefix = "clip:"
 
     /// Whether an id belongs to a pinned row — one that bypasses ranking
     /// entirely. One place so `SearchModel` and `PanelModel` can't drift.
@@ -62,6 +65,27 @@ struct Item: Identifiable, Equatable {
     /// The string the matcher scores, usually the title plus extra keywords.
     /// Kept separate from `title` so sources can add invisible match words.
     let matchText: String
+
+    /// The source category, derived from the id prefix. Used for the
+    /// colored source badge in result rows — a quick visual cue for where
+    /// a result came from.
+    var sourceType: SourceType {
+        if id.hasPrefix(Self.appIDPrefix) { return .app }
+        if id.hasPrefix(Self.commandIDPrefix) { return .command }
+        if id.hasPrefix(Self.systemIDPrefix) { return .system }
+        if id.hasPrefix(Self.fileIDPrefix) { return .file }
+        if id.hasPrefix(Self.pathIDPrefix) { return .path }
+        if id.hasPrefix(Self.calculatorIDPrefix) { return .calculator }
+        if id.hasPrefix(Self.webIDPrefix) { return .web }
+        if id.hasPrefix(Self.filterRowIDPrefix) { return .filter }
+        if id.hasPrefix(Self.clipboardIDPrefix) { return .clipboard }
+        return .unknown
+    }
+
+    /// Source categories for the colored badge.
+    enum SourceType: String {
+        case app, command, system, file, path, calculator, web, filter, clipboard, unknown
+    }
 
     // MARK: Icon
 

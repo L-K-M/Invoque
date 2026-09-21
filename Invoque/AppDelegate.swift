@@ -226,6 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             commandSource,
             CalculatorSource(),
             SystemSource(),
+            ClipboardSource(),
             WebSource(engine: { [weak preferences] in
                 preferences?.searchEngine ?? .duckDuckGo
             }),
