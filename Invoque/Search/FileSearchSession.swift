@@ -66,6 +66,10 @@ final class FileSearchSession {
     /// — its deinit cancels the task and stragglers no-op on the weak
     /// hops.
     func start() {
+        // One walk per session — a second start would interleave
+        // snapshots, and start-after-cancel would burn a doomed scan
+        // whose emissions `absorb` drops anyway.
+        guard task == nil, !finished else { return }
         let text = self.text
         let searcher = self.searcher
         let debounce = self.debounceNanoseconds
@@ -73,7 +77,12 @@ final class FileSearchSession {
             try? await Task.sleep(nanoseconds: debounce)
             guard !Task.isCancelled else { return }
             DispatchQueue.main.async { [weak self] in
-                self?.onStart?()
+                // The cancel probe above is a TOCTOU window: a cancel on
+                // main can run `finish` while this hop sits queued.
+                // `isPending` is the same guard `absorb` uses — a start
+                // after finish would fire the hook outside the pending
+                // window it documents.
+                if self?.isPending == true { self?.onStart?() }
             }
             searcher(text, { Task.isCancelled }) { items in
                 DispatchQueue.main.async { [weak self] in

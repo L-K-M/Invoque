@@ -751,6 +751,7 @@ final class PanelModelTests: XCTestCase {
     func testFileSearchStreamsBatches() async throws {
         let model = makeModel(items: [])
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             emit([Self.fileItem("first.txt")])
             gate.wait()
@@ -771,6 +772,7 @@ final class PanelModelTests: XCTestCase {
     func testFileStreamKeepsSelectionOnRow() async throws {
         let model = makeModel(items: [])
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             emit([Self.fileItem("bbb.txt")])
             gate.wait()
@@ -790,10 +792,15 @@ final class PanelModelTests: XCTestCase {
     func testReturnDuringPendingScanDetachesSession() async throws {
         let model = makeModel(items: [])
         let gate = DispatchSemaphore(value: 0)
+        let gate2 = DispatchSemaphore(value: 0)
+        defer { gate.signal(); gate2.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             emit([Self.fileItem("first.txt")])
             gate.wait()
             emit([Self.fileItem("first.txt"), Self.fileItem("second.txt")])
+            gate2.wait()
+            emit([Self.fileItem("first.txt"), Self.fileItem("second.txt"),
+                  Self.fileItem("third.txt")])
         }
         var detached: FileSearchSession?
         model.onDetachFileSearch = { detached = $0 }
@@ -818,7 +825,15 @@ final class PanelModelTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTAssertEqual(session.items.map(\.title), ["first.txt", "second.txt"])
+
+        // Closing the window retires the scan: post-cancel emissions
+        // drop on `absorb`'s isPending guard, and the searcher itself
+        // unwedges via Task.isCancelled.
         session.cancel()
+        gate2.signal()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(session.items.map(\.title), ["first.txt", "second.txt"])
+        XCTAssertFalse(session.isPending)
     }
 
     /// Leaving file mode after a detach must not kill the handed-off
@@ -826,6 +841,7 @@ final class PanelModelTests: XCTestCase {
     func testModeSwitchAfterDetachKeepsSessionAlive() async throws {
         let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             gate.wait()
             emit([Self.fileItem("late.txt")])
@@ -874,6 +890,7 @@ final class PanelModelTests: XCTestCase {
     func testTapSubmitDoesNotDetach() async throws {
         let model = makeModel(items: [])
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             emit([Self.fileItem("first.txt")])
             gate.wait()

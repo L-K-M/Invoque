@@ -141,6 +141,13 @@ final class DetachedSearchModel: ObservableObject {
         return blocked ? "Blocked \(row.title)" : "Unblocked \(row.title)"
     }
 
+    /// A pin/block made elsewhere (the panel, the Settings lists) — the
+    /// controller forwards the shared `entryRulesChanged` hook here so
+    /// the detached list re-shapes without touching the session.
+    func refreshRules() {
+        refresh()
+    }
+
     /// The window is closing — retire the session. A finished session
     /// no-ops; a live walk cancels.
     func close() {

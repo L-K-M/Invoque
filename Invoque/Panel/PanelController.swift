@@ -79,6 +79,12 @@ final class PanelController: NSObject {
                                            entryRules: self.model.entryRules,
                                            iconResolver: self.model.iconResolver)
         }
+        // A pin/block made in the panel or Settings must also reshape a
+        // detached results window's list — the shared hook is single-
+        // subscriber, so the panel fans it out.
+        model.onEntryRulesChanged = { [weak self] in
+            self?.detachedSearchWindow.entryRulesDidChange()
+        }
         model.searchModel = searchModel
     }
 

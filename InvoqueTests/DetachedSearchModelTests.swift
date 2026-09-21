@@ -25,6 +25,8 @@ final class DetachedSearchModelTests: XCTestCase {
         while session.isPending, Date() < deadline {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
+        XCTAssertFalse(session.isPending,
+                       "settledSession timed out before the walk finished")
         return session
     }
 
@@ -66,6 +68,7 @@ final class DetachedSearchModelTests: XCTestCase {
     func testEmissionsStreamIntoRows() async {
         let emitReady = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
+        defer { release.signal() } // never leave the searcher blocked
         let slot = EmitSlot()
         let session = FileSearchSession(
             query: "find x", text: "x", debounceNanoseconds: 0,
@@ -75,7 +78,8 @@ final class DetachedSearchModelTests: XCTestCase {
                 release.wait() // hold the walk open until the test ends it
             })
         session.start()
-        emitReady.wait()
+        XCTAssertEqual(emitReady.wait(timeout: .now() + 5), .success,
+                       "searcher never handed off emit")
         let model = DetachedSearchModel(session: session,
                                         entryRules: EntryRules(),
                                         iconResolver: nil)
@@ -170,6 +174,7 @@ final class DetachedSearchModelTests: XCTestCase {
     func testRefreshKeepsSelectionOnRow() async {
         let emitReady = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
+        defer { release.signal() } // never leave the searcher blocked
         let slot = EmitSlot()
         let session = FileSearchSession(
             query: "find x", text: "x", debounceNanoseconds: 0,
@@ -179,7 +184,8 @@ final class DetachedSearchModelTests: XCTestCase {
                 release.wait()
             })
         session.start()
-        emitReady.wait()
+        XCTAssertEqual(emitReady.wait(timeout: .now() + 5), .success,
+                       "searcher never handed off emit")
         let model = DetachedSearchModel(session: session,
                                         entryRules: EntryRules(),
                                         iconResolver: nil)

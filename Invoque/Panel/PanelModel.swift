@@ -98,6 +98,11 @@ final class PanelModel: ObservableObject {
     /// through to the normal submit path.
     var onDetachFileSearch: ((FileSearchSession) -> Void)?
 
+    /// Fans a rules change out to surfaces that shape their own lists —
+    /// the detached file-search window — since `Preferences.
+    /// entryRulesChanged` is a single-subscriber hook wired here.
+    var onEntryRulesChanged: (() -> Void)?
+
     /// The user's pin/block rules — Preferences-backed in production via
     /// the AppDelegate's wiring; the default instance manages nothing.
     /// Reads are live closures, so a Settings edit lands on the next
@@ -582,8 +587,15 @@ final class PanelModel: ObservableObject {
     /// The session's walk ended — count it (stale ones too), then drop
     /// the handle, which flips `fileScanIsPending` for the footer. The
     /// final snapshot is already applied — see `fileSessionDidUpdate`.
+    /// The callbacks capture `session` strongly, so clearing them here
+    /// breaks the session ↔ closure cycle — this one spot covers finish,
+    /// cancel (which funnels through `finish` → `onFinish`), and stale
+    /// sessions alike.
     private func fileSessionDidFinish(_ session: FileSearchSession) {
         defer { fileRunCompletions += 1 }
+        session.onStart = nil
+        session.onUpdate = nil
+        session.onFinish = nil
         guard session === fileSession else { return }
         fileSession = nil
     }
@@ -686,6 +698,9 @@ final class PanelModel: ObservableObject {
     /// (`scheduleFileSearch` rightly refuses a same-session re-walk); a
     /// normal search just re-runs the open query.
     func entryRulesDidChange() {
+        // Before the early-return below: the detached window's list is
+        // not the panel's — it needs the same poke regardless of mode.
+        onEntryRulesChanged?()
         if fileSearchIsActive {
             // Wholesale replace, not `stabilizedFileRows`: its survivor
             // merge exists for text extensions and a rules change is not

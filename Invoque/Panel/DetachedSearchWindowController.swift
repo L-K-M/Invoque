@@ -88,6 +88,12 @@ final class DetachedSearchWindowController: NSObject, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
+    /// A pin/block made elsewhere — forwarded from `PanelModel`'s
+    /// `entryRulesDidChange`, which owns the single-subscriber hook.
+    func entryRulesDidChange() {
+        model?.refreshRules()
+    }
+
     // MARK: NSWindowDelegate
 
     func windowWillClose(_ notification: Notification) {

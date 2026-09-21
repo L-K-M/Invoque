@@ -413,6 +413,29 @@ final class FileSearchTests: XCTestCase {
         }
     }
 
+    /// The stride is the throttle contract: with the interval gate
+    /// effectively off, five matches emit exactly at counts 2 and 4, then
+    /// the trailing flush delivers the complete list — three emissions,
+    /// each the accumulated snapshot.
+    func testStreamThrottlesEmissionsByStride() throws {
+        let defaultStride = FileSearch.emitStride
+        let defaultInterval = FileSearch.emitInterval
+        FileSearch.emitStride = 2
+        FileSearch.emitInterval = .greatestFiniteMagnitude
+        defer {
+            FileSearch.emitStride = defaultStride
+            FileSearch.emitInterval = defaultInterval
+        }
+        for index in 0..<5 {
+            try makeFile(String(format: "pace-%02d.txt", index))
+        }
+        var batchSizes: [Int] = []
+        FileSearch.stream(query: "pace", roots: [root]) { batch in
+            batchSizes.append(batch.count)
+        }
+        XCTAssertEqual(batchSizes, [2, 4, 5])
+    }
+
     /// A pinned match leads whatever batch it lands in — the streaming
     /// boost must agree with `scan`'s pins-ahead-of-cap rule even when
     /// the pin arrives late in the walk.
