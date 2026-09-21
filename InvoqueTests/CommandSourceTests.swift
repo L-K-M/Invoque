@@ -84,6 +84,54 @@ final class CommandSourceTests: XCTestCase {
         XCTAssertNil(source.filterCommand(forKeyword: "act"))
     }
 
+    /// `<trigger> <rest>` binds the remainder to an action command's
+    /// args — the query-level path that makes the manifest's `arguments`
+    /// contract reachable (PLAN §4.1).
+    func testActionCommandBindsQueryRemainderAsArgs() throws {
+        try writeCommand("resize", title: "Resize", keywords: ["rsz"])
+        let source = CommandSource(store: store(), autoReload: false)
+
+        // Name and first keyword both trigger the binding.
+        XCTAssertEqual(source.items(matching: "resize 50%").first?.action,
+                       .runCommand("resize", ["50%"]))
+        XCTAssertEqual(source.items(matching: "rsz 640x480").first?.action,
+                       .runCommand("resize", ["640x480"]))
+        // The remainder is one arg — inner spaces preserved, ends trimmed.
+        XCTAssertEqual(source.items(matching: "resize  50%  wide ").first?.action,
+                       .runCommand("resize", ["50%  wide"]))
+        // Case-insensitive trigger: the row runs regardless of case, so
+        // a strict match would silently run it without the user's args.
+        XCTAssertEqual(source.items(matching: "Resize 50%").first?.action,
+                       .runCommand("resize", ["50%"]))
+        XCTAssertEqual(source.items(matching: "RSZ 640x480").first?.action,
+                       .runCommand("resize", ["640x480"]))
+    }
+
+    /// A bare trigger (or a whitespace-only rest) binds no args — the row
+    /// is a plain run, same as before.
+    func testActionCommandBareTriggerBindsNoArgs() throws {
+        try writeCommand("resize", title: "Resize", keywords: ["rsz"])
+        let source = CommandSource(store: store(), autoReload: false)
+
+        XCTAssertEqual(source.items(matching: "resize").first?.action,
+                       .runCommand("resize", []))
+        XCTAssertEqual(source.items(matching: "resize   ").first?.action,
+                       .runCommand("resize", []))
+        // A first token that isn't this command's trigger binds nothing.
+        XCTAssertEqual(source.items(matching: "res 50%").first?.action,
+                       .runCommand("resize", []))
+    }
+
+    /// Filter-mode commands keep their `.enterFilter` action regardless
+    /// of a query's shape — their remainder routes through filter mode.
+    func testFilterCommandNeverBindsArgs() throws {
+        try writeCommand("emoji", title: "Emoji Picker", mode: "filter",
+                         keywords: ["em"])
+        let source = CommandSource(store: store(), autoReload: false)
+        XCTAssertEqual(source.items(matching: "em fire").first?.action,
+                       .enterFilter(keyword: "em", commandName: "emoji"))
+    }
+
     // MARK: Helpers
 
     private func store() -> CommandStore {

@@ -36,14 +36,44 @@ final class CommandSource: ItemSource, @unchecked Sendable {
     func items(matching query: String) -> [Item] {
         // Every command is a candidate; SearchModel's fuzzy matcher does the
         // narrowing against matchText (title + keywords).
-        store.commands.map { command in
+        // `<trigger> <rest>` binds `rest` as an action command's args —
+        // the same routing rule filter mode already uses (`rest` arrives
+        // as args[0], the whole remainder). The trigger is the command's
+        // name or first keyword, and the rest trims like the file-search
+        // text. The compare is case-insensitive: unlike filter routing —
+        // where the trigger consumes input — an action row still runs
+        // when the case misses, so dropping the args would silently
+        // change what the command does.
+        let trigger: String?
+        let args: [String]
+        if let spaceIndex = query.firstIndex(of: " ") {
+            trigger = String(query[..<spaceIndex])
+            let rest = String(query[spaceIndex...].dropFirst())
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            args = rest.isEmpty ? [] : [rest]
+        } else {
+            trigger = nil
+            args = []
+        }
+        return store.commands.map { command in
             let manifest = command.manifest
-            let action: Item.Action = manifest.mode == .filter
-                // First keyword is the filter trigger; a keywordless filter
-                // command falls back to its own name as the trigger word.
-                ? .enterFilter(keyword: manifest.keywords.first ?? manifest.name,
-                               commandName: manifest.name)
-                : .runCommand(manifest.name, [])
+            let action: Item.Action
+            if manifest.mode == .filter {
+                // First keyword is the filter trigger; a keywordless
+                // filter command falls back to its own name.
+                action = .enterFilter(
+                    keyword: manifest.keywords.first ?? manifest.name,
+                    commandName: manifest.name)
+            } else {
+                let bound = trigger.map { word in
+                    [manifest.name, manifest.keywords.first]
+                        .compactMap { $0 }
+                        .contains {
+                            $0.caseInsensitiveCompare(word) == .orderedSame
+                        }
+                } ?? false
+                action = .runCommand(manifest.name, bound ? args : [])
+            }
             return Item(
                 id: Item.commandIDPrefix + manifest.name,
                 title: manifest.title,
