@@ -1407,6 +1407,7 @@ final class PanelModelTests: XCTestCase {
             icon: .symbol("arrow.clockwise"),
             action: .system(.restart))])
         model.submit()
+        XCTAssertNotNil(model.systemActionConfirmation)
 
         model.dismissSystemActionConfirmation()
         XCTAssertNil(model.systemActionConfirmation)
