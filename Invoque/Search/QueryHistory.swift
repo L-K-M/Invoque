@@ -31,12 +31,16 @@ final class QueryHistory {
         }
     }
 
-    /// Records `query` at the front. Blank queries never record, and a
-    /// repeat of the current front is a no-op — re-submitting a recalled
-    /// query must not duplicate it.
+    /// Records `query` at the front, trimmed. Blank queries never record;
+    /// a repeat of the current front is a no-op, and a non-consecutive
+    /// repeat moves to the front without duplicating — re-submitting an
+    /// older query must not grow the list.
     func record(_ query: String) {
-        guard !query.isEmpty, entries.first != query else { return }
-        entries.insert(query, at: 0)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard entries.first != trimmed else { return }
+        entries.removeAll { $0 == trimmed }
+        entries.insert(trimmed, at: 0)
         if entries.count > Self.maxEntries {
             entries.removeLast(entries.count - Self.maxEntries)
         }
