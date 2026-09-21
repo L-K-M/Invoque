@@ -352,7 +352,7 @@ enum InvoqueBridge {
             return .failure("invoque.fetch: could not read body")
         }
         let body = String(data: raw, encoding: .utf8) ?? ""
-        return .success((status, body))
+        return .success(status: status, body: body)
     }
 
     // MARK: files
