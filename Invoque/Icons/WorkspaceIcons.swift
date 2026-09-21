@@ -23,12 +23,17 @@ enum WorkspaceIcons {
     }()
 
     /// The workspace icon for `path`, cached. `NSImage` is immutable
-    /// enough to share across rows — drawing mutates nothing.
+    /// enough to share across rows — drawing mutates nothing. A path that
+    /// doesn't exist gets the generic document icon and stays uncached:
+    /// the placeholder must not outlive the file (a deleted-then-recreated
+    /// file in a rescan deserves a fresh lookup).
     static func icon(forPath path: String) -> NSImage {
         let key = path as NSString
         if let cached = cache.object(forKey: key) { return cached }
         let icon = NSWorkspace.shared.icon(forFile: path)
-        cache.setObject(icon, forKey: key)
+        if FileManager.default.fileExists(atPath: path) {
+            cache.setObject(icon, forKey: key)
+        }
         return icon
     }
 }
