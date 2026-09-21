@@ -40,6 +40,18 @@ struct SettingsView: View {
             Section {
                 Toggle("Launch at login", isOn: $preferences.launchAtLogin)
                 Toggle("Keep query when the panel re-opens", isOn: $preferences.keepQueryOnReshow)
+                LabeledContent("Summon hotkey") {
+                    HotkeyRecorder(combination: $preferences.summonHotkey)
+                        .frame(minWidth: 84)
+                }
+                if preferences.summonHotkeyRegistrationFailed {
+                    Text("That shortcut is already taken by the system or another app — the previous one was kept.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text("Click the field and press the new combination — it must include ⌃, ⌥ or ⌘. Esc cancels; ⌫ restores ⌥ Space.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Search") {

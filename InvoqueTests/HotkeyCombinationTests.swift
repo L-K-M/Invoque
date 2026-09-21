@@ -23,4 +23,45 @@ final class HotkeyCombinationTests: XCTestCase {
 
         XCTAssertEqual(decoded, original)
     }
+
+    func testModifierGlyphsOrderAndCompleteMask() {
+        XCTAssertEqual(
+            HotkeyCombination.modifierGlyphs(
+                UInt32(cmdKey | shiftKey | optionKey | controlKey)),
+            "⌃⌥⇧⌘")
+        XCTAssertEqual(HotkeyCombination.modifierGlyphs(0), "")
+    }
+
+    func testDisplayStringNamesNamedKeys() {
+        XCTAssertEqual(HotkeyCombination.default.displayString, "⌥ Space")
+        XCTAssertEqual(
+            HotkeyCombination(keyCode: UInt32(kVK_F5),
+                              modifiers: UInt32(cmdKey | shiftKey))
+                .displayString,
+            "⇧⌘ F5")
+        XCTAssertEqual(
+            HotkeyCombination(keyCode: UInt32(kVK_UpArrow),
+                              modifiers: UInt32(controlKey))
+                .displayString,
+            "⌃ ↑")
+    }
+
+    /// Letter keys render through the active keyboard layout — on CI's
+    /// US layout ANSI-A prints "A".
+    func testDisplayStringTranslatesPrintableKeys() {
+        XCTAssertEqual(
+            HotkeyCombination(keyCode: UInt32(kVK_ANSI_A),
+                              modifiers: UInt32(optionKey))
+                .displayString,
+            "⌥ A")
+    }
+
+    func testDisplayStringFallsBackForUnknownKeyCode() {
+        // Past every real virtual key code: no table entry, no
+        // translation — a legible fallback, never a crash.
+        XCTAssertEqual(
+            HotkeyCombination(keyCode: 500, modifiers: UInt32(cmdKey))
+                .displayString,
+            "⌘ Key 500")
+    }
 }

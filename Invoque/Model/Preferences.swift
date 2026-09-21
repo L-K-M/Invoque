@@ -98,6 +98,12 @@ final class Preferences: ObservableObject {
     /// subscribers are notified earlier, in willSet).
     var summonHotkeyChanged: ((HotkeyCombination) -> Void)?
 
+    /// True after a recorded chord failed to register — taken by the
+    /// system or another app — and the preference reverted to the last
+    /// working one. Transient: Settings shows it as a hint under the
+    /// recorder, and the next successful registration clears it.
+    @Published var summonHotkeyRegistrationFailed = false
+
     @Published var launchAtLogin: Bool {
         didSet {
             guard !isSyncingLaunchAtLogin else { return }
