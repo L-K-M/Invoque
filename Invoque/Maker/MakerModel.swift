@@ -142,6 +142,55 @@ final class MakerModel: ObservableObject {
         await generate()
     }
 
+    /// Loads an existing command's files and pre-fills the Maker for editing.
+    /// The user can then provide feedback to modify the command.
+    func startEditing(commandName: String, store: CommandStore?) async {
+        guard let store, phase != .generating else { return }
+        guard let command = store.command(named: commandName) else {
+            lastError = "Command '\(commandName)' not found"
+            phase = .failed
+            return
+        }
+        reset()
+        self.prompt = "edit \(commandName)"
+
+        // Load the existing files.
+        let manifestJSON: String
+        let entrySource: String
+        do {
+            let manifestURL = command.directory.appendingPathComponent("command.json")
+            manifestJSON = try String(contentsOf: manifestURL, encoding: .utf8)
+            entrySource = try String(contentsOf: command.entryURL, encoding: .utf8)
+        } catch {
+            lastError = "Failed to load command files: \(error.localizedDescription)"
+            phase = .failed
+            return
+        }
+
+        // Build the edit prompt with existing files.
+        let editPrompt = """
+        Edit the existing command "\(command.manifest.title)".
+
+        Current command.json:
+        ```json
+        \(manifestJSON)
+        ```
+
+        Current \(command.manifest.entry):
+        ```js
+        \(entrySource)
+        ```
+
+        Please improve this command based on the user's feedback. Keep the same name and structure unless the user asks to change it.
+        """
+
+        transcript = [
+            LLMMessage(.system, SystemPrompt.text),
+            LLMMessage(.user, editPrompt),
+        ]
+        await generate()
+    }
+
     /// Regenerates with the existing transcript — the right retry for a
     /// transport failure, where the conversation is still the correct one
     /// and starting over would just lose it.

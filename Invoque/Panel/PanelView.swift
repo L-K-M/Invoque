@@ -56,7 +56,7 @@ struct PanelView: View {
                     onConfirm: model.confirmSystemAction,
                     onCancel: model.dismissSystemActionConfirmation)
             } else if model.makerIsActive, let maker = model.maker {
-                MakerView(model: maker, prompt: model.makerPrompt ?? "",
+                MakerView(model: maker, prompt: model.makerPrompt ?? model.editPrompt ?? "",
                           titleColor: titleColor, secondaryColor: secondaryColor,
                           typeface: preferences.panelTypeface)
             } else {
