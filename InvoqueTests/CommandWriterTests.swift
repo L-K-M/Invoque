@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import Invoque
 
@@ -203,6 +204,38 @@ final class CommandWriterTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "unchanged")
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: directory.appendingPathComponent("command.json").path))
+    }
+
+    func testSaveRejectsFIFOStorageFile() throws {
+        let directory = root.appendingPathComponent("demo")
+        let dataDirectory = directory.appendingPathComponent("data")
+        try FileManager.default.createDirectory(
+            at: dataDirectory,
+            withIntermediateDirectories: true)
+        try manifestJSON().write(
+            to: directory.appendingPathComponent("command.json"),
+            atomically: true,
+            encoding: .utf8)
+        try "async function run() {}".write(
+            to: directory.appendingPathComponent("main.js"),
+            atomically: true,
+            encoding: .utf8)
+        let storageURL = dataDirectory.appendingPathComponent("storage.json")
+        let result = storageURL.path.withCString { mkfifo($0, 0o600) }
+        guard result == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+
+        let (generation, _) = try generation()
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, prompt: "p", model: "m")
+        ) { error in
+            guard case .unsafeCommandDirectory(let reason) = error as? CommandWriter.SaveError else {
+                return XCTFail("unexpected error: \(error)")
+            }
+            XCTAssertTrue(reason.contains("data/storage.json"))
+        }
     }
 
     func testSaveRejectsSymlinkedManifest() throws {

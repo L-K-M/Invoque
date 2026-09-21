@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import Invoque
 
@@ -161,6 +162,24 @@ final class CommandManifestTests: XCTestCase {
         XCTAssertThrowsError(try Command(directory: directory)) { error in
             XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
                            .symbolicLink("data/storage.json"))
+        }
+    }
+
+    func testRejectsFIFOStorageFile() throws {
+        let directory = try makeLoadableCommandDirectory()
+        let dataDirectory = directory.appendingPathComponent("data")
+        try FileManager.default.createDirectory(
+            at: dataDirectory,
+            withIntermediateDirectories: false)
+        let storageURL = dataDirectory.appendingPathComponent("storage.json")
+        let result = storageURL.path.withCString { mkfifo($0, 0o600) }
+        guard result == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+
+        XCTAssertThrowsError(try Command(directory: directory)) { error in
+            XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
+                           .unexpectedItemType("data/storage.json"))
         }
     }
 

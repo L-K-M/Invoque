@@ -106,11 +106,12 @@ enum CommandDirectoryPolicy {
         guard !isSymbolicLink(storageURL) else {
             throw Violation.symbolicLink(relativeStoragePath)
         }
-        var storageIsDirectory: ObjCBool = false
-        if FileManager.default.fileExists(
-            atPath: storageURL.path,
-            isDirectory: &storageIsDirectory), storageIsDirectory.boolValue {
-            throw Violation.unexpectedItemType(relativeStoragePath)
+        if FileManager.default.fileExists(atPath: storageURL.path) {
+            let attributes = try FileManager.default.attributesOfItem(
+                atPath: storageURL.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular else {
+                throw Violation.unexpectedItemType(relativeStoragePath)
+            }
         }
 
         let canonicalData = dataDirectory
