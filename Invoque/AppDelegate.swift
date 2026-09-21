@@ -176,22 +176,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 preferences?.toggleBlocked(id: $0, title: $1) ?? false })
         model.entryRules = entryRules
         // `find `/`f `/`search ` — the Spotlight-free filename walk
-        // (PLAN §3). The scan runs inside the model's debounced task; the
-        // probe lets `cancelFileSearch` reach a walk mid-flight. Blocked
-        // ids are excluded inside the walk — pre-cap — so a fresh scan
-        // has no hole (the next-best match backfills). A block made
-        // against an already shown list just drops the row until the
-        // next query. Pinned ids are likewise lifted ahead of the cap —
-        // a pin ranked past it would otherwise never surface. The scope
-        // snapshot is the lock-guarded read — the walk is off-main.
-        model.fileSearcher = { [weak preferences] query, isCancelled in
-            FileSearch.items(
+        // (PLAN §3). The scan runs inside a `FileSearchSession`'s
+        // debounced task and streams accumulated snapshots into the
+        // panel; the probe lets `cancelFileSearch` reach a walk
+        // mid-flight. Blocked ids are excluded inside the walk — pre-cap
+        // — so a fresh scan has no hole (the next-best match backfills).
+        // A block made against an already shown list just drops the row
+        // until the next query. Pinned ids are likewise lifted ahead of
+        // the cap — a pin ranked past it would otherwise never surface.
+        // The scope snapshot is the lock-guarded read — the walk is
+        // off-main.
+        model.fileSearcher = { [weak preferences] query, isCancelled, emit in
+            FileSearch.stream(
                 query: query,
                 scopes: preferences?.fileSearchScopeSnapshot
                     ?? FileSearch.defaultScopes,
                 isCancelled: isCancelled,
                 isExcluded: entryRules.isBlocked,
-                isBoosted: entryRules.isPinned)
+                isBoosted: entryRules.isPinned,
+                onBatch: emit)
         }
         // Shared icon store (PictKit) — the same ladder Zap and Jetty draw
         // from: a Pict override, then the bundle's own un-jailed artwork,

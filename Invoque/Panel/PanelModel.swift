@@ -82,13 +82,21 @@ final class PanelModel: ObservableObject {
         didSet { refreshResults() }
     }
 
-    /// Runs a Spotlight-free filename scan (`FileSearch.items` in
-    /// production, a stub in tests). While `nil`, `find`/`f`/`search`
+    /// Runs a Spotlight-free filename scan (`FileSearch.stream` in
+    /// production, a stub in tests). `emit` delivers the accumulated
+    /// ranked snapshot — never a delta — as the walk finds matches, so
+    /// results stream into the list. While `nil`, `find`/`f`/`search`
     /// queries stay normal searches — the same "unwired stays normal"
     /// convention as `filterLookup` and `maker`.
-    var fileSearcher: ((_ query: String, _ isCancelled: () -> Bool) -> [Item])? {
+    var fileSearcher: FileSearchSession.Searcher? {
         didSet { refreshResults() }
     }
+
+    /// Fires when the user detaches an in-flight file scan — the
+    /// controller hands `session` to a standalone results window and
+    /// hides the panel. Unwired (tests), ⏎ during a pending scan falls
+    /// through to the normal submit path.
+    var onDetachFileSearch: ((FileSearchSession) -> Void)?
 
     /// The user's pin/block rules — Preferences-backed in production via
     /// the AppDelegate's wiring; the default instance manages nothing.
@@ -233,11 +241,12 @@ final class PanelModel: ObservableObject {
         activeFileSearch()?.text.isEmpty ?? false
     }
 
-    /// True between scheduling a scan and its rows landing — the view says
-    /// "Searching files…" rather than a premature "No matching files".
-    /// `fileTask` is nilled on completion, cancel, or mode exit.
+    /// True between scheduling a scan and its last batch landing — the
+    /// view says "Searching files…" rather than a premature "No matching
+    /// files". `fileSession` is nilled on completion, cancel, mode exit,
+    /// or detach.
     var fileScanIsPending: Bool {
-        fileTask != nil && fileSearchIsActive
+        fileSession != nil && fileSearchIsActive
     }
 
     // MARK: Searching
@@ -352,13 +361,11 @@ final class PanelModel: ObservableObject {
 
     /// The `cancelFilterRun` twin for `find`/`f` sessions.
     private func cancelFileSearch() {
-        fileTask?.cancel()
-        fileTask = nil
+        cancelFileSession()
         activeFileKeyword = nil
         activeFileText = nil
         fileResultText = nil
         rawFileRows = []
-        fileGeneration += 1
     }
 
     // MARK: Filter mode
@@ -467,14 +474,18 @@ final class PanelModel: ObservableObject {
     /// tests shrink it instead of sleeping past the production value.
     static var fileSearchDebounceNanoseconds: UInt64 = 150_000_000
 
-    /// @Published so a completion that clears the handle without touching
-    /// `results` (identical rows) still republishes — `fileScanIsPending`
-    /// must flip to false in the view or "Searching files…" sticks.
-    @Published private var fileTask: Task<Void, Never>?
-    /// Stale-drop: a scan finishing for an older keystroke is discarded.
-    private var fileGeneration = 0
-    /// File scans that reached the main-actor completion point — the test
-    /// hook mirroring `filterRunCompletions`.
+    /// The live `find`/`f` session — owns the debounced walk and the
+    /// accumulated items. @Published so a completion that clears the
+    /// handle without touching `results` (identical rows) still
+    /// republishes — `fileScanIsPending` must flip to false in the view
+    /// or "Searching files…" sticks. Session identity replaces the old
+    /// generation counter for stale-dropping: a finished session's
+    /// callbacks check `session === fileSession`.
+    @Published private var fileSession: FileSearchSession?
+    /// File scans that reached their finish callback — the test hook
+    /// mirroring `filterRunCompletions`. Counts finishes whether the
+    /// session was current, stale, or cancelled mid-flight — a poller
+    /// waiting on the tick sees settled state either way.
     private(set) var fileRunCompletions = 0
     /// File scans actually started (past the debounce) — mirrors
     /// `filterRunsStarted`.
@@ -491,10 +502,9 @@ final class PanelModel: ObservableObject {
     /// `results` isn't a file-scan list.
     private var fileResultText: String?
 
-    /// Debounced per-keystroke scan. Rows replace the list on arrival;
-    /// `fileGeneration` drops results for stale queries. The scan itself is
-    /// synchronous and polls `Task.isCancelled` — it runs inside this task,
-    /// so `cancelFileSearch` reaches it.
+    /// Debounced per-keystroke scan — the session streams batches into
+    /// `results` as the walk finds them; a stale session's callbacks
+    /// drop on the identity check in `fileSessionDidUpdate`.
     private func scheduleFileSearch(keyword: String, text: String) {
         // Identical session — this is a rescan-driven refresh, not a new
         // keystroke; restarting the walk would redo seconds of disk work
@@ -508,47 +518,91 @@ final class PanelModel: ObservableObject {
             results = []
         }
         activeFileText = text
-        fileGeneration += 1
-        let generation = fileGeneration
-        fileTask?.cancel()
+        cancelFileSession()
         // "find " with nothing after it owns an empty list — a blank query
         // would match everything and the cap would fill with junk. Clearing
         // on the guard-else covers backspacing to blank mid-session too.
         // `text` arrives pre-trimmed from `activeFileSearch`.
         guard !text.isEmpty, let searcher = fileSearcher else {
-            fileTask = nil // cancelled above — drop the dead handle
             fileResultText = nil
             if !results.isEmpty { results = [] }
             return
         }
-        fileTask = Task {
-            try? await Task.sleep(nanoseconds: Self.fileSearchDebounceNanoseconds)
-            guard !Task.isCancelled else { return }
-            await MainActor.run { fileRunsStarted += 1 }
-            let rows = searcher(text) { Task.isCancelled }.map(ResultRow.init)
-            await MainActor.run {
-                // Count every completion — dropped ones too — but only
-                // after this run's effects land, so a poller that sees the
-                // tick also sees the final rows/selection state.
-                defer { fileRunCompletions += 1 }
-                // A stale run leaves `fileTask` alone — a newer task owns
-                // it, and nil-ing here would break its cancellation.
-                guard generation == fileGeneration else { return }
-                fileTask = nil
-                // Kept unshaped so a pin/block toggle can re-derive the
-                // list without re-walking the disk. Scan-time rules are
-                // already applied — blocked ids never arrive, pinned ones
-                // survive the cap — so `shapeFileRows`' block drop only
-                // sees ids blocked since the scan.
-                rawFileRows = rows
-                let merged = stabilizedFileRows(shapeFileRows(rows), text: text)
-                fileResultText = text
-                // Identical rows must not re-assign: results' didSet resets
-                // the selection, so a no-op refresh would yank it to the top.
-                guard merged != results else { return }
-                results = merged
-            }
+        let session = FileSearchSession(
+            query: query, text: text,
+            debounceNanoseconds: Self.fileSearchDebounceNanoseconds,
+            searcher: searcher)
+        session.onStart = { [weak self] in self?.fileRunsStarted += 1 }
+        session.onUpdate = { [weak self] in self?.fileSessionDidUpdate(session) }
+        session.onFinish = { [weak self] in self?.fileSessionDidFinish(session) }
+        fileSession = session
+        session.start()
+    }
+
+    /// Drops the current session — nils the handle *before* cancelling so
+    /// the synchronous `onFinish` inside `cancel()` reads as stale, not
+    /// live (see `cancelFileSearch`).
+    private func cancelFileSession() {
+        let stale = fileSession
+        fileSession = nil
+        stale?.cancel()
+    }
+
+    /// A session emission landing: snapshot into `rawFileRows`, shape, and
+    /// merge. Runs per batch while the walk streams, and once more from
+    /// `fileSessionDidFinish` so the final state can't sit unapplied.
+    private func fileSessionDidUpdate(_ session: FileSearchSession) {
+        guard session === fileSession else { return }
+        // Kept unshaped so a pin/block toggle can re-derive the list
+        // without re-walking the disk. Scan-time rules are already
+        // applied — blocked ids never arrive, pinned ones survive the
+        // cap — so `shapeFileRows`' block drop only sees ids blocked
+        // since the scan.
+        let rows = session.items.map(ResultRow.init)
+        rawFileRows = rows
+        let merged = stabilizedFileRows(shapeFileRows(rows), text: session.text)
+        fileResultText = session.text
+        // Identical rows must not re-assign: results' didSet resets
+        // the selection, so a no-op refresh would yank it to the top.
+        guard merged != results else { return }
+        // Streaming batches replace the list mid-scan — track the
+        // selection by row id so a merge inserting above the picked row
+        // doesn't snap it back to the top.
+        let selectedID = selectedRow?.id
+        results = merged
+        if let selectedID,
+           let index = merged.firstIndex(where: { $0.id == selectedID }) {
+            selection = index
         }
+    }
+
+    /// The session's walk ended — count it (stale ones too), then let a
+    /// current session settle: apply its last snapshot and drop the
+    /// handle, which flips `fileScanIsPending` for the footer.
+    private func fileSessionDidFinish(_ session: FileSearchSession) {
+        defer { fileRunCompletions += 1 }
+        guard session === fileSession else { return }
+        fileSessionDidUpdate(session)
+        fileSession = nil
+    }
+
+    /// Hands the in-flight scan to a detached results window: the session
+    /// keeps running — its subscriber is now the window's model — while
+    /// the panel releases its reference without cancelling. The mode's
+    /// bookkeeping clears so a later refresh can't mistake the detached
+    /// scan for the panel's own.
+    private func releaseFileSession() -> FileSearchSession? {
+        guard let session = fileSession else { return nil }
+        fileSession = nil
+        session.onUpdate = nil
+        session.onFinish = nil
+        session.onStart = nil
+        activeFileKeyword = nil
+        activeFileText = nil
+        fileResultText = nil
+        rawFileRows = []
+        if !results.isEmpty { results = [] }
+        return session
     }
 
     /// The `stabilizedRankedRows` twin for file scans: when the scan text
@@ -729,7 +783,13 @@ final class PanelModel: ObservableObject {
     /// pending consent request (so a habitual double-⏎ can't silently
     /// record a permanent `shell` grant) and reveals a file/app row in
     /// Finder instead of opening it.
-    func submit(commandModifier: Bool = false) {
+    ///
+    /// `detachesPendingScan` is the ⏎-mid-scan handoff. A tap on a row
+    /// passes `false`: the tap is an explicit pick of *that* row, so it
+    /// performs the row's action rather than floating the scan into a
+    /// window.
+    func submit(commandModifier: Bool = false,
+                detachesPendingScan: Bool = true) {
         // A pending consent prompt swallows ⏎ — neutral, not "run whatever
         // row is selected underneath the card"; ⌘⏎ means Allow.
         if permissionRequest != nil {
@@ -740,6 +800,18 @@ final class PanelModel: ObservableObject {
         // (generate when idle, save when clean) — `MakerModel` decides.
         if makerIsActive, let maker, let prompt = makerPrompt {
             Task { await maker.primarySubmit(prompt: prompt) }
+            return
+        }
+        // While a file scan is streaming, its rows are provisional — ⏎
+        // doesn't pick one (and hiding the panel would strand the walk).
+        // It detaches the session into its own window, where the walk
+        // keeps streaming and the settled rows stay actionable. Unwired,
+        // this falls through to the normal submit path. Taps skip this —
+        // a tap is a pick, not a detach (see the doc comment).
+        if detachesPendingScan, fileScanIsPending,
+           let detach = onDetachFileSearch,
+           let session = releaseFileSession() {
+            detach(session)
             return
         }
         if let row = selectedRow,

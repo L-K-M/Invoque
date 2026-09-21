@@ -27,6 +27,9 @@ final class PanelController: NSObject {
     private var panelSession = 0
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
+    /// Hosts the results window a pending file scan detaches into.
+    private lazy var detachedSearchWindow = DetachedSearchWindowController(
+        preferences: preferences)
 
     /// `model` is injected because the app's `AppSource.onReload` hook must
     /// reference it before `SearchModel` (which owns the source) exists.
@@ -65,6 +68,16 @@ final class PanelController: NSObject {
         model.onPermissionConfirmed = { [weak self] request in
             self?.permissionGrants.grant(request)
             self?.runCommand(named: request.command.name, args: request.args)
+        }
+        // ⏎ while a file scan streams: hide the launcher and hand the
+        // session to its own window, where the walk keeps going and the
+        // results stay actionable.
+        model.onDetachFileSearch = { [weak self] session in
+            guard let self else { return }
+            self.hide()
+            self.detachedSearchWindow.show(session: session,
+                                           entryRules: self.model.entryRules,
+                                           iconResolver: self.model.iconResolver)
         }
         model.searchModel = searchModel
     }
