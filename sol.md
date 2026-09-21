@@ -13,7 +13,8 @@ that need a Mac are marked as verification work rather than claimed as measured.
 The project has unusually broad unit coverage and several sound foundations:
 nonactivating AppKit windowing, capability-based JavaScriptCore contexts,
 stable ranked search, streamed file results, plain-file commands, safe direct
-path handling, Keychain storage, and an appearance system with real character.
+open-path handling, Keychain storage, and an appearance system with real
+character.
 
 It is not ready to displace Alfred or Raycast yet. The main gaps are safety at
 side-effect boundaries, first-summon and per-keystroke work, command inspection
@@ -31,10 +32,10 @@ Priority meanings:
 
 ### 1. Destructive system actions execute too easily
 
-**Evidence:** `PanelView.swift:280` executes on one mouse click;
-`SystemSource.swift:25-38` offers Restart, Shut Down, and Empty Trash;
-`SystemActionPerformer.swift:18-27` dispatches them without an Invoque
-confirmation.
+**Evidence:** `PanelView.resultList` executes on one mouse click;
+`SearchField` routes Return through `PanelModel.submit` to the same action;
+`SystemSource` offers Restart, Shut Down, and Empty Trash; and
+`SystemActionPerformer.perform` dispatches them without an Invoque confirmation.
 
 **Impact:** A stray click or Return can shut down the Mac or permanently delete
 Trash contents. The launcher disappears before the user can recover. Empty
@@ -110,9 +111,27 @@ HMAC-protected grants only as tamper evidence, not as a sandbox.
 **Proof:** Permission matrix tests for `clipboard.read + network/open`, UI tests
 for badges and consent, and source-change tests across every executable file.
 
+### 5. Command outputs and logs are unbounded
+
+**Evidence:** `JSRuntime.decode` bridges the complete returned array;
+`PanelModel.commandRows` maps every item; `showCommandResults` applies no
+`SearchModel.maxResults` cap. `CommandLog` appends every line forever.
+Fetch, storage, fs, shell output, and generated response sizes also lack useful
+limits.
+
+**Impact:** A buggy or hostile command can freeze SwiftUI, allocate large
+objects, or exhaust memory/disk. Filter mode repeats the cost per keystroke.
+
+**Change:** Define public budgets for item count, title/subtitle/arg bytes, log
+lines/bytes, fetch body, storage file, fs reads/writes, and LLM response. Truncate
+with explicit diagnostics. Render capped command rows lazily.
+
+**Proof:** Return oversized result arrays, strings, bridge payloads, and logs;
+assert bounded memory/disk, explicit truncation diagnostics, and responsive UI.
+
 ## P1: correctness and reliability
 
-### 5. An old command completion can dismiss a new interaction
+### 6. An old command completion can dismiss a new interaction
 
 **Evidence:** `PanelController.runCommand` checks query/session only for
 `.items` (`PanelController.swift:188-199`). Errors, `.title`, and `.void` always
@@ -131,7 +150,7 @@ runs.
 **Proof:** Regression tests for hide/resummon, query change, a newer command,
 and repeated Return.
 
-### 6. Generated code is never shown before Save
+### 7. Generated code is never shown before Save
 
 **Evidence:** `MakerView.swift:188-229` shows title, permissions, file names, and
 line count, not file contents or a diff. `MakerModel` permits Save as soon as
@@ -150,7 +169,7 @@ habitual Return.
 **Proof:** UI tests for all generated files, source changes after feedback,
 permission call sites, and no Save path that bypasses the inspector policy.
 
-### 7. The system prompt makes two false promises
+### 8. The system prompt makes two false promises
 
 **Evidence:** `SystemPrompt.swift:70` calls `notify` user-visible, but
 `InvoqueBridge.swift:99-104` only logs it. `SystemPrompt.swift:105` says a hung
@@ -165,7 +184,10 @@ synchronous loops cannot be killed and permanently disable the command until
 restart. Keep PLAN, bridge, validator, and prompt generated from one API
 contract where practical.
 
-### 8. Manifest arguments are dead schema
+**Proof:** Contract tests must compare prompt claims with installed bridge
+methods and exercise notification and timeout behavior end to end.
+
+### 9. Manifest arguments are dead schema
 
 **Evidence:** arguments decode in `CommandManifest.swift:31-45,110`, but the only
 action row is `.runCommand(manifest.name, [])` in
@@ -178,20 +200,8 @@ generate a schema-valid command whose main feature is unreachable.
 argument editor with required/optional validation, history, Tab traversal, and
 Esc back-navigation. Alternatively remove arguments from v1 and reject them.
 
-### 9. Command outputs and logs are unbounded
-
-**Evidence:** `JSRuntime.decode` bridges the complete returned array;
-`PanelModel.commandRows` maps every item; `showCommandResults` applies no
-`SearchModel.maxResults` cap. `CommandLog` appends every line forever.
-Fetch, storage, fs, shell output, and generated response sizes also lack useful
-limits.
-
-**Impact:** A buggy or hostile command can freeze SwiftUI, allocate large
-objects, or exhaust memory/disk. Filter mode repeats the cost per keystroke.
-
-**Change:** Define public budgets for item count, title/subtitle/arg bytes, log
-lines/bytes, fetch body, storage file, fs reads/writes, and LLM response. Truncate
-with explicit diagnostics. Render capped command rows lazily.
+**Proof:** Create required and optional argument manifests; verify keyboard
+entry, validation, history, dispatch order, cancellation, and malformed types.
 
 ### 10. Permission checks and executed bytes have a TOCTOU gap
 
@@ -206,18 +216,24 @@ snapshot. Hot-reload makes this race plausible during editor atomic saves.
 use that same immutable snapshot. Include executable helpers if module loading
 is added.
 
-### 11. Reduce Transparency still draws a translucent blur
+**Proof:** Swap source bytes after consent and after dispatch; only the consented
+snapshot may execute, and every changed executable must require new consent.
+
+### 11. Reduce Transparency does not choose an explicit opaque surface
 
 **Evidence:** `PanelBackground.glass` routes Reduce Transparency to
-`fallbackGlass`; `fallbackGlass` always creates `VisualEffectBlur`
-(`PanelBackground.swift:54-85`). Effective opacity only helps solid/gradient.
+`fallbackGlass`; `fallbackGlass` still creates an `NSVisualEffectView` wrapper,
+while effective opacity only changes solid/gradient fills. AppKit may adapt that
+view itself, so the resulting alpha needs runtime verification.
 
-**Impact:** The app violates an explicit accessibility setting for the default
-material.
+**Impact:** The code does not explicitly guarantee that the configured glass
+surface becomes opaque. Appearance may also differ across macOS releases.
 
-**Change:** Under Reduce Transparency, render an opaque semantic or theme fill,
-not `NSVisualEffectView` or Liquid Glass. Add Increase Contrast handling and a
-visible focus/selection outline.
+**Change:** Under Reduce Transparency, render an explicit opaque semantic or
+theme fill. Add Increase Contrast handling and a visible focus/selection outline.
+
+**Proof:** Inspect the composited alpha and screenshots with Reduce Transparency
+on and off on macOS 13, 15, and 26; verify no blur/backdrop view in reduced mode.
 
 ### 12. First summon performs synchronous command I/O
 
@@ -254,7 +270,8 @@ snapshot; use `LazyVStack`; cache workspace icons; compute accents off-main and
 publish later.
 
 **Proof:** XCTest performance baselines plus Instruments signposts for query to
-rows and selection to frame.
+rows and selection to frame. Compare allocations, main-thread icon time, and
+p50/p95 latency before and after.
 
 ### 14. File search returns an arbitrary early slice
 
@@ -360,19 +377,24 @@ appearance field except `panelTypeface` (`Preferences.swift:499-515`).
 
 ### 22. AppKit work from command queues needs a thread audit
 
-Clipboard, workspace open/activate, Accessibility prompting, and System Settings
-opening are invoked from the JavaScript queue in `InvoqueBridge`. Some APIs are
-thread-safe, some UI/activation behavior is main-affine. The current code has no
-single bridge abstraction that enforces the distinction.
+**Evidence:** clipboard, workspace open/activate, Accessibility prompting, and
+System Settings opening are invoked from the JavaScript queue in
+`InvoqueBridge`, with no abstraction separating thread-safe work from
+main-affine UI/activation calls.
+
+**Impact:** unclassified calls risk UI work off the main actor or deadlocks from
+synchronous main hops inside JS callbacks.
 
 **Change:** classify every bridge call. Hop UI and AppKit activation work to
 MainActor; keep disk/network/process work off-main. Avoid synchronous main hops
 that can deadlock a JS callback.
 
+**Status:** investigation item, not a confirmed defect.
+
 ### 23. Manifest validation is too permissive
 
-No validation enforces non-empty title, one-token non-empty filter trigger,
-argument names/types, duplicate permissions/keywords, reasonable field lengths,
+**Evidence:** no validation enforces non-empty title, one-token non-empty filter
+trigger, argument names/types, duplicate permissions/keywords, reasonable field lengths,
 or a real SF Symbol. `GeneratedCommandValidator` can accept `obj.run = ...` or a
 non-callable `run = 3` as an entry point.
 
@@ -383,32 +405,43 @@ trigger, or fail only on first run.
 entry as a Program, tighten entry-point detection, and fall back visibly when a
 symbol is unavailable.
 
-## P1: release and supply-chain issues
+## P0 before public distribution
 
 ### 24. Releases are unsigned and unnotarized
 
-`.github/workflows/release.yml` ad-hoc signs and explicitly tells users to bypass
-Gatekeeper. This conflicts with the documented Developer ID/notarization goal
-and weakens trust for an app that runs generated code.
+**Evidence:** `.github/workflows/release.yml` ad-hoc signs and explicitly tells
+users to bypass Gatekeeper. This conflicts with the documented Developer ID and
+notarization goal.
+
+**Impact:** users must disable a core trust check for an app that executes
+generated code. Installation friction and provenance risk block a public stable
+release.
 
 **Change:** use Developer ID Application signing, hardened runtime, notarization,
 stapling, signature verification, and a documented secret-rotation process.
 Never suggest recursively removing quarantine as the primary install path.
 
-### 25. The updater does not verify the published checksum
+## P1: remaining release and supply-chain issues
 
-The release ships `SHA256SUMS.txt`, but `UpdateDownloader` trusts the downloaded
-asset and only applies quarantine. It also reveals rather than installs, so the
-flow is incomplete.
+### 25. The updater does not verify release authenticity
 
-**Change:** fetch the checksum over the authenticated release API, verify bytes,
-verify Developer ID team/bundle/version after mounting or extraction, then offer
-a safe replace-and-relaunch flow.
+**Evidence:** the release ships `SHA256SUMS.txt`, but `UpdateDownloader` trusts
+the downloaded asset and only applies quarantine. It also reveals rather than
+installs, so the flow is incomplete.
+
+**Impact:** a same-channel checksum detects corruption, not a compromised
+release. A bespoke replacement flow also risks installing the wrong team,
+bundle, or version.
+
+**Change:** make code-signature verification the trust anchor. Fail closed unless
+Developer ID team, bundle ID, and version match after mounting or extraction.
+Treat `SHA256SUMS.txt` only as corruption detection. Prefer a maintained updater
+such as Sparkle with EdDSA-signed appcasts over a hand-rolled installer.
 
 ### 26. PictKit tracks a mutable branch
 
-`project.pbxproj:403-410` depends on Pict's `main` branch and no
-`Package.resolved` is committed.
+**Evidence:** the Pict `XCRemoteSwiftPackageReference` in `project.pbxproj`
+tracks `main`, and no `Package.resolved` is committed.
 
 **Impact:** builds are non-reproducible; an unrelated or compromised upstream
 push can break or alter CI/release artifacts.
@@ -418,18 +451,23 @@ Automate deliberate dependency updates.
 
 ### 27. A tag can publish before main CI passes
 
-The release check verifies only that the tag is reachable from main. It does not
-verify a successful CI check for that commit and the release job does not rerun
-tests.
+**Evidence:** the release check verifies only that the tag is reachable from
+main. It does not verify a successful CI check for that commit and the release
+job does not rerun tests.
+
+**Impact:** a tagged revision can publish despite a failing or still-running
+build and test job.
 
 **Change:** make release depend on a successful workflow for the exact SHA or
 run the full test/icon gates again before packaging.
 
 ### 28. JSC performance entitlement and documentation disagree
 
-`PLAN.md` says `com.apple.security.cs.allow-jit` is added with the runtime, but
-`Invoque.entitlements` is empty. Interpreter mode may be acceptable, but the
-choice is currently accidental and unmeasured.
+**Evidence:** `PLAN.md` says `com.apple.security.cs.allow-jit` is added with the
+runtime, but `Invoque.entitlements` is empty.
+
+**Impact:** interpreter mode may be acceptable, but the current security and
+performance choice is accidental, undocumented, and unmeasured.
 
 **Change:** benchmark command/filter latency under hardened release signing.
 Either add the entitlement with rationale or document interpreter-only as the
@@ -461,7 +499,7 @@ security choice.
    in a footer do not scale.
 4. **No command capability badge.** The plan promises one; `ResultRowView` has no
    permission metadata.
-5. **No argument editor.** See issue 8.
+5. **No argument editor.** See issue 9.
 6. **No loading state for action commands.** The panel looks idle during a slow
    run and allows duplicate submits.
 7. **Fixed 680x440 geometry.** It is not configurable and may clip or feel sparse
@@ -495,7 +533,7 @@ security choice.
 
 ## Missing product features, ordered by leverage
 
-| Priority | Feature | Narrow first slice |
+| Roadmap rank | Feature | Narrow first slice |
 |---|---|---|
 | P1 | Commands management | Loaded/broken/disabled list, reveal, edit source, permissions, rescan |
 | P1 | Command source inspector and revision diff | Read-only manifest/source viewer in Maker and action panel |
@@ -512,7 +550,7 @@ security choice.
 | P2 | Quicklinks | Named URLs with placeholders and selected-text input |
 | P2 | Window switching/management | Search windows, move/resize presets, no screenshots required |
 | P2 | Emoji, symbols, colors, UUID/date tools | Small built-ins with copy/insert actions |
-| P2 | Rich calculator | Units, currencies with timestamped rates, percentages, date math |
+| P2 | Rich calculator | Units, opt-in rates with source/refresh time, percentages, date math |
 | P2 | App aliases and direct hotkeys | Per-entry aliases/hotkeys in Settings |
 | P2 | Better file mode | Editable detached query, Open With, copy path, parent navigation |
 | P2 | Command observability | Last run, duration, logs, timeout count, health badge |
@@ -536,8 +574,9 @@ into a visible product feature.
 
 Before a generated command's first real run, offer a dry rehearsal. Bridge
 methods record intended effects such as "would open URL", "would write
-clipboard", or "would run shell" and return fixtures. This cannot perfectly
-simulate shell/network, but it makes common generated commands reviewable.
+clipboard", or "would run shell" and return fixtures. Every result must carry an
+unmistakable "simulated" label. This cannot perfectly simulate shell/network,
+but it makes common generated commands reviewable.
 
 ### Universal action stack
 
@@ -580,7 +619,8 @@ Return by default.
 
 Export a command as a small signed/read-only preview bundle containing its
 manifest, source, screenshot-free result sample, and permission summary. Import
-opens X-ray first; execution remains a separate user action.
+first verifies the signature and manifest digest, rejecting unsigned or tampered
+bundles. It then opens X-ray; execution remains a separate user action.
 
 ### Tiny optional personality
 
@@ -623,6 +663,10 @@ Before a stable release:
   and result arrays.
 - Symlink and source-swap tests at every command file boundary.
 - Manual system-action confirmation and Accessibility paste flows.
+- No-result Maker entry never calls the model on Return; an explicit, visible
+  confirmation is required.
+- Command postcard import rejects unsigned or tampered bundles and X-ray shows
+  only verified contents.
 - VoiceOver, Full Keyboard Access, larger text, Reduce Motion, Reduce
   Transparency, Increase Contrast, RTL, multiple displays, and full-screen
   Spaces.
