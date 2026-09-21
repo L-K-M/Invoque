@@ -28,18 +28,31 @@ final class URLSource: ItemSource {
 
     // MARK: Resolution
 
-    /// The query as a web URL, or nil when it isn't one: an exact
+    /// The query as a web URL, or nil when it isn't one: a strict
     /// `URL(string:)` parse with an `http`/`https` scheme, a non-empty
-    /// host, and no raw whitespace — Foundation's parser accepts spaces,
-    /// but a pasted address never carries one (browsers percent-encode),
-    /// so whitespace means the query is prose around an address. Other
-    /// schemes (`mailto:`, `file:` — `PathSource` owns that one) are not
-    /// URLs here. Mirrors the `invoque.open` module's http(s) allowlist.
+    /// host, and no raw whitespace — Foundation's macOS 14+ parser
+    /// percent-encodes invalid characters by default, so strict parsing
+    /// is opted into there; a pasted address never carries a raw space
+    /// (browsers percent-encode), so whitespace means the query is prose
+    /// around an address. Other schemes (`mailto:`, `file:` — `PathSource`
+    /// owns that one) are not URLs here. Mirrors the `invoque.open`
+    /// module's http(s) allowlist.
     static func resolve(_ query: String) -> URL? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
-              !trimmed.contains(where: \Character.isWhitespace),
-              let url = URL(string: trimmed),
+              !trimmed.contains(where: \Character.isWhitespace) else {
+            return nil
+        }
+        // `URL(string:)` percent-encodes invalid characters on macOS 14+,
+        // so opt into strict parsing there; older systems are already
+        // strict.
+        let parsed: URL?
+        if #available(macOS 14.0, *) {
+            parsed = URL(string: trimmed, encodingInvalidCharacters: false)
+        } else {
+            parsed = URL(string: trimmed)
+        }
+        guard let url = parsed,
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               let host = url.host, !host.isEmpty else {

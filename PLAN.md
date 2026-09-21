@@ -212,8 +212,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   reinforces itself exactly like any other launch.
 - Entry rules: the user can **pin** a durable entry (⌘P or right-click →
   Pin — ranks above unpinned matches when it matches, beneath the `path:`
-  and `calc:` head rows; a pin boosts, it doesn't conjure, and pins past
-  the result cap rejoin ranked order) or
+  and `url:` and `calc:` head rows; a pin boosts, it doesn't conjure, and
+  pins past the result cap rejoin ranked order) or
   **block** one (⌘B — never appears; the sets are exclusive — blocking
   unpins, pinning unblocks — so the last explicit action wins). Apps,
   commands, system actions and file hits
