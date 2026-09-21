@@ -102,14 +102,17 @@ struct HotkeyRecorder: NSViewRepresentable {
                 }
                 return
             }
+            let modifiers = HotkeyRecorder.carbonModifiers(
+                of: event.modifierFlags)
             switch event.keyCode {
             case UInt16(kVK_Escape):
                 cancel()
-            case UInt16(kVK_Delete), UInt16(kVK_ForwardDelete):
+            // Bare ⌫/⌦ reset to the default — a chorded one (⌥⌫, ⌘⌦)
+            // is a legitimate hotkey and must record like any other.
+            case UInt16(kVK_Delete), UInt16(kVK_ForwardDelete)
+                where modifiers == 0:
                 commit(.default)
             default:
-                let modifiers = HotkeyRecorder.carbonModifiers(
-                    of: event.modifierFlags)
                 guard HotkeyRecorder.isRecordable(modifiers: modifiers)
                 else {
                     NSSound.beep()

@@ -72,6 +72,16 @@ final class HotkeyRecorderTests: XCTestCase {
         XCTAssertEqual(box.value, .default)
     }
 
+    /// A chorded Delete is a real hotkey — only a bare ⌫ resets.
+    func testModifiedDeleteRecordsAsChord() {
+        let (field, box) = makeField()
+        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
+        field.keyDown(with: keyDownEvent(UInt16(kVK_Delete),
+                                         modifiers: [.option]))
+        XCTAssertEqual(box.value, HotkeyCombination(
+            keyCode: UInt32(kVK_Delete), modifiers: UInt32(optionKey)))
+    }
+
     func testResignFirstResponderDisarms() {
         let (field, box) = makeField()
         field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
