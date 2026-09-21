@@ -7,7 +7,9 @@ to pick it up.
 Provenance: this document merges the pre-existing ANALYSIS.md (bugs, perf,
 quality, features, UX, creative lists) with the `muse.md` and `glm.md`
 full-codebase reviews (2026-09-21, `main` @ `bafb9d9` v0.2.0), plus the
-independent `sol.md` static audit (PR #52, baseline `e8b96b8`). Duplicate
+independent `sol.md` static audit (PR #52, baseline `e8b96b8`) and the
+`swe.md` review (2026-09-21 — bugs, perf, features, UX, theming, delight;
+its implemented items are recorded below). Duplicate
 entries are consolidated, not duplicated; open fixes are tracked under
 `Recently implemented`. Nothing was dropped — follow-ups the reviews declined
 or deferred live under `Review follow-ups`.
@@ -93,7 +95,7 @@ The recorder rejects bare and Shift-only chords, but `Preferences.loadSummonHotk
 `JSRuntime.swift:211-214,259-265`, `InvoqueBridge.swift:293` install `__invoque_*` as plain globals; reassignment turns a clean run into timeout/void with a misleading error. Define as non-writable.
 
 ### Stuck-command ban is too broad, has no reset
-`JSRuntime.swift:34,62-66,83` bans by slug — collides across roots and with Maker staging dirs. One hang disables all same-named commands for the session; only relaunch clears. Key by directory, add UI to clear.
+`JSRuntime.swift:34,62-66,83` bans by slug — collides across roots and with Maker staging dirs. One hang disables all same-named commands for the session; only relaunch clears. Key by directory, add UI to clear. The ban is also invisible to the user: a stuck command silently stops answering, so surface it (HUD or a status affordance) rather than leaving users to guess why a command went quiet (`swe.md` C1).
 
 ### Validator accepts non-callable default export; runtime rejects it
 `GeneratedCommandValidator.swift:140` treats any `export default` as an entry point; `JSRuntime.swift:291-296` only rewrites callable shapes. `export default {title:"x"}` / `42` / `class…` look clean, then throw. Align the two (incl. class check — `typeof run === 'function'` is true for classes).
@@ -125,14 +127,11 @@ The timed flush is checked only when another match arrives. One useful early mat
 ### File search symlink dedupe is incomplete; id/display path forms mismatch
 `seenPaths` uses `standardizedFileURL` (no symlink resolution); `AppCatalog` uses `resolvingSymlinksInPath`. `/tmp` → `/private/tmp` aliases double-list; overlapping home+system skips rely on exact string equality, so a symlinked home double-walks. ID uses `standardizedFileURL.path` while subtitle/action URLs use raw `.path` (`FileSearch.swift:466,478`; same in `PathSource`) — `..` segments reach display/actions.
 
-### AppCatalog indexes only four directories; no watcher
-`AppCatalog.swift:32`: `~/Downloads`, `~/Tools`, `/opt`, DMGs, deep Setapp subtrees invisible. No Spotlight fallback, no user-added folders. No file watcher — installed apps invisible until relaunch (`AppSource.swift:5` promises "later"). Duplicate `matchText` when name == fileName (`AppSource.swift:97`, e.g. `Safari Safari`) inflates the length penalty. No app keywords (`browser` → Safari). `resolve` trims `.whitespaces` but not newlines (`AppCatalog.swift:65`).
+### AppCatalog indexes only four directories
+`AppCatalog.swift:32`: `~/Downloads`, `~/Tools`, `/opt`, DMGs, deep Setapp subtrees invisible. No Spotlight fallback, no user-added folders. ~~No file watcher~~ — landed (PR #50: `DirectoryWatcher` rescans on filesystem events, retries failed opens on a cooldown, scans on a dedicated serial queue). Duplicate `matchText` when name == fileName (`AppSource.swift:97`, e.g. `Safari Safari`) inflates the length penalty. No app keywords (`browser` → Safari). `resolve` trims `.whitespaces` but not newlines (`AppCatalog.swift:65`).
 
 ### Path source: plugin types treated safe; no completion; raw action URL
 Blocklist misses loadable plugin types (`.bundle/.kext/.appex/.mdimporter/.qlgenerator` — not `APPL` packages, treated safe-to-open). No path completion (`/us` → nothing). Action URL not standardized (`..` reaches `NSWorkspace`).
-
-### Detached selection flash
-`rows/didSet { selection = 0 }` then track-by-ID corrects (`DetachedSearchModel.swift:20-24,58-69`, `PanelModel.swift:626-636`) — two publishes per batch, list flickers to top on streaming inserts. Coalesce into one publish.
 
 ### Esc on consent/maker nukes context
 `LauncherPanel.swift:59-61` → `PanelController.hide()`. First Esc with `permissionRequest`/`makerIsActive` should dismiss the card, second hide. Currently loses the prompt. (Also `glm.md` B2: the footer's "esc dismiss" hint promises card-dismiss semantics the behavior doesn't deliver — pick one and align copy or behavior; PLAN §3's promised ⇧⏎ secondary action is likewise still absent — B3.)
@@ -147,7 +146,7 @@ Blocklist misses loadable plugin types (`.bundle/.kext/.appex/.mdimporter/.qlgen
 `AppearancePreset.swift:227-229,243-308`: file with material/tint but no label/highlight routes to `JettyTheme` (no typeface field) → silent font reset. Preserve the current typeface on partial imports.
 
 ### HUD/Panel windowing papercuts
-`NSApp.currentEvent` for ⌘⏎ is fragile (`PanelView.swift:501-503` — nil/stale event misclassifies Allow vs neutral). `contextMenu` in a never-main `.nonactivatingPanel` may fail or steal key status and trigger `didResignKey` hide. `headerRowHeight = 54` drives `ballDiameter()` but drifts from the real header metrics. `LauncherPanel` never sets `hasShadow` (square-window shadow risk with the 12pt inset). Preview rows use hard-coded `/System/…/Finder.app` paths that may not exist. (`glm.md` B7: `HUD.dismiss`'s animation completion can lag seconds when the app is background-throttled — a toast outlives its timer; cosmetic.)
+`NSApp.currentEvent` for ⌘⏎ is fragile (`PanelView.swift:501-503` — nil/stale event misclassifies Allow vs neutral). `contextMenu` in a never-main `.nonactivatingPanel` may fail or steal key status and trigger `didResignKey` hide. `headerRowHeight = 54` drives `ballDiameter()` but drifts from the real header metrics. `LauncherPanel` never sets `hasShadow` (square-window shadow risk with the 12pt inset). Preview rows use hard-coded `/System/…/Finder.app` paths that may not exist. `PanelController.show()` doesn't re-check presentation appropriateness — during a modal alert the summoned panel could overlap it (`swe.md` C9; low risk). (`glm.md` B7: `HUD.dismiss`'s animation completion can lag seconds when the app is background-throttled — a toast outlives its timer; cosmetic.)
 
 ### AppKit work from command queues needs a thread-affinity audit
 Clipboard, workspace open/activate, Accessibility prompting, and System Settings calls are reachable from JavaScript worker queues. Classify each bridge call: UI and activation APIs should hop to `MainActor`; disk, network, and process work must remain off-main. Avoid synchronous main hops from JS callbacks. This is an investigation item until Thread Sanitizer/runtime proof identifies a concrete violation.
@@ -172,7 +171,7 @@ See Bugs: rank-then-truncate, or shallow-first BFS emit + exact-basename fast pa
 `InvoqueBridge.swift:136-141` — Every `invoque.storage.get()` deserializes the entire `storage.json` (full-file write on set/delete). A chatty script parses + serializes per key. Cache with dirty flag + size cap before it becomes a disk-abuse vector.
 
 ### SearchModel allocates per keystroke
-`SearchModel.swift:105-182` — Every keystroke builds new arrays and dictionaries (`bestByID` + `ScoredItem` per match + full sort + two pin-band filter passes). Snapshot pin/block sets once per query (closures may lock per call today); `Frecency.score` locks per item (`:84`), `save()` JSON-encodes 500 entries while holding the lock (`:71`). A pre-allocated scratch buffer would help at scale.
+`SearchModel.swift:105-182` — Every keystroke builds new arrays and dictionaries (`bestByID` + `ScoredItem` per match + full sort + two pin-band filter passes). Snapshot pin/block sets once per query (closures may lock per call today); `Frecency.score` locks per item (`:84`), `save()` JSON-encodes 500 entries while holding the lock (`:71`). `topHits()` iterates every source's full item list on each empty query (every summon, every cleared field) — a cached eligible-items list would cut the per-summon allocation (`swe.md` C4). A pre-allocated scratch buffer would help at scale.
 
 ### FuzzyMatcher lowercased copies per candidate
 `FuzzyMatcher.swift:87-92` — `query.lowercased()` and `candidate.lowercased()` are called for every candidate. Lowercase the query once per keystroke and share across `match` + `contains` (`:162` reallocates per item); case-folded substring prefilter before the full scorer at walk scale; locale-invariant + diacritic folding (`cafe` vs `café` misses today; Turkish-`I` locale risk); greedy alignment without backward refinement (fzf does one); no out-of-order word matching (`screen lock` vs `Lock Screen`).
@@ -206,14 +205,14 @@ See Bugs: rank-then-truncate, or shallow-first BFS emit + exact-basename fast pa
 `Preferences.swift:398-470` — A property-wrapper pattern or `DefaultsSchema` struct would reduce boilerplate.
 
 ### Slot math duplicated between ranker and stability merge (`glm.md` S2)
-`SearchModel.results`' `bandCap`/`rankedSlots` and `PanelModel.stabilizedRankedRows`' `middleSlots` are copy-paste variants of the same reservation arithmetic, and the stability merge reimplements the ranking keys. One shared `rankedSlots(pins:web:)` helper prevents drift next time a head-pin namespace is added (`url:` already had to be threaded through by hand — PR #31).
+`SearchModel.results`' `bandCap`/`rankedSlots` and `PanelModel.stabilizedRankedRows`' `middleSlots` are copy-paste variants of the same reservation arithmetic, and the stability merge reimplements the ranking keys — including a Dictionary + Set allocation and a second `FuzzyMatcher.match` per row per keystroke, bounded at 50 (`swe.md` C11). One shared `rankedSlots(pins:web:)` helper prevents drift next time a head-pin namespace is added (`url:` already had to be threaded through by hand — PR #31).
 
 ### No view-level tests at all (`glm.md` S3)
 Logic coverage is strong, but `PanelView`/`ResultRowView`/`MakerView` layout regressions (the kind PR #43's lost title-color bug was) are invisible to CI. A few snapshot or frame-invariant tests on macOS runners would catch visual drift cheaply.
 
 ### Correctness papercuts (schema, validation, Maker UX)
 - Bare-string/array JS returns silently become `.void` (`JSRuntime.swift:439-451`); title-less items dropped via `compactMap` with no log (`:455-462`). Report shape mismatches in result/HUD instead of dismissing; flag in the validator.
-- `arguments` is dead schema (`CommandManifest.swift:68-84` decoded, never rendered — `CommandSource.swift:46` always emits `[]`; Maker test args don't match production). Render an args form (see Missing Features) or remove.
+- `arguments` binds from the query now (`keyword <rest>` → `args[0]` — PR #67), but no args *form* exists: Maker test args don't match production, and there's no manifest-driven input UI. Render an args form (see Missing Features) or document the query contract in the Maker.
 - Unknown `runtime` yields generic `DecodingError` (`:107`); produce actionable `ValidationError`, with an explicit "exec unsupported yet" message.
 - No validation for empty `title`, empty/whitespace `keywords`, duplicate permissions, unknown icon symbol names — all fail downstream as blank rows / dead triggers / missing icons.
 - Manifest `entry` → `command.json` caught only at save (`CommandWriter.swift:119-122`); validator's presence check always passes for it. Check explicitly.
@@ -224,7 +223,7 @@ Logic coverage is strong, but `PanelView`/`ResultRowView`/`MakerView` layout reg
 - Shell-safety rules are prompt-only (`rm -rf`, `curl|sh`, exfiltration, unquoted interpolation) — nothing scans shell strings. Add a destructive-shell lint requiring explicit override.
 - `MakerView.parseArgs` has no escapes (`:329-352`, backslash literal). Document or implement quoting.
 - Test log shows `logs.suffix(6)` only — earlier lines (often the actual error) unreachable in-panel. Add "view all".
-- Filter UX: case-sensitive single-token triggers vs case-insensitive search everywhere; bare keyword stays a normal search (discoverability rests on one row pick); permission badges render duplicates verbatim; draft consent row names an uninstalled command (ambiguous vs installed same-name); `displayedPrompt` freezes while the query edits; no "running…" state for long action runs; stuck-disabled message offers no path back except relaunch.
+- Filter UX: case-sensitive single-token triggers vs case-insensitive search everywhere; bare keyword stays a normal search (discoverability rests on one row pick); permission badges render duplicates verbatim; draft consent row names an uninstalled command (ambiguous vs installed same-name); `displayedPrompt` freezes while the query edits; no "running…" state for long action runs; stuck-disabled message offers no path back except relaunch. A failed filter run's error row only offers copy-text — no "reveal command folder" or "view log" affordance for debugging (`swe.md` U8).
 
 ### Ranking notes (documented behavior worth revisiting)
 Frecency is global per id (never per-query — `s` → Safari vs Slack can't learn); `file:` ids never train frecency; frecency can never beat title length (length sorts before boost), so a 20-visit long name loses to a never-used short prefix forever. `matchedInTitle` does useless work for fuzzy-tier rows (impossible by definition — early-out).
@@ -238,7 +237,7 @@ Concentrated risk is the bridge (JSC gives no ambient authority). In priority or
 1. Filter-mode allowlist too narrow: `filterWithheld` strips only `{shell,paste,apps}` — per-keystroke filters keep `network` + `clipboard.read` + `files` (write to `data/`) + `open` (new tab per keystroke). Clipboard → `fetch` exfiltration needs no action beyond typing. Withhold/rate-gate `open`/`network` in filter mode; warn on `clipboard.read` + `network` combined.
 2. `open`/`network` + `clipboard.read` need no first-run consent (`risky = {shell,paste}` only) despite `open` being acknowledged egress. Consent on first network/open use, or when combined with `clipboard.read` (PLAN §4.3 already defers this decision — decide it).
 3. Shell processes survive timeout: `installShell:368-409` blocks in `waitUntilExit()` with no deadline; `JSRuntime` timeout abandons the thread but never kills the `Process`. Kill the process group on timeout; cap output.
-4. Unbounded outputs: shell stdout/stderr, fetch bodies (`:282`), entry files (`:120`), `storage.json` — a `yes`, large download, or runaway log OOMs the launcher. Byte caps with truncation errors + honest UI ("fetch body truncated at 1 MB").
+4. Unbounded outputs: shell stdout/stderr, ~~fetch bodies~~ (capped at 20 MB — PR #57, enforced at the read), entry files (`:120`), `storage.json` — a `yes`, runaway log, or oversized entry still OOMs the launcher. Extend the fetch pattern: byte caps with truncation errors + honest UI ("body truncated at N MB").
 5. Source/consent and filesystem TOCTOU: consent hashes the entry, then `JSRuntime` rereads it later; bytes can change between approval and execution. Snapshot source plus digest at dispatch and execute that immutable snapshot, including every executable helper. Separately, entry/`fs` validation resolves symlinks before later path use (`resolve:317-325`); use no-follow/open-relative mechanics where practical.
 6. HTTPS→HTTP redirect keeps custom headers (`HTTPRedirectGuard:563-571`). Strip sensitive headers or block downgrades.
 7. Arbitrary `fetch` methods/headers (`:244-258`): any method, bodies on any method, `Host`/`Cookie`/`Content-Length` allowed. Constrain methods, forbid framing headers.
@@ -280,8 +279,8 @@ PLAN line 274: "deferred. Decision recorded."
 ### Clipboard read + network exfiltration gap
 PLAN lines 336-344 — A command with `clipboard.read` + `network` permissions can silently exfiltrate clipboard contents. (See Security hardening for the concrete gates.)
 
-### No "Commands folder" menu item
-PLAN line 449 — The menu item is documented but not implemented.
+### ~~No "Commands folder" menu item~~
+Landed — PR #63 (status menu item + the Commands settings tab it complements).
 
 ### Launcher parity (highest impact first)
 - ~~Learned empty state~~ — ✅ PR #27 (frecency top hits, capped at 9). A follow-up could add recent `find` opens in their own namespace.
@@ -294,26 +293,28 @@ PLAN line 449 — The menu item is documented but not implemented.
 - Web: suggestions API, multi-engine prefixes (`g`/`yt`/`gh`), history, custom engine URL; named quicklinks with placeholders and selected-text input.
 - Onboarding: explain the summon hotkey, status menu, command folder, Maker key setup, generated-code trust model, and lazy Accessibility prompts without forcing permissions at launch.
 - Path completion (`/usr/lo` → `/usr/local`); `path:` row as navigator (nearest existing parent + suffix as second row).
-- Calculator: `%`, `^`/`pow`, constants, factorial, unit/currency (`100 usd to eur`, `32f to c` reuses the pin-first row + copy). (Hex/binary/octal conversion landed — PR #47.)
+- Calculator: `%`, `^`/`pow`, constants, factorial, unit/currency (`100 usd to eur`, `32f to c` reuses the pin-first row + copy); a "⏎ copies" hint on the answer row to teach the shortcut (`swe.md` U10). (Hex/binary/octal conversion landed — PR #47.)
 - Offline dictionary: `define serendipity` via `DCSCopyTextDefinition` — public API, no permission, no network (`glm.md` F12).
 - Multi-type pasteboard: pasting an image into the panel → temp file → `path:` row (Raycast does this; `glm.md` U1).
-- System: log out, screen saver, dark-mode/wifi/bluetooth toggles, restart Finder, force-quit window. Empty Trash covers `~/.Trash` only and failures are log-only; PR #61 adds trusted confirmation and honest home-Trash copy, while all-volume Finder semantics remain open.
+- `invoque://` URL scheme — `invoque://search?q=…` (or command invocation), so external apps and scripts can drive the launcher (`swe.md` F15).
+- Emoji / symbol source: `emoji fire` → 🔥 — a pure data-file keyword source (distinct from the developer-facing SF Symbols browser below) (`swe.md` F18).
+- System: log out, screen saver, dark-mode/wifi/bluetooth toggles, restart Finder, force-quit window, remind-me/timer built-ins (`swe.md` F20). Empty Trash covers `~/.Trash` only; failures now HUD instead of logging silently (PR #55), and PR #61 adds trusted confirmation plus honest home-Trash copy — all-volume Finder semantics remain open.
 - Clipboard history / snippets / window switching (history landed — PR #39).
 - Hotkey: double-tap-modifier (needs event tap + AX — PLAN defers), multi-chord sequences.
 - Updates: progress UI, cancellation/resume, markdown release notes (raw body today), delta/auto-install/relaunch (Sparkle-class), download integrity beyond TLS+quarantine (document the gap at minimum), rate-limit messaging (`Retry-After`).
 
 ### Maker gaps
-Streaming progress (300 s blind wait, `LLMClient.generationBudget:122-124`); model list; temperature/token controls; token/cost estimate + transcript budget meter (full transcript resent every round); measured test duration vs the ~80 ms filter budget + filter-budget lint; manual fix without regeneration (editable panes + revalidate); diff view on update; restore-from-`history/` button + prune policy (`history/` grows unbounded, snapshots only manifest+entry, restore is manual copy); `edit command <name>` (landed — PR #42); `revert to revision N`; loading state for long action runs; recovery UI for stuck-disabled commands; provider presets (Ollama/LM Studio/OpenAI/Anthropic one-click — keyless-local already works, undiscoverable); args form from the manifest (un-deads `arguments`, makes Maker test args match production); permission preview/dry-run UI (modules touched, covering permissions, first-run-gated set); trigger-collision detector at scan time (shared keyword, or keyword == another command's name); per-command timeout; fetch/shell/output/log size caps; `scanErrors` surface; duplicate-name/keyword warnings; per-command enable/disable. (`glm.md` U4: typing `make …` with no API key configured goes straight to a transport failure — the idle MakerView should detect "no key stored" and link to Settings → AI. `glm.md` U5: an action-mode failure surfaces as one 1.6 s HUD line — long errors are unreadable and uncopyable; offer Copy-error or a result row instead. `glm.md` S4: `CommandLog` flattens log levels to strings, so the Maker's "last 6 lines" can't prioritize `console.error`.)
+Streaming progress and an elapsed-time display during generation (a Cancel button landed — PR #60 — but the 300 s wait is still silent, `LLMClient.generationBudget:122-124`); model list; temperature/token controls; token/cost estimate + transcript budget meter (full transcript resent every round); measured test duration vs the ~80 ms filter budget + filter-budget lint; manual fix without regeneration (editable panes + revalidate); diff view on update; restore-from-`history/` button + prune policy (`history/` grows unbounded, snapshots only manifest+entry, restore is manual copy); `edit command <name>` (landed — PR #42); `revert to revision N`; loading state for long action runs; recovery UI for stuck-disabled commands; provider presets (Ollama/LM Studio/OpenAI/Anthropic one-click — keyless-local already works, undiscoverable); args form from the manifest (un-deads `arguments`, makes Maker test args match production); permission preview/dry-run UI (modules touched, covering permissions, first-run-gated set); trigger-collision detector at scan time (shared keyword, or keyword == another command's name); per-command timeout; fetch/shell/output/log size caps; `scanErrors` surface; duplicate-name/keyword warnings; per-command enable/disable. (`glm.md` U4: typing `make …` with no API key configured goes straight to a transport failure — the idle MakerView should detect "no key stored" and link to Settings → AI. `glm.md` U5: an action-mode failure surfaces as one 1.6 s HUD line — long errors are unreadable and uncopyable; offer Copy-error or a result row instead. `glm.md` S4: `CommandLog` flattens log levels to strings, so the Maker's "last 6 lines" can't prioritize `console.error`.)
 
 ### Settings gaps
-Search; keyboard-shortcut reference pane (panel verbs ⏎/⌘⏎/⌘P/⌘B/⌘C/Esc undiscoverable); per-command hotkeys; fallback-action editor; Universal Actions / selected-text pipeline; light/dark auto theme variant (single hex blinds in the opposite appearance); row density / icon size / font-size controls; divider + footer visibility toggles; focus-ring tint; side-by-side light/dark preview with preset thumbnails; storage usage per command. (`glm.md` F4: PLAN §7's **Commands** pane (loaded list, enable/disable, roots, `scanErrors`) and **Permissions** pane (Accessibility status for `paste` + deep links) are still missing entirely, and the status menu's "Commands folder" item remains unimplemented. `glm.md` U3: the Pinned & Blocked lists need in-list search once they grow.)
+Search; keyboard-shortcut reference pane (panel verbs ⏎/⌘⏎/⌘P/⌘B/⌘C/Esc undiscoverable); per-command hotkeys; fallback-action editor; Universal Actions / selected-text pipeline; light/dark auto theme variant (single hex blinds in the opposite appearance); row density / icon size / font-size controls; divider + footer visibility toggles; focus-ring tint; side-by-side light/dark preview with preset thumbnails; storage usage per command; import/export of the whole settings bundle (`swe.md` T8). (`glm.md` F4: PLAN §7's **Commands** pane landed read-only — PR #63 lists loaded commands with mode/permission badges, consent state, `scanErrors`, roots, and a menu item; still missing: per-command enable/disable, grant **revocation** for `shell`/`paste` consents (`swe.md` C5 — grants are irrevocable today), and the **Permissions** pane (Accessibility status for `paste` + deep links). `glm.md` U3: the Pinned & Blocked lists need in-list search once they grow; `swe.md` U5: they also show raw ids like `app:com.foo.bar` — strip the namespace prefix for readability.)
 
 ---
 
 ## UI/UX Improvements
 
 ### No settings for font size / panel size
-`Preferences.swift` — The typeface is configurable but not the size. No user-configurable panel dimensions. (Panel is fixed 680×440 and never collapses — empty query, 1 result, permission card all show the same tall void. Collapse to content with a cap, Alfred/Raycast-style.)
+`Preferences.swift` — The typeface is configurable but not the size. No user-configurable panel dimensions or placement: the 25%-down anchor is hardcoded in `PanelGeometry` (a vertical-offset slider or drag-to-position is the natural Appearance addition, `swe.md` V2). (Panel is fixed 680×440 and never collapses — empty query, 1 result, permission card all show the same tall void. Collapse to content with a cap, Alfred/Raycast-style.)
 
 ### "Searching files..." has no progress indicator
 `PanelView.swift:245-246` — A spinner or progress bar would give better feedback during file scans. (Panel footer only says "Searching…"; detached header has `ProgressView`, panel has none; filter 80 ms debounce has no affordance at all.)
@@ -330,8 +331,11 @@ A single click executes a result immediately. That is fast but unforgiving, espe
 ### Hand-tune small app and status icons
 The Memphis app artwork is distinctive at large sizes, but its wordmark, stripes, grain, and confetti collapse at 16–32 px. Supply dedicated small variants built around the cyan center mark and two or three flat colors. Evaluate an optional monochrome template status icon against light/dark menu bars.
 
+### Selection behavior knobs
+No hover-to-select — mousing over rows doesn't move the selection the way Spotlight does; one `onHover` + select (`swe.md` U2, subjective). `moveSelection` wraps at both ends — Alfred/Raycast don't wrap; Spotlight does, so wrap is defensible but a no-wrap option or preference is worth considering (`swe.md` U7).
+
 ### Panel layout papercuts
-Dividers draw above/below the consent/maker cards, doubling their padding lines (`PanelView.swift:41,58`). Footer is one centered string (no left-verbs/right-count like Raycast; long hints truncate as one unit; panel shows no result count while detached does). Placeholder hardcodes `"Search"` — never contextual (`find` / filter / `make`); no localization anywhere. No selection slide (fill crossfades but never glides — `matchedGeometryEffect` pill). Glow shadow (radius 10, opacity .5 on 6pt spacing) bleeds on light themes. No hairline stroke / inner highlight — glass washes out over busy wallpaper (Raycast-style hairline missing). No focus ring (`focusRingType=.none`). Symbol-vs-bitmap optical mismatch (`.title3` vectors in a 28pt bitmap column). Status icon is full-color in a monochrome menu bar (consider `isTemplate` variant). Detached window ignores theme text (`.primary/.secondary` always, even for solid/gradient `labelHex` themes). (`glm.md` V6: MakerView's system `Button`s/`ProgressView`s keep system styling — on a dark Synthwave `solid` fill with a light label they clash; a tint/label-color pass would keep the card coherent. `glm.md` V7: the pinned-row `pin.fill` at 65 % opacity trailing the row is easy to miss — leading-position badge or stronger treatment.)
+Dividers draw above/below the consent/maker cards, doubling their padding lines (`PanelView.swift:41,58`). ~~Footer is one centered string~~ — split into status/hint clusters with a live result count (PR #65); remaining footer nits: long hints still truncate as one unit and only a few chords are context-filtered. Placeholder hardcodes `"Search"` — never contextual (`find` / filter / `make`); no localization anywhere. No selection slide (fill crossfades but never glides — `matchedGeometryEffect` pill). Glow shadow (radius 10, opacity .5 on 6pt spacing) bleeds on light themes. No hairline stroke / inner highlight — glass washes out over busy wallpaper (Raycast-style hairline missing). No focus ring (`focusRingType=.none`). Symbol-vs-bitmap optical mismatch (`.title3` vectors in a 28pt bitmap column). Status icon is full-color in a monochrome menu bar (consider `isTemplate` variant). Detached window ignores theme text (`.primary/.secondary` always, even for solid/gradient `labelHex` themes). (`glm.md` V6: MakerView's system `Button`s/`ProgressView`s keep system styling — on a dark Synthwave `solid` fill with a light label they clash; a tint/label-color pass would keep the card coherent. `glm.md` V7: the pinned-row `pin.fill` at 65 % opacity trailing the row is easy to miss — leading-position badge or stronger treatment.)
 
 ### Accessibility gaps (also speed)
 Custom list has no listbox semantics (rows `.isButton/.isSelected`, no container role — VO may not announce arrow-key moves). Permission Allow unreachable by Tab (focus pinned in search field; ⌘⏎ only). AngleDial gesture-only (needs `.focusable()` + arrows; 46pt minimum). HUD silent to VO (no `NSAccessibility.announce`, no sound). HUD fade ignores Reduce Motion. CRT hurts contrast with no auto-gate (Increase Contrast / low vision). Increase Contrast / Differentiate Without Color unhandled (no border boost; 0.75-opacity subtitles over mid-luma fills likely fail WCAG). Dynamic Type overflows the fixed panel (`lineLimit(1)` truncation). No in-app shortcut reference.
@@ -350,7 +354,9 @@ Collapse to content; async icon pipeline; matched-substring bold + frecency embe
 - Show inert tint controls disabled-with-reason on liquidGlass/glassClear instead of hiding.
 - Cap adaptive-accent saturation/brightness for grayscale icons (Terminal black → gray wash); offer glow-only vs fill mode.
 - Detached window inherits the full theme, not just shape.
-- Time-aware theme: dawn/day/dusk/night gradient interpolating angle + tint (opt-in).
+- Time-aware theme: dawn/day/dusk/night gradient interpolating angle + tint (opt-in); scheduled presets are the simpler variant — Synthwave by night, Memphis by day (`swe.md` T2).
+- Accent follows wallpaper — sample `NSWorkspace.desktopImageURL` for the tint (`swe.md` T3).
+- Seasonal built-in theme (snow/Halloween decoration style) — `PanelDecoration` already supports pluggable styles (`swe.md` D7).
 - CRT scanlines cross the one line users actively read (`glm.md` V8) — at high intensity consider clipping the overlay below the header, or offering the choice.
 
 ---
@@ -370,7 +376,16 @@ If the user types fast, reduce animation intensity. If they type slowly, allow m
 ⌘R or right-arrow expansion showing the last 10-20 actions with timestamps and the ability to re-run or pin.
 
 ### Theme marketplace (local)
-A folder of `.json` theme files browsed like a gallery with live preview on hover. Not remote — just a local directory. (`glm.md` D5 variant: a `make me pretty`-style easter egg that mints one random harmonious palette — HSL rotation — as a one-off preset.)
+A folder of `.json` theme files browsed like a gallery with live preview on hover. Not remote — just a local directory. A "share this theme" export could bundle the preset plus a rendered preview screenshot straight from the Appearance preview (`swe.md` V7). (`glm.md` D5 variant: a `make me pretty`-style easter egg that mints one random harmonious palette — HSL rotation — as a one-off preset.)
+
+### `invoque` easter egg (`swe.md` D2)
+Typing `invoque` surfaces a credits card — bouncing boing ball, version, small signature. Zero-cost whimsy that rewards curiosity about the app's own name.
+
+### "Time saved" stat (`swe.md` D3)
+Count launches quietly and show "Invoque has launched N apps for you" in Settings → General — a tiny pride metric.
+
+### Query ghosts (`swe.md` D4)
+Fish-style autosuggest: a faint inline completion in the field offering the top hit's title; Tab accepts (pairs with the Tab-autocomplete parity item). Needs care so the ghost never reads as typed text.
 
 ### SF Symbols browser (`glm.md` D3)
 `sym star` → rows rendering the symbols themselves, ⏎ copies the name, ⌘⏎ copies the `Image(systemName:)` snippet. Developer-delightful, pure in-memory data, fits the keyboard-first ethos.
@@ -470,7 +485,19 @@ Export a read-only preview bundle containing manifest, source, permission summar
 - ✅ Selection scrolling uses minimal edge movement instead of recentering — `f9dc77c`
 - ✅ JavaScriptCore JIT entitlement matches PLAN — `c749e13` (release benchmarks and rationale remain above)
 - ✅ Filter-command picks now train frecency — `99e0e32`
+- ✅ Forced `web <query>` search mode — PR #48 (`swe.md` F2). `web ` routes straight to the web row when an app or file match would otherwise win; blank queries get a "type to search" hint instead of a dead Enter.
+- ✅ Safer Empty Trash — PR #55 (`swe.md` B5/P4). Bulk deletion runs off the main thread, missing Trash counts as success, per-item failures HUD honestly, and `removeItem` attribution is regression-tested incl. dangling symlinks.
+- ✅ `invoque.fetch` response cap — PR #57 (`swe.md` B6). Bodies spool to a temp file via `downloadTask` and are read back through `FileHandle` one byte past a 20 MB cap, so the read itself enforces the limit — no stat-then-read window, no `fileSize` reliance.
+- ✅ Detached-window keyboard navigation — PR #59 (`swe.md` U9). PgUp/PgDn page by view height, Home/End and ⌘↑/⌘↓ hit the boundaries; shared `DetachedSearchModel.Boundary` semantics.
+- ✅ Cancel button during Maker generation — PR #60 (`swe.md` B11). `discard()` cancels the in-flight task and returns to `idle` with the prompt intact; the cancelled task cannot clobber the phase.
+- ✅ Commands settings tab — PR #63 (`swe.md` F3). Read-only inventory: loaded commands with mode/permission badges and consent state, directories, scan errors, roots with Reveal, activation-refresh on becoming key; atomic `scan()` snapshot; "Commands folder" menu item.
+- ✅ Atomic selection updates on streamed results — PR #64 (`swe.md` B9). `PanelModel` routes every `results` write through `applyResults(_:tracking:)`; `DetachedSearchModel` sole-writes `rows`+`selection` with a same-value publish guard. No phantom top-selection between the rows write and the re-point.
+- ✅ Footer status/hint split with result count — PR #65 (`swe.md` U3+V4). Separate clusters, file-scan progress, live counts, context-sensitive web hints, `.lineLimit(1)`.
+- ✅ Action-command query arguments — PR #67 (`swe.md` B10/F6). `<trigger> <rest>` binds the trimmed remainder as `args[0]` when the first token case-insensitively matches the command's name or first keyword — the manifest `arguments` contract is finally reachable.
+- ✅ In-flight work cancelled on panel hide — PR #41 (`swe.md` B3). File walks, filter runs (debounced *and* in-flight via the generation stale-drop), and Maker generation all cancel on dismiss.
+- ✅ App catalog rescans on filesystem events — PR #50 (`swe.md` B7). `DirectoryWatcher` watches the search roots, retries failed opens on a self-scheduled cooldown (recovery notifies the consumer — the target was blind while it failed), and scans on a dedicated serial queue off the watcher path.
+- ✅ README download link points at Invoque — `58cf2e9` (`swe.md` B1).
 
 ---
 
-*Merged from `muse.md`, `glm.md`, and the `sol.md` audit on 2026-09-21. Duplicates are consolidated; open review-round PRs remain listed until merged, and runtime-only macOS proof stays explicit.*
+*Merged from `muse.md`, `glm.md`, the `sol.md` audit, and the `swe.md` review on 2026-09-21. Duplicates are consolidated; open review-round PRs remain listed until merged, and runtime-only macOS proof stays explicit.*
