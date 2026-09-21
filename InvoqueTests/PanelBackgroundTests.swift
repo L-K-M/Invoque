@@ -12,8 +12,11 @@ final class PanelBackgroundTests: XCTestCase {
 
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
-            // Assumes glassEffect does not vend an NSVisualEffectView internally.
-            XCTAssertFalse(containsVisualEffectView(regular))
+            // If this changes after an OS update, re-check whether glassEffect
+            // began vending NSVisualEffectView before treating it as app fallback.
+            XCTAssertFalse(
+                containsVisualEffectView(regular),
+                "Expected native glassEffect without an NSVisualEffectView")
         } else {
             XCTAssertTrue(containsVisualEffectView(regular))
         }
@@ -24,9 +27,21 @@ final class PanelBackgroundTests: XCTestCase {
     }
 
     @MainActor
-    private func host(reduceTransparency: Bool) -> NSHostingView<PanelBackground> {
+    func testReduceTransparencyRemovesBlurForEveryGlassMaterial() {
+        for material in [PanelMaterial.liquidGlass, .glassClear, .glassTinted] {
+            XCTAssertFalse(containsVisualEffectView(host(
+                material: material,
+                reduceTransparency: true)), "unexpected blur for \(material)")
+        }
+    }
+
+    @MainActor
+    private func host(
+        material: PanelMaterial = .liquidGlass,
+        reduceTransparency: Bool
+    ) -> NSHostingView<PanelBackground> {
         let view = NSHostingView(rootView: PanelBackground(
-            material: .liquidGlass,
+            material: material,
             tint: .black,
             gradientColor: .gray,
             gradientAngle: 0,

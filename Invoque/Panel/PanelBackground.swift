@@ -10,9 +10,11 @@ import SwiftUI
 /// type at all, so they compile the blur fallback unconditionally. On
 /// macOS 13–15 use an `NSVisualEffectView` blur (`.popover`, the closest
 /// match to the `.regularMaterial` the panel used to draw). Reduce Transparency
-/// replaces either glass path with an opaque tint. Solid and gradient materials
-/// use their configured fills.
+/// replaces either glass path with an opaque semantic surface; tinted glass
+/// keeps a restrained theme wash. Solid and gradient materials use their fills.
 struct PanelBackground: View {
+    private static let maximumFallbackTintOpacity = 0.5
+
     var material: PanelMaterial
     var tint: Color
     var gradientColor: Color
@@ -51,11 +53,14 @@ struct PanelBackground: View {
     @ViewBuilder
     private func glass(in shape: RoundedRectangle) -> some View {
         if reduceTransparency {
-            // An opaque semantic base prevents an alpha-bearing theme tint
-            // from exposing the desktop while preserving the configured wash.
+            // The semantic base is opaque. Tinted glass keeps a restrained
+            // wash so system label colors remain legible in either appearance.
             ZStack {
                 shape.fill(.background)
-                shape.fill(tint.opacity(max(0.0, min(opacity, 1.0))))
+                if material == .glassTinted {
+                    shape.fill(tint.opacity(min(Self.maximumFallbackTintOpacity,
+                                                max(0.0, opacity))))
+                }
             }
         } else {
             #if compiler(>=6.2)
@@ -86,7 +91,8 @@ struct PanelBackground: View {
         ZStack {
             VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
             if material == .glassTinted {
-                tint.opacity(min(opacity, 0.5))
+                tint.opacity(min(max(0.0, opacity),
+                                 Self.maximumFallbackTintOpacity))
             }
         }
         .clipShape(shape)
