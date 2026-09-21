@@ -1434,6 +1434,7 @@ final class PanelModelTests: XCTestCase {
                       action: .system(.sleep)),
         ])
         model.submit()
+        XCTAssertEqual(model.systemActionConfirmation?.action, .restart)
 
         model.moveSelection(by: 1)
         XCTAssertEqual(model.selection, 0)
