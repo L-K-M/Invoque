@@ -344,7 +344,11 @@ struct PanelView: View {
             return "⏎ open · ⌘⏎ reveal in Finder" + manage + " · esc dismiss"
         }
         if model.webSearchIsActive {
-            return "⏎ search the web · esc dismiss"
+            // A blank web query produces no rows, so Enter is a no-op —
+            // the hint advertises typing, not the search chord.
+            return model.webSearchTextIsBlank
+                ? "type to search · esc dismiss"
+                : "⏎ search the web · esc dismiss"
         }
         return "↑↓ navigate · ⏎ open" + manage + " · esc dismiss"
     }
