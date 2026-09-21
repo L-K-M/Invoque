@@ -181,6 +181,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         didSet {
             guard query != oldValue else { return }
             // Editing means the user moved on from the action being reviewed.
+            // A pending consent prompt is just as stale as an action card.
+            permissionRequest = nil
             systemActionConfirmation = nil
             refreshResults()
         }
@@ -967,7 +969,9 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             return
         }
         // Like capability consent, a second plain Return is neutral. Only
-        // the explicit chord or the card button can release the action.
+        // the explicit chord or the card button can release the action —
+        // deliberately, a repeated ⌘⏎ (arm, then confirm) still executes,
+        // mirroring the consent chord.
         if systemActionConfirmation != nil {
             if commandModifier { confirmSystemAction() }
             return
