@@ -264,6 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             commandSource,
             CalculatorSource(),
             SystemSource(),
+            ClipboardSource(),
             webSource,
         ]
         let searchModel = SearchModel(sources: sources, frecency: Frecency(),
