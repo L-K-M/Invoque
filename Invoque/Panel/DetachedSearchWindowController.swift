@@ -60,6 +60,10 @@ final class DetachedSearchWindowController: NSObject, NSWindowDelegate {
             window.delegate = self
 
             window.onMove = { [weak self] in self?.model?.moveSelection(by: $0) }
+            window.onPage = { [weak self] in self?.model?.pageSelection(by: $0) }
+            window.onBoundary = { [weak self] boundary in
+                self?.model?.selectBoundary(boundary)
+            }
             window.onSubmit = { [weak self] in
                 self?.model?.submit(commandModifier: $0)
             }

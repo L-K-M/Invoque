@@ -86,6 +86,28 @@ final class DetachedSearchModel: ObservableObject {
         selection = ((selection + delta) % count + count) % count
     }
 
+    /// Rows a Page Up/Down keystroke skips — approximates the viewport;
+    /// the exact row metrics live in the view and a fixed step is close
+    /// enough.
+    static let pageStep = 10
+
+    /// Page Up/Down: a multi-row move that clamps at the ends rather than
+    /// wrapping — overshooting the list should land on the boundary row,
+    /// not teleport to the other end.
+    func pageSelection(by pages: Int) {
+        guard !rows.isEmpty else { return }
+        selection = max(0, min(rows.count - 1, selection + pages * Self.pageStep))
+    }
+
+    /// The list end a boundary key (Home/End, ⌘↑/⌘↓) targets.
+    enum Boundary { case first, last }
+
+    /// Selects the first or last row directly.
+    func selectBoundary(_ boundary: Boundary) {
+        guard !rows.isEmpty else { return }
+        selection = boundary == .first ? 0 : rows.count - 1
+    }
+
     /// Selects `row` directly — mouse taps land here.
     func select(_ row: ResultRow) {
         guard let index = rows.firstIndex(of: row) else { return }
