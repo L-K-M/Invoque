@@ -408,7 +408,7 @@ trigger, or fail only on first run.
 entry as a Program, tighten entry-point detection, and fall back visibly when a
 symbol is unavailable.
 
-## P0 before public distribution
+## P0 distribution gate: fix before any public release
 
 ### 24. Releases are unsigned and unnotarized
 
@@ -547,7 +547,7 @@ security choice.
 | P1 | Signed update/install | Verify, replace, relaunch, rollback |
 | P1 | Permission center | Capability explanations, grants, revoke, Accessibility status |
 | P1 | Command edit/rollback | `edit command`, visual history, restore revision |
-| P2 | Quick Look | Space previews files and command source without leaving the panel |
+| P2 | Quick Look | Space previews files; command rows open X-ray instead |
 | P2 | Universal actions / Instant Send | Send selected Finder text/files into commands |
 | P2 | Clipboard history and snippets | Local, encrypted-at-rest option, exclusions, retention controls |
 | P2 | Quicklinks | Named URLs with placeholders and selected-text input |
@@ -568,10 +568,10 @@ large extension store.
 
 ### Command X-ray
 
-Hold Space on a command to reveal its source, declared capabilities, generated
-provenance, last diff, last runtime, and last error. Highlight each
-`invoque.*` call beside the capability it requires. This turns inspectability
-into a visible product feature.
+Press Space on a command row to open X-ray, which is that row's Quick Look. It
+shows source, declared capabilities, generated provenance, last diff, last
+runtime, and last error. Highlight each `invoque.*` call beside the capability
+it requires. File rows keep the standard Quick Look.
 
 ### Rehearsal mode
 
@@ -603,7 +603,8 @@ work async. Make the badge playful but the behavior deterministic.
 
 After reversible actions, leave a small timed capsule: restore prior clipboard,
 reopen the last closed panel state, unpin/reblock, or restore a Maker revision.
-Never claim undo for restart, shell, or deletion.
+Clipboard snapshots must obey clipboard-history app exclusions and retention
+rules. Never claim undo for restart, shell, or deletion.
 
 ### Theme pulse, restrained
 
@@ -622,7 +623,8 @@ Return by default.
 
 Export a command as a small signed/read-only preview bundle containing its
 manifest, source, screenshot-free result sample, and permission summary. Import
-first verifies the signature and manifest digest, rejecting unsigned or tampered
+first verifies the manifest digest and a signature from a public key the user
+explicitly pinned by fingerprint, rejecting unsigned, unpinned, or mismatched
 bundles. It then opens X-ray; execution remains a separate user action.
 
 ### Tiny optional personality
@@ -668,8 +670,8 @@ Before a stable release:
 - Manual system-action confirmation and Accessibility paste flows.
 - Maker never calls the model on Return when no result is present; an explicit,
   visible confirmation is required.
-- Command postcard import rejects unsigned or tampered bundles and X-ray shows
-  only verified contents.
+- Command postcard import rejects unsigned, unpinned, or digest-mismatched
+  bundles; X-ray shows only contents verified by a user-pinned public key.
 - VoiceOver, Full Keyboard Access, larger text, Reduce Motion, Reduce
   Transparency, Increase Contrast, RTL, multiple displays, and full-screen
   Spaces.
