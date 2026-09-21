@@ -204,10 +204,16 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   reshapes without re-walking the disk.
 - Stability: extending the query preserves the displayed order of rows
   that still match — a row the user is reaching for never moves under
-  them. Non-extension edits (deletion, replacement, mode switches) re-rank
-  fresh. Rows that match for the first time mid-extension (a streamed
-  file hit, a refreshed source) join at their fresh rank below the
-  survivors. The same holds for `find`/`f` scan completions.
+  them — *among equal-ranked peers*. The merge sorts by (pinned, match
+  tier, title-visible hit): a row whose fresh rank is strictly better
+  promotes past worse rows, so typing "para" surfaces "Parallels Desktop"
+  rather than holding it below fuzzy survivors, while equal-keyed rows
+  keep their slots (a degrading survivor isn't churned by same-tier
+  reshuffles). Non-extension edits (deletion, replacement, mode switches)
+  re-rank fresh. Rows that match for the first time mid-extension (a
+  streamed file hit, a refreshed source) join by the same merge — below
+  equal-ranked survivors, above worse ones. The same holds for `find`/`f`
+  scan completions.
 - Icons: result-row bitmaps resolve through `PictKit`'s `IconResolver`
   (`InvoqueIcons`, the `JettyIcons`/`ZapIcons` seam) — a user-set icon in
   Pict (or any family app) wins, then the bundle's own un-jailed artwork,
