@@ -232,6 +232,9 @@ surface becomes opaque. Appearance may also differ across macOS releases.
 **Change:** Under Reduce Transparency, render an explicit opaque semantic or
 theme fill. Add Increase Contrast handling and a visible focus/selection outline.
 
+**Status:** Explicitness gap; whether the current surface is already opaque is
+unverified, so treat this as investigation work until runtime proof lands.
+
 **Proof:** Inspect the composited alpha and screenshots with Reduce Transparency
 on and off on macOS 13, 15, and 26; verify no blur/backdrop view in reduced mode.
 
@@ -663,8 +666,8 @@ Before a stable release:
   and result arrays.
 - Symlink and source-swap tests at every command file boundary.
 - Manual system-action confirmation and Accessibility paste flows.
-- No-result Maker entry never calls the model on Return; an explicit, visible
-  confirmation is required.
+- Maker never calls the model on Return when no result is present; an explicit,
+  visible confirmation is required.
 - Command postcard import rejects unsigned or tampered bundles and X-ray shows
   only verified contents.
 - VoiceOver, Full Keyboard Access, larger text, Reduce Motion, Reduce
