@@ -273,6 +273,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // a fully assembled model (searchModel is attached inside init) —
         // one refresh, not one per wiring step.
         model.webSearchItem = { webSource.item(for: $0) }
+        // The controller is built lazily on first summon, so the store's
+        // initial publish has usually already fired — no onChange is
+        // pending to refresh the list, and reset() won't re-query an
+        // unchanged "" query. Seed once here so the first summon shows
+        // the committed snapshot; a still-pending publish re-refreshes
+        // through onReload either way.
+        model.refreshResults()
         return controller
     }
 
