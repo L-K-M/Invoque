@@ -131,7 +131,9 @@ struct CommandWriter {
         do {
             _ = try CommandDirectoryPolicy.validatedStorageURL(in: directory)
             var destinations = Array(generation.files.keys)
-            destinations.append(contentsOf: ["data", "data/storage.json", "history"])
+            destinations.append(contentsOf: [
+                "command.json", "data", "data/storage.json", "history",
+            ])
             try CommandDirectoryPolicy.validateWriteDestinations(
                 in: directory,
                 relativePaths: destinations)
@@ -215,7 +217,11 @@ struct CommandWriter {
         snapshot.revision = oldManifest?.generated?.revision ?? 0
         snapshot.wasGenerated = oldManifest?.generated != nil
 
-        if let oldEntry = oldManifest?.entry, Self.isSafeRelativePath(oldEntry) {
+        if let oldEntry = oldManifest?.entry {
+            guard Self.isSafeRelativePath(oldEntry) else {
+                throw SaveError.unsafeCommandDirectory(
+                    "manifest entry '\(oldEntry)' is not a safe relative path")
+            }
             do {
                 try CommandDirectoryPolicy.validateWriteDestinations(
                     in: directory,

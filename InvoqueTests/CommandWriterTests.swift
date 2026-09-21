@@ -205,6 +205,51 @@ final class CommandWriterTests: XCTestCase {
             atPath: directory.appendingPathComponent("command.json").path))
     }
 
+    func testSaveRejectsSymlinkedManifest() throws {
+        let directory = root.appendingPathComponent("demo")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        let sentinel = root.appendingPathComponent("outside.json")
+        try "unchanged".write(to: sentinel, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: directory.appendingPathComponent("command.json"),
+            withDestinationURL: sentinel)
+
+        let (generation, _) = try generation()
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertNotNil(error as? CommandWriter.SaveError)
+        }
+        XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "unchanged")
+    }
+
+    func testSaveRejectsUnsafeEntryInExistingManifest() throws {
+        let directory = root.appendingPathComponent("demo")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        let unsafeManifest = manifestJSON()
+            .replacingOccurrences(of: "\"entry\": \"main.js\"",
+                                  with: "\"entry\": \"../outside.js\"")
+        try unsafeManifest.write(
+            to: directory.appendingPathComponent("command.json"),
+            atomically: true,
+            encoding: .utf8)
+
+        let (generation, _) = try generation()
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertNotNil(error as? CommandWriter.SaveError)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("history").path))
+    }
+
     func testSaveRejectsSymlinkedGeneratedPathComponent() throws {
         let directory = root.appendingPathComponent("demo")
         try FileManager.default.createDirectory(

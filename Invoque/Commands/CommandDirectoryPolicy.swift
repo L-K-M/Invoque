@@ -37,13 +37,14 @@ enum CommandDirectoryPolicy {
             .appendingPathComponent(dataName, isDirectory: true)
             .standardizedFileURL
 
-        if let values = try resourceValues(at: dataDirectory) {
-            guard values.isSymbolicLink != true else {
-                throw Violation.symbolicLink(dataName)
-            }
-            guard values.isDirectory == true else {
-                throw Violation.unexpectedItemType(dataName)
-            }
+        guard !isSymbolicLink(dataDirectory) else {
+            throw Violation.symbolicLink(dataName)
+        }
+        var dataIsDirectory: ObjCBool = false
+        if FileManager.default.fileExists(
+            atPath: dataDirectory.path,
+            isDirectory: &dataIsDirectory), !dataIsDirectory.boolValue {
+            throw Violation.unexpectedItemType(dataName)
         }
 
         let canonicalRoot = commandDirectory
@@ -67,7 +68,7 @@ enum CommandDirectoryPolicy {
         relativePaths: Paths
     ) throws where Paths.Element == String {
         let commandDirectory = commandDirectory.standardizedFileURL
-        if try resourceValues(at: commandDirectory)?.isSymbolicLink == true {
+        if isSymbolicLink(commandDirectory) {
             throw Violation.symbolicLink(".")
         }
         let canonicalRoot = commandDirectory
@@ -78,7 +79,7 @@ enum CommandDirectoryPolicy {
             var candidate = commandDirectory
             for component in relativePath.split(separator: "/") {
                 candidate.appendPathComponent(String(component))
-                if try resourceValues(at: candidate)?.isSymbolicLink == true {
+                if isSymbolicLink(candidate) {
                     throw Violation.symbolicLink(relativePath)
                 }
             }
@@ -101,13 +102,15 @@ enum CommandDirectoryPolicy {
             .appendingPathComponent(storageName)
             .standardizedFileURL
 
-        if let values = try resourceValues(at: storageURL) {
-            guard values.isSymbolicLink != true else {
-                throw Violation.symbolicLink("\(dataName)/\(storageName)")
-            }
-            guard values.isRegularFile == true else {
-                throw Violation.unexpectedItemType("\(dataName)/\(storageName)")
-            }
+        let relativeStoragePath = "\(dataName)/\(storageName)"
+        guard !isSymbolicLink(storageURL) else {
+            throw Violation.symbolicLink(relativeStoragePath)
+        }
+        var storageIsDirectory: ObjCBool = false
+        if FileManager.default.fileExists(
+            atPath: storageURL.path,
+            isDirectory: &storageIsDirectory), storageIsDirectory.boolValue {
+            throw Violation.unexpectedItemType(relativeStoragePath)
         }
 
         let canonicalData = dataDirectory
@@ -123,18 +126,10 @@ enum CommandDirectoryPolicy {
         return storageURL
     }
 
-    /// URL resource values inspect the link itself; FileManager attributes
-    /// follow it and would report the destination's type instead.
-    private static func resourceValues(at url: URL) throws -> URLResourceValues? {
-        do {
-            return try url.resourceValues(forKeys: [
-                .isSymbolicLinkKey,
-                .isDirectoryKey,
-                .isRegularFileKey,
-            ])
-        } catch let error as CocoaError where error.code == .fileNoSuchFile {
-            return nil
-        }
+    /// `fileExists` follows links and misses broken ones. Asking for the
+    /// destination identifies the link itself without dereferencing it.
+    private static func isSymbolicLink(_ url: URL) -> Bool {
+        (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
     }
 
     private static func isDescendant(_ candidate: URL, of directory: URL) -> Bool {

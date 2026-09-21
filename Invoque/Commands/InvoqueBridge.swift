@@ -154,7 +154,7 @@ enum InvoqueBridge {
                 return [:]
             }
             let data = try Data(contentsOf: fileURL)
-            let object = try JSONSerialization.jsonObject(with: data)
+            let object = try? JSONSerialization.jsonObject(with: data)
             return object as? [String: Any] ?? [:]
         }
 
@@ -405,23 +405,26 @@ enum InvoqueBridge {
                                           commandDirectory: URL) {
         guard let fs = JSValue(newObjectIn: context) else { return }
 
-        func resolve(_ path: String) -> URL? {
-            guard let base = try? CommandDirectoryPolicy.validatedDataDirectory(
-                in: commandDirectory) else { return nil }
+        func resolve(_ path: String) throws -> URL {
+            let base = try CommandDirectoryPolicy.validatedDataDirectory(
+                in: commandDirectory)
             let resolved = base.appendingPathComponent(path)
                 .standardizedFileURL
                 .resolvingSymlinksInPath()
             let canonicalBase = base.resolvingSymlinksInPath().standardizedFileURL
             guard resolved.path == canonicalBase.path
                     || resolved.path.hasPrefix(canonicalBase.path + "/") else {
-                return nil
+                throw CommandDirectoryPolicy.Violation.escapesDirectory("data/\(path)")
             }
             return resolved
         }
 
         let read: @convention(block) (String) -> String? = { path in
-            guard let url = resolve(path) else {
-                throwError("invoque.fs: '\(path)' escapes the command's data directory")
+            let url: URL
+            do {
+                url = try resolve(path)
+            } catch {
+                throwError("invoque.fs: \(error.localizedDescription)")
                 return nil
             }
             guard let data = try? Data(contentsOf: url),
@@ -429,8 +432,11 @@ enum InvoqueBridge {
             return text
         }
         let write: @convention(block) (String, String) -> Bool = { path, contents in
-            guard let url = resolve(path) else {
-                throwError("invoque.fs: '\(path)' escapes the command's data directory")
+            let url: URL
+            do {
+                url = try resolve(path)
+            } catch {
+                throwError("invoque.fs: \(error.localizedDescription)")
                 return false
             }
             do {
@@ -443,8 +449,11 @@ enum InvoqueBridge {
             }
         }
         let list: @convention(block) (String) -> [String]? = { path in
-            guard let url = resolve(path) else {
-                throwError("invoque.fs: '\(path)' escapes the command's data directory")
+            let url: URL
+            do {
+                url = try resolve(path)
+            } catch {
+                throwError("invoque.fs: \(error.localizedDescription)")
                 return nil
             }
             return try? FileManager.default.contentsOfDirectory(atPath: url.path)
