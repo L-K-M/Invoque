@@ -474,11 +474,16 @@ final class MakerModelTests: XCTestCase {
         client.responses = [.success(generationOutput())]
         let gate = DispatchSemaphore(value: 0)
         client.gate = gate
-        // Never leave the stub blocked if this test exits early.
-        defer { gate.signal() }
         let model = makeModel(client)
 
         let started = Task { await model.start(prompt: "x") }
+        // Never leave the stub blocked or the generation task running if
+        // this test exits early — a released task would keep publishing
+        // model state after teardown.
+        defer {
+            gate.signal()
+            started.cancel()
+        }
         // Wait until the request genuinely reached the client.
         let deadline = Date().addingTimeInterval(7)
         while client.calls.isEmpty, Date() < deadline {
