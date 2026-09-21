@@ -604,7 +604,9 @@ work async. Make the badge playful but the behavior deterministic.
 After reversible actions, leave a small timed capsule: restore prior clipboard,
 reopen the last closed panel state, unpin/reblock, or restore a Maker revision.
 Clipboard snapshots must obey clipboard-history app exclusions and retention
-rules. Never claim undo for restart, shell, or deletion.
+rules; when an exclusion or retention rule blocks the snapshot, omit clipboard
+restore from the capsule instead of restoring stale data. Never claim undo for
+restart, shell, or deletion.
 
 ### Theme pulse, restrained
 
@@ -625,7 +627,11 @@ Export a command as a small signed/read-only preview bundle containing its
 manifest, source, screenshot-free result sample, and permission summary. Import
 first verifies the manifest digest and a signature from a public key the user
 explicitly pinned by fingerprint, rejecting unsigned, unpinned, or mismatched
-bundles. It then opens X-ray; execution remains a separate user action.
+bundles. It then opens X-ray; execution remains a separate user action. Export
+signs with the author's locally generated key and displays its fingerprint;
+recipients may pin a fingerprint only after confirming it out of band — never
+from the bundle itself. Re-pinning is supported, and already-imported postcards
+signed by a retired key surface a visible warning.
 
 ### Tiny optional personality
 
