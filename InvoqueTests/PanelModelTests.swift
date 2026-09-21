@@ -1396,6 +1396,27 @@ final class PanelModelTests: XCTestCase {
         XCTAssertNil(model.systemActionConfirmation)
     }
 
+    func testCancellingSystemActionConfirmationRearmsInsteadOfRunning() {
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: Item.systemIDPrefix + "restart",
+            title: "Restart",
+            subtitle: "",
+            icon: .symbol("arrow.clockwise"),
+            action: .system(.restart))])
+        model.submit()
+
+        model.dismissSystemActionConfirmation()
+        XCTAssertNil(model.systemActionConfirmation)
+
+        model.submit(commandModifier: true)
+
+        XCTAssertNotNil(model.systemActionConfirmation)
+        XCTAssertNil(submitted)
+    }
+
     // MARK: Maker routing
 
     /// A MakerModel whose LLM is a stub — generation resolves to a clean

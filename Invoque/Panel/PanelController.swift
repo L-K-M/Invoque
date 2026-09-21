@@ -219,7 +219,14 @@ final class PanelController: NSObject, @unchecked Sendable {
         panel.contentView = NSHostingView(rootView: PanelView(model: model,
                                                               preferences: preferences))
 
-        panel.onCancel = { [weak self] in self?.hide() }
+        panel.onCancel = { [weak self] in
+            guard let self else { return }
+            if self.model.systemActionConfirmation != nil {
+                self.model.dismissSystemActionConfirmation()
+                return
+            }
+            self.hide()
+        }
 
         // ⌘P pins, ⌘B blocks the selected entry. The model returns nil
         // when the chord doesn't apply (no manageable row selected, a
