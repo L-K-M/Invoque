@@ -398,7 +398,7 @@ final class PanelModel: ObservableObject {
             if l.tier != r.tier { return l.tier < r.tier }
             if l.inTitle != r.inTitle { return l.inTitle }
             return lhs.offset < rhs.offset
-        }.map(\.row)
+        }.map(\.element.row)
     }
 
     /// Stops any scheduled or in-flight filter run and bumps the
