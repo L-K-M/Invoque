@@ -139,12 +139,17 @@ final class SearchModelTests: XCTestCase {
         // marginally higher — the tail is reverse recording order (the
         // title/id tie-break only fires on exactly equal scores, e.g.
         // decay-floored entries a month old). Items 00–02 fall past the cap.
-        XCTAssertEqual(Array(results.dropFirst().map(\.id)),
-                       (3...10).reversed().map { String(format: "app:%02d", $0) })
+        // Compared as a set: membership is the cap's contract, and the
+        // within-tail order is covered separately below without depending
+        // on sub-millisecond timestamps landing in recording order.
+        XCTAssertEqual(Set(results.dropFirst().map(\.id)),
+                       Set((3...10).map { String(format: "app:%02d", $0) }))
     }
 
     /// Within equal visit counts, the more recently recorded entry leads —
     /// the decay multiplier makes "same number of uses" order by last use.
+    /// A millisecond between the records keeps the ordering assertion
+    /// clear of any clock-resolution coincidence.
     func testTopHitsOrderSingleVisitsByRecency() {
         let source = StubSource()
         source.stubbedItems = [
@@ -153,6 +158,7 @@ final class SearchModelTests: XCTestCase {
         ]
         let frecency = Frecency(defaults: defaults)
         frecency.record("app:first-recorded")
+        Thread.sleep(forTimeInterval: 0.001)
         frecency.record("app:last-recorded")
         let model = SearchModel(sources: [source], frecency: frecency)
         XCTAssertEqual(model.results(for: "").map(\.id),
