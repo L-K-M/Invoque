@@ -70,7 +70,7 @@ final class SearchModelTests: XCTestCase {
 
     // MARK: Aggregation
 
-    func testEmptyQueryYieldsNoResults() {
+    func testEmptyQueryWithNoFrecencyHistoryYieldsNoResults() {
         let source = StubSource()
         source.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
         // No recorded picks → no top hits: a zero-state user sees the
