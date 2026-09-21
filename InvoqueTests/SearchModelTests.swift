@@ -39,14 +39,15 @@ final class SearchModelTests: XCTestCase {
         SearchModel(sources: sources, frecency: Frecency(defaults: defaults))
     }
 
-    private static func appItem(id: String, title: String) -> Item {
+    private static func appItem(id: String, title: String,
+                                matchText: String? = nil) -> Item {
         Item(
             id: id,
             title: title,
             subtitle: "Application",
             icon: .appIcon(path: "/Applications/\(title).app", bundleID: nil),
             action: .openApp(URL(fileURLWithPath: "/Applications/\(title).app")),
-            matchText: title
+            matchText: matchText ?? title
         )
     }
 
@@ -216,6 +217,42 @@ final class SearchModelTests: XCTestCase {
         ]
         XCTAssertEqual(makeModel(sources: [source]).results(for: "sa")
             .map(\.id), ["app:sa", "app:safari"])
+    }
+
+    /// "Shorter wins" measures the displayed title, not the match
+    /// surface — an app whose file name is longer than its display name
+    /// ("Zen" from `Zen Browser.app` → matchText "Zen Zen Browser") must
+    /// not lose to a longer-titled rival.
+    func testShorterTitleBeatsLongerMatchText() {
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:zenmap", title: "Zenmap",
+                         matchText: "Zenmap Zenmap"),
+            Self.appItem(id: "app:zen", title: "Zen",
+                         matchText: "Zen Zen Browser"),
+        ]
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "zen")
+            .map(\.id), ["app:zen", "app:zenmap"])
+    }
+
+    /// A hit that only lives in the hidden match surface (file name,
+    /// keywords) must not outrank a same-tier hit the user can see —
+    /// short title or not.
+    func testVisibleTitleMatchBeatsHiddenMatchTextHit() {
+        let source = StubSource()
+        source.stubbedItems = [
+            // "rowser" is an infix of "Zen Zen Browser" but absent from
+            // the displayed "Zen" title.
+            Self.appItem(id: "app:zen", title: "Zen",
+                         matchText: "Zen Zen Browser"),
+            // 24-char title vs the hidden item's 15-char matchText:
+            // under the old matchText-length rule "Zen" would lead, so
+            // only the matchedInTitle flag produces this order.
+            Self.appItem(id: "app:webbrowser",
+                         title: "Web Browser Professional"),
+        ]
+        XCTAssertEqual(makeModel(sources: [source]).results(for: "rowser")
+            .map(\.id), ["app:webbrowser", "app:zen"])
     }
 
     func testSelectionOfPinnedRowsIsNotRecorded() {

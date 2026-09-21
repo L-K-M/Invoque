@@ -5,7 +5,8 @@ import Foundation
 /// Source priority: `path:`/`calc:` pins first, then the user's pinned
 /// entries, then ranked matches, then the web fallback last. Ranked
 /// ordering is class-first — an exact prefix beats an infix beats a fuzzy
-/// subsequence — then shorter match text wins inside a class, then
+/// subsequence — then a match that lands in the displayed title beats a
+/// hidden-surface hit, then the shorter title wins, then
 /// frecency, alignment score, and title/id tie-break in that order. The
 /// pins are load-bearing, not cosmetic: the web row's text always
 /// contains the query, so without pinning it would score like a strong
@@ -60,22 +61,33 @@ final class SearchModel {
         let item: Item
         let match: FuzzyMatcher.Match
         let boost: Double
-        /// `matchText.count`, hoisted: `String.count` walks graphemes, so
-        /// it must not run twice per sort comparison.
-        let matchLength: Int
+        /// Whether the query appears contiguously in the displayed
+        /// title. A same-tier hit that only lives in the hidden surface
+        /// (file name, keywords) must not outrank one the user can see.
+        let matchedInTitle: Bool
+        /// `title.count`, hoisted: `String.count` walks graphemes, so it
+        /// must not run twice per sort comparison. The title, not
+        /// `matchText`, is what the list displays — matchText carries
+        /// extra words for matchability (`name fileName`, keywords) and
+        /// its length would order on invisible data.
+        let titleLength: Int
     }
 
     /// Whether `lhs` sorts before `rhs`: match tier first (exact prefix,
-    /// then infix, then fuzzy), then the shorter matched text, then the
-    /// frecency boost — a frequent pick wins an otherwise-equal match —
-    /// then the alignment score as the last quality signal, then title and
-    /// id for a total order.
+    /// then infix, then fuzzy), then a match visible in the title beats a
+    /// hidden-surface hit, then the shorter displayed title, then
+    /// the frecency boost — a frequent pick wins an otherwise-equal
+    /// match — then the alignment score as the last quality signal, then
+    /// title and id for a total order.
     private static func outranks(_ lhs: ScoredItem, over rhs: ScoredItem) -> Bool {
         if lhs.match.tier != rhs.match.tier {
             return lhs.match.tier < rhs.match.tier
         }
-        if lhs.matchLength != rhs.matchLength {
-            return lhs.matchLength < rhs.matchLength
+        if lhs.matchedInTitle != rhs.matchedInTitle {
+            return lhs.matchedInTitle
+        }
+        if lhs.titleLength != rhs.titleLength {
+            return lhs.titleLength < rhs.titleLength
         }
         if lhs.boost != rhs.boost { return lhs.boost > rhs.boost }
         if lhs.match.score != rhs.match.score {
@@ -120,9 +132,16 @@ final class SearchModel {
                     guard pinnedIDs.insert(item.id).inserted else { continue }
                     webHits.append(item)
                 } else if let match = FuzzyMatcher.match(trimmed, candidate: item.matchText) {
-                    let scored = ScoredItem(item: item, match: match,
-                                            boost: frecency.score(item.id),
-                                            matchLength: item.matchText.count)
+                    let scored = ScoredItem(
+                        item: item, match: match,
+                        boost: frecency.score(item.id),
+                        // Contiguous-in-title only: fuzzy-tier rows have
+                        // no contiguous hit by definition, and every
+                        // source's matchText leads with the title, so a
+                        // title hit always lands inside matchText too.
+                        matchedInTitle: FuzzyMatcher.contains(
+                            trimmed, in: item.title),
+                        titleLength: item.title.count)
                     if let existing = bestByID[item.id],
                        !Self.outranks(scored, over: existing) { continue }
                     bestByID[item.id] = scored

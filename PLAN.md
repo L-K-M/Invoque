@@ -176,10 +176,13 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   bonus, case bonus). Pure function — unit-test it. Zap's type-to-search
   matching is the local precedent.
 - Ranking: match tier first — exact prefix > exact infix > fuzzy
-  subsequence — then shorter match text, then frecency (persisted usage
-  counts in UserDefaults), then the alignment score, then title/id for a
-  total order. Pinned rows keep their slots: `PathSource` rows first (a typed
-  address is a direct intent), calculator answers next, web fallback last.
+  subsequence — then a match that lands in the displayed title beats a
+  hidden-surface hit (matchText carries extra matchable words invisible
+  to the user), then shorter title, then frecency
+  (persisted usage counts in UserDefaults), then the alignment score,
+  then title/id for a total order. Pinned rows keep their slots:
+  `PathSource` rows first (a typed address is a direct intent),
+  calculator answers next, web fallback last.
 - Entry rules: the user can **pin** a durable entry (⌘P or right-click →
   Pin — ranks above unpinned matches when it matches, beneath the `path:`
   and `calc:` head rows; a pin boosts, it doesn't conjure, and pins past

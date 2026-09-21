@@ -155,6 +155,16 @@ enum FuzzyMatcher {
         return Match(tier: tier, score: total)
     }
 
+    /// Whether `query` occurs contiguously in `candidate` under the same
+    /// lowercased forms `match` builds — the probe `SearchModel` uses to
+    /// tell a title-visible hit from a hidden-surface one. Kept here so
+    /// the probe can never drift from the matcher's own normalization.
+    static func contains(_ query: String, in candidate: String) -> Bool {
+        guard !query.isEmpty else { return false }
+        return candidate.lowercased()
+            .range(of: query.lowercased()) != nil
+    }
+
     // MARK: Helpers
 
     /// Whether `index` opens a word: the first character, anything after a
