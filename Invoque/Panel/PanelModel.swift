@@ -181,9 +181,10 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         didSet {
             guard query != oldValue else { return }
             // Editing means the user moved on from the action being reviewed.
-            // A pending consent prompt is just as stale as an action card.
-            permissionRequest = nil
-            systemActionConfirmation = nil
+            // A pending consent prompt is just as stale as an action card —
+            // go through the same dismissal path as Esc and Decline.
+            dismissPermissionRequest()
+            dismissSystemActionConfirmation()
             refreshResults()
         }
     }
