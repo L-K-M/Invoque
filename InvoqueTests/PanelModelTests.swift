@@ -836,16 +836,20 @@ final class PanelModelTests: XCTestCase {
         session.cancel()
         gate2.signal()
         // Poll rather than sleep a fixed window — the stray emit's hop
-        // has to drain before the drop is provable.
+        // has to drain before the drop is provable. `wait` consumes the
+        // token, so a flag records the exit reason — a second `wait`
+        // would report timedOut on an already-drained semaphore.
+        var drained = false
         let strayDeadline = Date().addingTimeInterval(5)
-        while strayDrained.wait(timeout: .now()) != .success,
-              Date() < strayDeadline {
-            try? await Task.sleep(nanoseconds: 5_000_000)
+        while !drained, Date() < strayDeadline {
+            drained = strayDrained.wait(timeout: .now()) == .success
+            if !drained {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
         }
         // Without this, a drained-never-fires timeout would let the
         // items assertion pass before the stray was even delivered.
-        XCTAssertEqual(strayDrained.wait(timeout: .now()), .success,
-                       "stray emission never reached the main queue")
+        XCTAssertTrue(drained, "stray emission never reached the main queue")
         XCTAssertEqual(session.items.map(\.title), ["first.txt", "second.txt"])
         XCTAssertFalse(session.isPending)
     }
