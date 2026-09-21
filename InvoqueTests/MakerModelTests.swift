@@ -480,7 +480,22 @@ final class MakerModelTests: XCTestCase {
             XCTFail("cancel did not unwind the generation — did generate() suspend between the phase flip and the generationTask assignment?")
             return
         }
-        await started.value // the cancelled task unwinds promptly
+        // The phase poll exits on its first .idle read — the real unwind
+        // signal is `started` resolving. Bound that too: a no-op'd cancel
+        // leaves it unresolved, and an unbounded await would hang the
+        // suite on exactly the regression this test exists to catch.
+        let unwound = await withTaskGroup(of: Bool.self) { group in
+            group.addTask { _ = await started.value; return true }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+        XCTAssertTrue(unwound,
+                      "cancelled generation did not unwind — did generate() suspend between the phase flip and the generationTask assignment?")
         let transcript = await model.transcript
         XCTAssertEqual(transcript.map(\.role), [.system, .user])
     }
