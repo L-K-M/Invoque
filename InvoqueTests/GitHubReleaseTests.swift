@@ -208,7 +208,10 @@ final class GitHubReleaseTests: XCTestCase {
         { "tag_name": "1.0", "html_url": "https://e.com", "prerelease": false, "draft": false, "assets": [],
           "published_at": "2026-05-01T12:34:56.123Z" }
         """)
-        XCTAssertNotNil(release.publishedAt)
+        let expected = ISO8601DateFormatter()
+        expected.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        XCTAssertEqual(release.publishedAt,
+                       expected.date(from: "2026-05-01T12:34:56.123Z"))
     }
 
     /// Arch hints match whole tokens, not substrings — "intel" is inside
