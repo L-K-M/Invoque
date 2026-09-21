@@ -310,12 +310,20 @@ enum InvoqueBridge {
         }
     }
 
+    /// The fetch verdict — `.failure` carries the full `invoque.fetch:`
+    /// rejection message destined for the JS `reject`. A dedicated enum,
+    /// not `Result`: `Result`'s failure must conform to `Error`, and the
+    /// JS-facing payload is a plain message string.
+    enum FetchOutcome {
+        case success(status: Int, body: String)
+        case failure(String)
+    }
+
     /// Maps a completed download to the fetch result — extracted from the
     /// task callback so the policy (scheme re-check, size cap, decode) is
-    /// unit-testable without a live server. `.failure` carries the full
-    /// `invoque.fetch:` rejection message.
+    /// unit-testable without a live server.
     static func fetchOutcome(fileURL: URL?, response: URLResponse?,
-                             error: Error?) -> Result<(status: Int, body: String), String> {
+                             error: Error?) -> FetchOutcome {
         if let error {
             return .failure("invoque.fetch: \(error.localizedDescription)")
         }
