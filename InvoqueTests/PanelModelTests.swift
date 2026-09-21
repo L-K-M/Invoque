@@ -1414,7 +1414,7 @@ final class PanelModelTests: XCTestCase {
     func testFileSurvivorMatchesOnFreshSurface() async throws {
         let model = makeModel(items: [])
         withShortFileDebounce()
-        let renamed = Item(id: Item.fileIDPrefix + "/tmp/safa-first.txt",
+        let renamed = Item(id: Self.fileItem("safa-first.txt").id,
                            title: "safa-first.txt", subtitle: "/tmp",
                            icon: .fileURL(URL(fileURLWithPath:
                                               "/tmp/safa-first.txt")),
