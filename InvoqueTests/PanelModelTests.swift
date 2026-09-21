@@ -1729,6 +1729,9 @@ final class PanelModelTests: XCTestCase {
 
     private final class MakerStubClient: LLMClientServing, @unchecked Sendable {
         var model = "stub"
+        // Written before the model's task is created and read inside it —
+        // task-creation happens-before covers the hop; do not mutate while
+        // a generation is in flight.
         var response = ""
         func complete(messages: [LLMMessage]) async throws -> String { response }
     }

@@ -110,18 +110,16 @@ struct GitHubRelease: Decodable {
             let name = asset.name.lowercased()
             return !foreignHints.contains { name.contains($0) }
         }
+        // The Rosetta fallback pick is identical in both slices; the #if
+        // only decides whether it applies, so it is computed once here.
+        let rosettaFallback = runnable.min { rank($0) < rank($1) }
+            ?? assets.min { rank($0) < rank($1) }
         #if arch(arm64)
         // Foreign-arch assets still run — x86_64 via Rosetta 2 — so
         // falling back to the best-ranked asset is safe.
-        return runnable.min { rank($0) < rank($1) }
-            ?? assets.min { rank($0) < rank($1) }
+        return rosettaFallback
         #else
-        if runningOnAppleSilicon {
-            // Foreign-arch assets still run — x86_64 via Rosetta 2 — so
-            // falling back to the best-ranked asset is safe.
-            return runnable.min { rank($0) < rank($1) }
-                ?? assets.min { rank($0) < rank($1) }
-        }
+        if runningOnAppleSilicon { return rosettaFallback }
         // No Rosetta for arm64 on Intel: an all-foreign asset list has
         // nothing this machine can run — offer nothing (the caller opens
         // the release page) rather than an unusable download.

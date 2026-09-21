@@ -27,18 +27,30 @@ final class MakerModelTests: XCTestCase {
     /// was called with so tests can check the feedback loop.
     private final class StubClient: LLMClientServing, @unchecked Sendable {
         var model = "stub-model"
-        var responses: [Result<String, Error>] = []
-        var calls: [[LLMMessage]] = []
+        // `complete` mutates from the generation task while assertions read
+        // from the test thread — lock both sides like UpdateCheckerTests'
+        // stubs do.
+        private let lock = NSLock()
+        private var _responses: [Result<String, Error>] = []
+        private var _calls: [[LLMMessage]] = []
+        var responses: [Result<String, Error>] {
+            get { lock.withLock { _responses } }
+            set { lock.withLock { _responses = newValue } }
+        }
+        var calls: [[LLMMessage]] { lock.withLock { _calls } }
 
         func complete(messages: [LLMMessage]) async throws -> String {
-            calls.append(messages)
-            guard !responses.isEmpty else {
+            let next = lock.withLock { () -> Result<String, Error>? in
+                _calls.append(messages)
+                return _responses.isEmpty ? nil : _responses.removeFirst()
+            }
+            guard let next else {
                 // An unexpected extra call must fail loudly — returning ""
                 // would surface as a confusing parse failure downstream.
                 XCTFail("StubClient.complete called with no canned response queued")
                 return ""
             }
-            switch responses.removeFirst() {
+            switch next {
             case .success(let text): return text
             case .failure(let error): throw error
             }

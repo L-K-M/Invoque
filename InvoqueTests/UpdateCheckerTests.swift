@@ -154,10 +154,12 @@ final class UpdateCheckerTests: XCTestCase {
         func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease {
             lock.withLock { storage += 1 }
             return await withCheckedContinuation { c in
-                lock.withLock {
-                    if released { c.resume(returning: release) }
-                    else { continuation = c }
+                let resumeNow = lock.withLock { () -> Bool in
+                    if released { return true }
+                    continuation = c
+                    return false
                 }
+                if resumeNow { c.resume(returning: release) }
             }
         }
         /// Releases the suspended fetch — also valid if the fetch hasn't
