@@ -11,19 +11,31 @@ final class PanelBackgroundTests: XCTestCase {
         let reduced = host(reduceTransparency: true)
 
         #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            // If this changes after an OS update, re-check whether glassEffect
-            // began vending NSVisualEffectView before treating it as app fallback.
-            XCTAssertFalse(
-                containsVisualEffectView(regular),
-                "Expected native glassEffect without an NSVisualEffectView")
-        } else {
+        if #unavailable(macOS 26.0) {
             XCTAssertTrue(containsVisualEffectView(regular))
         }
         #else
         XCTAssertTrue(containsVisualEffectView(regular))
         #endif
         XCTAssertFalse(containsVisualEffectView(reduced))
+    }
+
+    /// `NSHostingView` internals are Apple's implementation detail: if an OS
+    /// update starts vending `NSVisualEffectView` under `glassEffect`, check
+    /// whether it is still native glass before treating it as app fallback.
+    /// Kept apart from the behavior tests so that future flip fails alone.
+    @MainActor
+    func testNativeGlassDoesNotVendVisualEffectView() throws {
+        #if compiler(>=6.2)
+        guard #available(macOS 26.0, *) else {
+            throw XCTSkip("Requires macOS 26")
+        }
+        XCTAssertFalse(
+            containsVisualEffectView(host(reduceTransparency: false)),
+            "Expected native glassEffect without an NSVisualEffectView")
+        #else
+        throw XCTSkip("Requires the macOS 26 SDK")
+        #endif
     }
 
     @MainActor
