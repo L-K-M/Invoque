@@ -220,7 +220,6 @@ final class SearchModel {
         }
         return hits.prefix(Self.maxTopHits).map(\.item)
     }
-    }
 
     // MARK: Selection
 
