@@ -72,13 +72,14 @@ final class MakerModel: ObservableObject {
     /// is the published projection for the view.
     private(set) var transcript: [LLMMessage] = []
 
-    // Assigned once at init and frozen thereafter — `nonisolated(unsafe)`
-    // lets the nonisolated init write them and keeps their reads out of the
-    // actor for a set that can never change anyway.
+    // Assigned once at init and frozen thereafter — `nonisolated` lets the
+    // nonisolated init write them and keeps their reads out of the actor for
+    // a set that can never change anyway. The two non-Sendable types take the
+    // `unsafe` opt-out; the Sendable ones are checked.
     nonisolated(unsafe) private let clientProvider: () -> LLMClientServing
-    nonisolated(unsafe) private let runner: CommandRunner
-    nonisolated(unsafe) private let writer: CommandWriter
-    nonisolated(unsafe) private let store: CommandStore?
+    nonisolated private let runner: CommandRunner
+    nonisolated private let writer: CommandWriter
+    nonisolated private let store: CommandStore?
     nonisolated(unsafe) private let permissionGrants: CommandPermissionGrants
 
     private var generationTask: Task<Void, Never>?
