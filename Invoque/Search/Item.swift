@@ -28,6 +28,10 @@ struct Item: Identifiable, Equatable {
     /// filesystem path. Pinned first — a typed address is a direct intent,
     /// not a candidate among fuzzy matches.
     static let pathIDPrefix = "path:"
+    /// The one row `URLSource` emits when the query *is* an http(s) URL.
+    /// Pinned alongside `path:` for the same reason — and so the web
+    /// fallback can't own ⏎ on a pasted address.
+    static let urlIDPrefix = "url:"
 
     /// Whether an id belongs to a pinned row — one that bypasses ranking
     /// entirely. One place so `SearchModel` and `PanelModel` can't drift.
@@ -35,10 +39,11 @@ struct Item: Identifiable, Equatable {
         isHeadPinnedID(id) || id.hasPrefix(webIDPrefix)
     }
 
-    /// The pins that lead the list — path and calculator. The web
+    /// The pins that lead the list — path, URL, and calculator. The web
     /// fallback pins *last* instead, so it isn't a head pin.
     static func isHeadPinnedID(_ id: String) -> Bool {
-        id.hasPrefix(pathIDPrefix) || id.hasPrefix(calculatorIDPrefix)
+        id.hasPrefix(pathIDPrefix) || id.hasPrefix(urlIDPrefix)
+            || id.hasPrefix(calculatorIDPrefix)
     }
 
     /// Whether an id names a user-manageable *entry* — one that can be

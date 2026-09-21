@@ -143,8 +143,11 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   `CommandSource` (from CommandStore), `CalculatorSource`, `SystemSource`
   (lock/sleep/restart/empty trash…), `PathSource` (a pasted/typed
   filesystem path that exists pins first — ⏎ opens folders, reveals
-  files in Finder; ⌘⏎ is the inverse), `WebSource` (fallback "Search
-  for X" against the configured `SearchEngine` — Settings → General).
+  files in Finder; ⌘⏎ is the inverse), `URLSource` (a pasted/typed
+  http(s) URL pins first alongside paths — ⏎ opens it in the browser,
+  so the web fallback can't turn an address into a search), `WebSource`
+  (fallback "Search for X" against the configured `SearchEngine` —
+  Settings → General).
 - File search: `find <query>` / `f <query>` / `search <query>` routes to a
   built-in file mode — a direct `FileManager` walk, **not**
   Spotlight/NSMetadataQuery (metadata misses excluded locations). What it
@@ -187,8 +190,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   to the user), then shorter title, then frecency
   (persisted usage counts in UserDefaults), then the alignment score,
   then title/id for a total order. Pinned rows keep their slots:
-  `PathSource` rows first (a typed address is a direct intent),
-  calculator answers next, web fallback last.
+  `PathSource`/`URLSource` rows first (a typed address is a direct
+  intent), calculator answers next, web fallback last.
 - Entry rules: the user can **pin** a durable entry (⌘P or right-click →
   Pin — ranks above unpinned matches when it matches, beneath the `path:`
   and `calc:` head rows; a pin boosts, it doesn't conjure, and pins past
