@@ -322,8 +322,10 @@ struct PanelView: View {
             // Live status left, key hints right — the two clusters scan
             // separately instead of interleaving in one centered string.
             Text(footerStatus)
+                .lineLimit(1)
             Spacer()
             Text(footerHint)
+                .lineLimit(1)
         }
         .font(preferences.panelTypeface.font(.caption))
         .foregroundStyle(tertiaryColor)
@@ -334,7 +336,7 @@ struct PanelView: View {
     /// prompt or the maker owns the panel — the hint column is enough.
     private var footerStatus: String {
         if model.permissionRequest != nil || model.makerIsActive { return "" }
-        if model.fileSearchIsActive, model.fileScanIsPending {
+        if model.fileScanIsPending {
             return "Searching files…"
         }
         let count = model.results.count
