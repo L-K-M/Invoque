@@ -1,9 +1,10 @@
 import Foundation
 
 /// Serves installed apps from an in-memory cache. `items(matching:)` never
-/// touches the disk; `reload()` runs on a background queue at launch (and,
-/// later, from a file watcher) to refresh. The actual scan lives in
-/// `AppCatalog`, shared with the `invoque.apps` command module.
+/// touches the disk; `reload()` runs on a background queue at launch and
+/// whenever the directory watcher reports an install or uninstall under the
+/// app folders. The actual scan lives in `AppCatalog`, shared with the
+/// `invoque.apps` command module.
 /// `Sendable` is asserted: the item cache and reload hook are lock-guarded,
 /// and the initial scan deliberately runs on a background queue.
 final class AppSource: ItemSource, @unchecked Sendable {
@@ -18,6 +19,29 @@ final class AppSource: ItemSource, @unchecked Sendable {
     /// Last scan, sorted by title for deterministic iteration. The search hot
     /// path reads this and nothing else.
     private var cachedItems: [Item] = []
+
+    /// Set once the first scan has been published so an empty first scan
+    /// still fires `onReload` exactly once — a no-apps machine must not
+    /// leave a "scan landed" consumer waiting forever. Guarded by `lock`.
+    private var didPublishInitialLoad = false
+
+    /// Serial queue for catalog scans — the launch scan and every
+    /// watcher-triggered rescan share it, so bursts coalesce into one
+    /// walk at a time and `installedApps()` never occupies the watcher's
+    /// own serial queue (which services events, retries, and `stop()`).
+    private let scanQueue = DispatchQueue(label: "appsource.scan",
+                                          qos: .userInitiated)
+
+    /// Notices apps appearing or disappearing under the catalog's search
+    /// folders so the cache is not frozen at launch. `lazy` because the
+    /// event closure captures `self`, which is only valid once the
+    /// non-lazy members above are initialized.
+    private lazy var watcher = DirectoryWatcher(
+        roots: AppCatalog.searchDirectories) { [weak self] in
+        self?.scanQueue.async { [weak self] in
+            self?.reload()
+        }
+    }
 
     /// Backing store for `onReload` — assigned once in `init`, read by
     /// `reload` on a background queue, so reads stay lock-guarded.
@@ -44,9 +68,10 @@ final class AppSource: ItemSource, @unchecked Sendable {
     /// would be missed entirely.
     init(onReload: (() -> Void)? = nil) {
         _onReload = onReload
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        scanQueue.async { [weak self] in
             self?.reload()
         }
+        watcher.start()
     }
 
     // MARK: ItemSource
@@ -68,6 +93,11 @@ final class AppSource: ItemSource, @unchecked Sendable {
     func reload() {
         let sorted = AppCatalog.installedApps().map(Self.item)
         lock.lock()
+        // Directory events fire for any child write — a .DS_Store update
+        // included — so an identical scan must not republish and kick a
+        // pointless result refresh.
+        let changed = sorted != cachedItems || !didPublishInitialLoad
+        didPublishInitialLoad = true
         cachedItems = sorted
         // The hook is invoked on main by design — the function value is what
         // crosses the queue boundary, so the sendability exemption sits here
@@ -75,6 +105,7 @@ final class AppSource: ItemSource, @unchecked Sendable {
         // leak into every assigner's captures).
         nonisolated(unsafe) let hook = _onReload
         lock.unlock()
+        guard changed else { return }
         DispatchQueue.main.async { hook?() }
     }
 
