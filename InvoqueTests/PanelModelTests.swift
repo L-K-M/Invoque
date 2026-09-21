@@ -342,9 +342,10 @@ final class PanelModelTests: XCTestCase {
         model.searchModel = SearchModel(
             sources: [StubSource(stubbed: [item])], frecency: frecency)
         model.query = "json"
+        let scoreBefore = frecency.score("cmd:json")
         model.submit()
         XCTAssertEqual(model.query, "jf ")
-        XCTAssertGreaterThan(frecency.score("cmd:json"), 0)
+        XCTAssertGreaterThan(frecency.score("cmd:json"), scoreBefore)
     }
 
     func testEnterFilterPinsPickedCommandPastKeywordCollision() async throws {
