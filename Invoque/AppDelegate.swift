@@ -220,15 +220,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences.fileSearchScopesChanged = { [weak model] in
             model?.refreshResults()
         }
+        // One WebSource feeds both the always-last fallback row and the
+        // `web <q>` forced-search keyword — same item either way.
+        let webSource = WebSource(engine: { [weak preferences] in
+            preferences?.searchEngine ?? .duckDuckGo
+        })
+        model.webSearchItem = { webSource.item(for: $0) }
         let sources: [ItemSource] = [
             PathSource(),
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
             commandSource,
             CalculatorSource(),
             SystemSource(),
-            WebSource(engine: { [weak preferences] in
-                preferences?.searchEngine ?? .duckDuckGo
-            }),
+            webSource,
         ]
         let searchModel = SearchModel(sources: sources, frecency: Frecency(),
                                       entryRules: entryRules)

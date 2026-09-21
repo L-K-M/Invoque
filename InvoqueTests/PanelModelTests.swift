@@ -506,6 +506,56 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.first?.subtitle, "nope")
     }
 
+    // MARK: Web-search mode
+
+    /// `web <q>` bypasses ranking entirely: a query that also matches an
+    /// app still reaches the web row — the fallback's only dedicated route.
+    func testWebKeywordForcesWebSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:webster", title: "Webster")])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.query = "web elephant"
+        XCTAssertEqual(model.results.map(\.id), ["web:elephant"])
+        XCTAssertTrue(model.webSearchIsActive)
+        guard case .openURL(let url) = model.results.first?.action else {
+            return XCTFail("expected an openURL action")
+        }
+        XCTAssertEqual(url.absoluteString, "https://duckduckgo.com/?q=elephant")
+    }
+
+    /// Bare `web` (no space) stays a normal search — the same convention
+    /// the other keyword modes follow.
+    func testBareWebKeywordStaysNormalSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:webster", title: "Webster")])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.query = "web"
+        XCTAssertEqual(model.results.map(\.id), ["app:webster"])
+    }
+
+    /// `web ` with a blank rest owns an empty list, like `find ` — the
+    /// view reads `webSearchTextIsBlank` for its input hint.
+    func testBlankWebTextOwnsEmptyList() {
+        let model = makeModel(items: [Self.appItem(id: "app:webster", title: "Webster")])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.query = "web "
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertTrue(model.webSearchTextIsBlank)
+    }
+
+    /// Unwired, `web x` is just a query — the "unwired stays normal"
+    /// convention the other routed modes follow.
+    func testUnwiredWebSearchLeavesQueryAsSearch() {
+        let model = makeModel(items: [Self.appItem(id: "app:webx",
+                                                  title: "Web X Utility")])
+        model.query = "web x"
+        XCTAssertEqual(model.results.map(\.id), ["app:webx"])
+    }
+
+    /// The keyword list is a contract — dropping "web" silently reroutes
+    /// those queries back to normal search.
+    func testWebSearchKeywords() {
+        XCTAssertEqual(PanelModel.webSearchKeywords, ["web"])
+    }
+
     // MARK: File-search mode
 
     /// Polls `fileRunCompletions` until `atLeast` scans have reached their

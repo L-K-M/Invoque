@@ -17,21 +17,28 @@ final class WebSource: ItemSource {
 
     /// One "Search the web" item for any non-blank query, none for blank.
     func items(matching query: String) -> [Item] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
+        item(for: query).map { [$0] } ?? []
+    }
+
+    /// The web-search row for `text` — shared by the per-keystroke
+    /// fallback and the `web <q>` forced-search keyword, so both paths
+    /// build the identical item.
+    func item(for text: String) -> Item? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
         let engine = engine()
         guard let encoded = Self.encode(trimmed),
               let url = engine.url(encodedQuery: encoded) else {
-            return []
+            return nil
         }
-        return [Item(
+        return Item(
             id: Item.webIDPrefix + trimmed,
             title: "Search the web for \"\(trimmed)\"",
             subtitle: "Search \(engine.label) in your browser",
             icon: .symbol("magnifyingglass"),
             action: .openURL(url),
             matchText: "web search \(trimmed)"
-        )]
+        )
     }
 
     // MARK: Encoding

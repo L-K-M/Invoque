@@ -242,6 +242,8 @@ struct PanelView: View {
                         // of claiming there are no results.
                         Text(model.fileSearchTextIsBlank
                              ? "Type a filename"
+                             : model.webSearchTextIsBlank
+                             ? "Type a web search"
                              : model.fileScanIsPending
                              ? "Searching files…"
                              : model.fileSearchIsActive
@@ -340,6 +342,9 @@ struct PanelView: View {
                 return "Searching… ⏎ open in window" + manage + " · esc dismiss"
             }
             return "⏎ open · ⌘⏎ reveal in Finder" + manage + " · esc dismiss"
+        }
+        if model.webSearchIsActive {
+            return "⏎ search the web · esc dismiss"
         }
         return "↑↓ navigate · ⏎ open" + manage + " · esc dismiss"
     }
