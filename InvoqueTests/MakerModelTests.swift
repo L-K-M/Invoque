@@ -431,6 +431,65 @@ final class MakerModelTests: XCTestCase {
         XCTAssertEqual(transcript.last?.content, "second fix")
     }
 
+    // MARK: Cancel generation
+
+    /// A provider that never answers — the cancel path is what ends the
+    /// spend, so the stub hangs until its task is cancelled.
+    private final class HangingClient: LLMClientServing, @unchecked Sendable {
+        var model = "hanging"
+        func complete(messages: [LLMMessage]) async throws -> String {
+            try await Task.sleep(nanoseconds: 60_000_000_000)
+            return ""
+        }
+    }
+
+    /// Dismissing the panel mid-generation must stop the API spend — but
+    /// without discarding the session: the transcript survives so a
+    /// resummoned `make` can retry the same conversation.
+    func testCancelGenerationStopsInflightRequest() async {
+        let model = MakerModel(client: { HangingClient() },
+                               runner: CommandRunner(),
+                               writer: CommandWriter(rootURL: root),
+                               store: store,
+                               permissionGrants: makeFreshGrants())
+        let started = Task { await model.start(prompt: "demo") }
+        // Wait for the request to be in flight, plus a beat for the task
+        // handle to land — phase flips a line before the assignment.
+        let deadline = Date().addingTimeInterval(5)
+        var phase = await model.phase
+        while phase != .generating, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            phase = await model.phase
+        }
+        XCTAssertEqual(phase, .generating)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        await model.cancelGeneration()
+
+        phase = await model.phase
+        XCTAssertEqual(phase, .idle)
+        await started.value // the cancelled task unwinds promptly
+        let transcript = await model.transcript
+        XCTAssertEqual(transcript.map(\.role), [.system, .user])
+    }
+
+    /// Outside `.generating` the cancel is a no-op — a settled draft stays.
+    func testCancelGenerationIsNoOpWhenNotGenerating() async {
+        let client = StubClient()
+        client.responses = [.success(generationOutput())]
+        let model = makeModel(client)
+        await model.start(prompt: "demo")
+        var phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+
+        await model.cancelGeneration()
+
+        phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+        let draft = await model.draft
+        XCTAssertNotNil(draft)
+    }
+
     // MARK: Discard
 
     func testDiscardReturnsToIdle() async {

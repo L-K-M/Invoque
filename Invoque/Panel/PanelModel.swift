@@ -839,6 +839,19 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         permissionRequest = nil
     }
 
+    /// The panel dismissed — stop work still burning for a list nobody can
+    /// see: a `find` walk would keep scanning the disk for minutes, a
+    /// debounced filter run would land rows into a hidden list, and an
+    /// in-flight `make` generation would keep spending API budget. Rows and
+    /// the query are untouched — `reset` owns resummon state, and a
+    /// detached file session is already off `fileSession` by then.
+    func panelDidHide() {
+        cancelFileSearch()
+        cancelFilterRun()
+        // MakerModel is @MainActor — the cancel hops over.
+        if let maker { Task { await maker.cancelGeneration() } }
+    }
+
     /// Moves the selection by `delta` rows, wrapping at both ends.
     func moveSelection(by delta: Int) {
         guard !results.isEmpty else { return }

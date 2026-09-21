@@ -947,6 +947,78 @@ final class PanelModelTests: XCTestCase {
         await awaitFileCompletions(model, atLeast: 1)
     }
 
+    /// Dismissing the panel mid-scan retires the walk — otherwise a
+    /// whole-disk `find` keeps running for a list nobody can see.
+    func testPanelDidHideCancelsFileScan() async throws {
+        let model = makeModel(items: [])
+        let sawCancel = DrainFlag()
+        model.fileSearcher = { _, isCancelled, _ in
+            while !isCancelled() { Thread.sleep(forTimeInterval: 0.005) }
+            sawCancel.raise()
+        }
+        model.query = "find x"
+        await awaitFileStarts(model, atLeast: 1)
+        XCTAssertTrue(model.fileScanIsPending)
+
+        model.panelDidHide()
+
+        XCTAssertFalse(model.fileScanIsPending)
+        await awaitFileCompletions(model, atLeast: 1)
+        // The walk itself observed the cancellation probe, not just the
+        // session flag flipping on the model.
+        let deadline = Date().addingTimeInterval(5)
+        while !sawCancel.raised, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(sawCancel.raised, "walk never observed cancellation")
+    }
+
+    /// A debounced filter run is work for the visible list — dismissal
+    /// cancels it before it ever reaches the runner.
+    func testPanelDidHideCancelsPendingFilterRun() async throws {
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run() { return { items: [{ title: "x" }] }; }
+            """)
+        let model = makeModel(items: [])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.commandRunner = CommandRunner()
+        model.query = "jf x"
+
+        // Still inside the debounce — the run is scheduled, not started.
+        model.panelDidHide()
+
+        try await Task.sleep(nanoseconds: 200_000_000) // past the debounce
+        XCTAssertEqual(model.filterRunsStarted, 0)
+    }
+
+    /// A scan already handed to the detached window is off `fileSession`
+    /// when the panel hides — dismissal must not kill it.
+    func testPanelDidHideKeepsDetachedSessionAlive() async throws {
+        let model = makeModel(items: [])
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
+        model.fileSearcher = { _, _, emit in
+            gate.wait()
+            emit([Self.fileItem("late.txt")])
+        }
+        var detached: FileSearchSession?
+        model.onDetachFileSearch = { detached = $0 }
+        model.query = "find x"
+        await awaitFileStarts(model, atLeast: 1)
+
+        model.submit() // detaches the pending scan
+        model.panelDidHide()
+
+        let session = try XCTUnwrap(detached)
+        XCTAssertTrue(session.isPending)
+        gate.signal()
+        let deadline = Date().addingTimeInterval(5)
+        while session.isPending, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(session.items.map(\.title), ["late.txt"])
+    }
+
     /// A settled scan isn't pending — ⏎ picks the row, nothing detaches.
     func testSubmitAfterScanCompletesDoesNotDetach() async throws {
         let model = makeModel(items: [])
