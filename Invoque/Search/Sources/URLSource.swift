@@ -29,13 +29,17 @@ final class URLSource: ItemSource {
     // MARK: Resolution
 
     /// The query as a web URL, or nil when it isn't one: an exact
-    /// `URL(string:)` parse with an `http`/`https` scheme and a non-empty
-    /// host. Unencoded spaces (which fail the parse) and other schemes
-    /// (`mailto:`, `file:` — `PathSource` owns that one) are not URLs
-    /// here. Mirrors the `invoque.open` module's http(s) allowlist.
+    /// `URL(string:)` parse with an `http`/`https` scheme, a non-empty
+    /// host, and no raw whitespace — Foundation's parser accepts spaces,
+    /// but a pasted address never carries one (browsers percent-encode),
+    /// so whitespace means the query is prose around an address. Other
+    /// schemes (`mailto:`, `file:` — `PathSource` owns that one) are not
+    /// URLs here. Mirrors the `invoque.open` module's http(s) allowlist.
     static func resolve(_ query: String) -> URL? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed),
+        guard !trimmed.isEmpty,
+              !trimmed.contains(where: \Character.isWhitespace),
+              let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               let host = url.host, !host.isEmpty else {
