@@ -566,7 +566,12 @@ final class PanelModelTests: XCTestCase {
         // so blocking the scan can't block `awaitFileStarts`.
         let releaseStaleScan = DispatchSemaphore(value: 0)
         model.fileSearcher = { _, _, emit in
-            releaseStaleScan.wait()
+            // Bounded: an unreleased gate must fail the test, not hang
+            // the suite — that would mean the onStart-before-searcher
+            // ordering regressed.
+            if releaseStaleScan.wait(timeout: .now() + 10) == .timedOut {
+                XCTFail("stale file scan was never released")
+            }
             emit([Self.fileItem("stale.txt")])
         }
         model.query = "find elephant"
