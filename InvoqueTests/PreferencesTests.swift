@@ -129,6 +129,8 @@ final class PreferencesTests: XCTestCase {
         AppearancePreset.vaporwave.apply(to: preferences)
         preferences.decorationSize = 29
         preferences.panelTypeface = .monospaced
+        XCTAssertNotEqual(Preferences.Default.panelTypeface, .monospaced,
+                          "The reset test must start from a non-default face or it proves nothing")
         preferences.resetAppearanceToDefaults()
 
         XCTAssertEqual(preferences.panelMaterial, Preferences.Default.panelMaterial)
