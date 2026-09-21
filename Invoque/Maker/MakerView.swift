@@ -112,6 +112,7 @@ struct MakerView: View {
             // escape hatch. discard() cancels the task; the typed prompt
             // stays in the query field, so ⏎ simply regenerates.
             Button("Cancel") { model.discard() }
+                .keyboardShortcut(.cancelAction)
         }
     }
 

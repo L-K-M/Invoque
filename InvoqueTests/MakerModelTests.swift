@@ -40,6 +40,9 @@ final class MakerModelTests: XCTestCase {
         /// One-shot barrier `complete` blocks on before answering — lets a
         /// test hold a generation in flight while it cancels underneath.
         private var _gate: DispatchSemaphore?
+        /// Whether the gated call observed Task cancellation — proves a
+        /// discard actually cancelled the in-flight request.
+        private var _cancelledDuringGate = false
         var responses: [Result<String, Error>] {
             get { lock.withLock { _responses } }
             set { lock.withLock { _responses = newValue } }
@@ -49,16 +52,22 @@ final class MakerModelTests: XCTestCase {
             get { lock.withLock { _gate } }
             set { lock.withLock { _gate = newValue } }
         }
+        var cancelledDuringGate: Bool { lock.withLock { _cancelledDuringGate } }
 
         func complete(messages: [LLMMessage]) async throws -> String {
             let next = lock.withLock { () -> Result<String, Error>? in
                 _calls.append(messages)
                 return _responses.isEmpty ? nil : _responses.removeFirst()
             }
-            let gate = lock.withLock { _gate }
+            // Take-and-clear atomically so only one call ever waits.
+            let gate = lock.withLock { () -> DispatchSemaphore? in
+                let held = _gate
+                _gate = nil
+                return held
+            }
             if let gate {
-                lock.withLock { _gate = nil }
                 gate.wait()
+                lock.withLock { _cancelledDuringGate = Task.isCancelled }
             }
             guard let next else {
                 // An unexpected extra call must fail loudly — returning ""
@@ -465,6 +474,8 @@ final class MakerModelTests: XCTestCase {
         client.responses = [.success(generationOutput())]
         let gate = DispatchSemaphore(value: 0)
         client.gate = gate
+        // Never leave the stub blocked if this test exits early.
+        defer { gate.signal() }
         let model = makeModel(client)
 
         let started = Task { await model.start(prompt: "x") }
@@ -483,6 +494,12 @@ final class MakerModelTests: XCTestCase {
         // published over the discarded state.
         gate.signal()
         _ = await started.value
+        // The button's real contract: the request was cancelled, not
+        // merely ignored — and discard must not have kicked a new one.
+        XCTAssertTrue(client.cancelledDuringGate,
+                      "discard() should cancel the in-flight request")
+        XCTAssertEqual(client.calls.count, 1,
+                       "discard() must not trigger a new request")
         phase = await model.phase
         XCTAssertEqual(phase, .idle)
         let lastError = await model.lastError
