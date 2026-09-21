@@ -44,9 +44,9 @@ final class URLSource: ItemSource {
             return nil
         }
         // `URL(string:)` percent-encodes invalid characters on macOS 14+,
-        // so opt into strict parsing there; older systems are already
-        // strict — though the legacy parser still admits a few RFC-illegal
-        // characters (e.g. `|`), so such pastes resolve as URLs only there.
+        // so opt into strict parsing there. The macOS 13 parser has no
+        // encoding pass but still admits a few RFC-illegal characters
+        // (e.g. `|`) — such pastes resolve as URLs only there.
         let parsed: URL?
         if #available(macOS 14.0, *) {
             parsed = URL(string: trimmed, encodingInvalidCharacters: false)
