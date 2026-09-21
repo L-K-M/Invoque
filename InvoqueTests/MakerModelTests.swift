@@ -343,6 +343,31 @@ final class MakerModelTests: XCTestCase {
         XCTAssertNil(result)
     }
 
+    /// Feedback after a paused consent run must not carry the stale request
+    /// into the regenerated draft — otherwise every later Test silently
+    /// no-ops (test() requires permissionRequest == nil).
+    func testFeedbackClearsPendingConsentRequest() async {
+        let grants = makeFreshGrants()
+        let client = StubClient()
+        client.responses = [.success(generationOutput(permissions: ["shell"],
+                                                      usesShell: true)),
+                            .success(generationOutput())]
+        let model = makeModel(client, permissionGrants: grants)
+
+        await model.start(prompt: "x")
+        await model.test()
+        let paused = await model.permissionRequest
+        XCTAssertNotNil(paused)
+
+        await model.sendFeedback("drop the shell usage")
+        let after = await model.permissionRequest
+        XCTAssertNil(after)
+        // The regenerated clean draft tests without getting stuck.
+        await model.test()
+        let result = await model.testResult
+        XCTAssertEqual(result?.title, "done")
+    }
+
     // MARK: Save
 
     func testSaveWritesCommandAndRescans() async {

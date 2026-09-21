@@ -171,6 +171,10 @@ final class MakerModel: ObservableObject {
         transcript.append(LLMMessage(.user, trimmed))
         draft = nil
         testResult = nil
+        // A consent card belongs to the draft it paused — carrying it into
+        // the regeneration would arm a stale request against the new draft
+        // and block every later Test (test() requires nil).
+        permissionRequest = nil
         await generate()
     }
 
