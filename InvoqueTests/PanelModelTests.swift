@@ -1456,6 +1456,36 @@ final class PanelModelTests: XCTestCase {
         XCTAssertNil(model.systemActionConfirmation)
     }
 
+    /// A query edit dismisses a pending consent prompt the same way it
+    /// dismisses a system-action card — the prompt belongs to what was typed.
+    func testEditingQueryDismissesPermissionRequest() throws {
+        let grants = makeFreshGrants()
+        let model = makeModel(items: [])
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+
+        model.query = "something else"
+
+        XCTAssertNil(model.permissionRequest)
+    }
+
+    /// A pending confirmation belongs to the summon that produced it —
+    /// the next summon starts clean.
+    func testResetClearsPendingSystemActionConfirmationBetweenSummons() {
+        let model = makeModel(items: [])
+        model.showCommandResults([ResultRow(
+            id: Item.systemIDPrefix + "restart",
+            title: "Restart", subtitle: "",
+            icon: .symbol("arrow.clockwise"),
+            action: .system(.restart))])
+        model.submit()
+        XCTAssertNotNil(model.systemActionConfirmation)
+
+        model.reset(clearQuery: true)
+
+        XCTAssertNil(model.systemActionConfirmation,
+                     "a pending confirmation must not greet the next summon")
+    }
+
     func testCancellingSystemActionConfirmationRearmsInsteadOfRunning() {
         let model = makeModel(items: [])
         var submitted: ResultRow?
