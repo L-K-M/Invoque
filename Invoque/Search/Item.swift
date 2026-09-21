@@ -121,5 +121,17 @@ struct Item: Identifiable, Equatable {
                 return false
             }
         }
+
+        /// Canonical SF Symbol — the source row and the confirmation card
+        /// both derive from this so their glyphs can never drift.
+        var symbolName: String {
+            switch self {
+            case .restart: return "arrow.counterclockwise"
+            case .shutDown: return "power"
+            case .emptyTrash: return "trash.fill"
+            case .lockScreen: return "lock.fill"
+            case .sleep: return "moon.fill"
+            }
+        }
     }
 }
