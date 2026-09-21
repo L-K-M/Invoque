@@ -172,8 +172,8 @@ final class PanelModelTests: XCTestCase {
         let manifest = try JSONDecoder().decode(
             CommandManifest.self,
             from: try JSONSerialization.data(withJSONObject: payload))
-        let command = Command(manifest: manifest,
-                              directory: URL(fileURLWithPath: "/tmp/risky-demo"))
+        let command = try Command(manifest: manifest,
+                                    directory: URL(fileURLWithPath: "/tmp/risky-demo"))
         // The request comes from the production derivation — if "risky"
         // ever changes, the fixture can't drift into requests the run
         // path would never build.

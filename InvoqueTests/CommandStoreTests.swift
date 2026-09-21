@@ -143,6 +143,43 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertTrue(store.scanErrors.isEmpty)
     }
 
+    /// An entry escaping its directory must throw, not trap: the manifest
+    /// is untrusted input, and a `precondition` here killed the process on
+    /// every launch/rescan of the offending directory.
+    func testEscapingEntryThrowsInsteadOfTrapping() throws {
+        let manifest = try JSONDecoder().decode(
+            CommandManifest.self,
+            from: Data("""
+                {"schemaVersion": 1, "name": "evil", "title": "Evil",
+                 "runtime": "js", "entry": "../evil.js", "mode": "action"}
+                """.utf8))
+        XCTAssertThrowsError(
+            try Command(manifest: manifest,
+                        directory: root.appendingPathComponent("evil"))) { error in
+            XCTAssertEqual(error as? CommandManifest.ValidationError,
+                           .entryEscapesDirectory("../evil.js"))
+        }
+    }
+
+    /// The scan path reports the same directory as an error and keeps
+    /// serving the valid commands — no crash, no missing list.
+    func testScanReportsEscapingEntryAsError() throws {
+        try writeCommand("good", title: "Good")
+        let evil = root.appendingPathComponent("evil")
+        try FileManager.default.createDirectory(at: evil, withIntermediateDirectories: true)
+        try """
+        {"schemaVersion": 1, "name": "evil", "title": "Evil",
+         "runtime": "js", "entry": "../evil.js", "mode": "action"}
+        """.write(to: evil.appendingPathComponent("command.json"),
+                  atomically: true, encoding: .utf8)
+
+        let store = CommandStore(rootPaths: [root.path])
+        store.scan()
+
+        XCTAssertEqual(store.commands.map(\.name), ["good"])
+        XCTAssertEqual(store.scanErrors.map { $0.directory.lastPathComponent }, ["evil"])
+    }
+
     // MARK: Helpers
 
     private func writeCommand(_ name: String, title: String) throws {
