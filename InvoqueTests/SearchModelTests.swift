@@ -245,7 +245,11 @@ final class SearchModelTests: XCTestCase {
             // the displayed "Zen" title.
             Self.appItem(id: "app:zen", title: "Zen",
                          matchText: "Zen Zen Browser"),
-            Self.appItem(id: "app:webbrowser", title: "WebBrowser"),
+            // 24-char title vs the hidden item's 15-char matchText:
+            // under the old matchText-length rule "Zen" would lead, so
+            // only the matchedInTitle flag produces this order.
+            Self.appItem(id: "app:webbrowser",
+                         title: "Web Browser Professional"),
         ]
         XCTAssertEqual(makeModel(sources: [source]).results(for: "rowser")
             .map(\.id), ["app:webbrowser", "app:zen"])
