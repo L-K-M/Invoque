@@ -140,7 +140,10 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - `ItemSource` protocol: `func items(for query: String) -> [Item]` (sync,
   cached sources) and async `reload()` for dynamic ones.
 - Sources v1: `AppSource` (NSWorkspace scan, LaunchServices apps), 
-  `CommandSource` (from CommandStore), `CalculatorSource`, `SystemSource`
+  `CommandSource` (from CommandStore), `CalculatorSource` (arithmetic plus
+  bare-integer base conversion — `255`/`0xFF`/`0b1010` offer a
+  hex/dec/bin/oct row, pinned with calculator answers; decimal input
+  needs two digits so a lone digit stays an app search), `SystemSource`
   (lock/sleep/restart/empty trash…), `PathSource` (a pasted/typed
   filesystem path that exists pins first — ⏎ opens folders, reveals
   files in Finder; ⌘⏎ is the inverse), `WebSource` (fallback "Search
