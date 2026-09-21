@@ -42,6 +42,7 @@ enum HUD {
         effect.state = .active
         effect.wantsLayer = true
         effect.layer?.cornerRadius = 12
+        effect.layer?.masksToBounds = true
         label.frame = NSRect(
             x: padding.width / 2,
             y: padding.height / 2,
@@ -56,7 +57,7 @@ enum HUD {
             defer: false)
         panel.isFloatingPanel = true
         panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
