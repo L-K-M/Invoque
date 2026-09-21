@@ -549,8 +549,11 @@ final class PanelModel: ObservableObject {
     }
 
     /// A session emission landing: snapshot into `rawFileRows`, shape, and
-    /// merge. Runs per batch while the walk streams, and once more from
-    /// `fileSessionDidFinish` so the final state can't sit unapplied.
+    /// merge. Runs per batch while the walk streams — never at finish:
+    /// every emission is already applied by its `absorb` → `onUpdate`
+    /// hop, which posts before the finish hop on the FIFO main queue, so
+    /// a finish-time re-apply would only double-merge (and, with
+    /// `fileResultText` already advanced, undo an extension merge).
     private func fileSessionDidUpdate(_ session: FileSearchSession) {
         guard session === fileSession else { return }
         // Kept unshaped so a pin/block toggle can re-derive the list
@@ -576,13 +579,12 @@ final class PanelModel: ObservableObject {
         }
     }
 
-    /// The session's walk ended — count it (stale ones too), then let a
-    /// current session settle: apply its last snapshot and drop the
-    /// handle, which flips `fileScanIsPending` for the footer.
+    /// The session's walk ended — count it (stale ones too), then drop
+    /// the handle, which flips `fileScanIsPending` for the footer. The
+    /// final snapshot is already applied — see `fileSessionDidUpdate`.
     private func fileSessionDidFinish(_ session: FileSearchSession) {
         defer { fileRunCompletions += 1 }
         guard session === fileSession else { return }
-        fileSessionDidUpdate(session)
         fileSession = nil
     }
 

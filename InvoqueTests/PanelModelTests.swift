@@ -797,16 +797,15 @@ final class PanelModelTests: XCTestCase {
         }
         var detached: FileSearchSession?
         model.onDetachFileSearch = { detached = $0 }
-        var submitted: ResultRow??
-        model.onSubmit = { submitted = $0 }
+        var submitCalled = false
+        model.onSubmit = { _ in submitCalled = true }
         model.query = "find x"
         await awaitResults(model) { $0.count == 1 }
 
         model.submit()
 
         let session = try XCTUnwrap(detached)
-        // Outer-nil = onSubmit never fired — a detach is not a row submit.
-        XCTAssertNil(submitted as Any, "a detach is not a row submit")
+        XCTAssertFalse(submitCalled, "a detach is not a row submit")
         XCTAssertTrue(session.isPending)
         XCTAssertTrue(model.results.isEmpty)
         XCTAssertFalse(model.fileScanIsPending)
