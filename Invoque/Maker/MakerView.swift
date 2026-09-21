@@ -286,7 +286,7 @@ struct MakerView: View {
                             .font(typeface.font(.caption))
                     }
                     .menuStyle(.borderlessButton)
-                    .fixedSize()
+                    .lineLimit(1)
                 }
 
                 ScrollView([.horizontal, .vertical]) {

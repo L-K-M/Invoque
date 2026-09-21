@@ -65,6 +65,17 @@ final class MakerViewTests: XCTestCase {
             entryName: "main.js"), files[0])
     }
 
+    func testStaleSelectionFallsBackToFirstFileWhenEntryMissing() {
+        let files = [
+            MakerView.ReviewFile(name: "command.json", contents: "manifest"),
+        ]
+
+        XCTAssertEqual(MakerView.selectedFile(
+            in: files,
+            preferred: "removed.js",
+            entryName: "also-removed.js"), files[0])
+    }
+
     // MARK: parseArgs
 
     func testParseArgsSplitsOnWhitespace() {
