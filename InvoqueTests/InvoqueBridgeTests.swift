@@ -40,6 +40,8 @@ final class InvoqueBridgeTests: XCTestCase {
             return XCTFail("expected failure")
         }
         XCTAssertTrue(message.hasPrefix("invoque.fetch:"))
+        XCTAssertTrue(message.contains(error.localizedDescription),
+                      "the underlying transport error should reach the caller")
     }
 
     /// A response whose final URL left http(s) is refused — the redirect
