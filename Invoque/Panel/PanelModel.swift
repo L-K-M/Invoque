@@ -309,9 +309,11 @@ final class PanelModel: ObservableObject {
     /// already reaching for it. Re-sorting can't promise that (a prefix
     /// hit can degrade to infix while still matching, e.g. "saf"→"safa"
     /// against "SafxSafay"), so survivors keep their relative order and
-    /// newcomers fill the remaining slots by rank. A survivor absent from
-    /// `fresh` but still matching (pushed past the result cap) keeps its
-    /// row; its display fields refresh from the fresh copy when one exists.
+    /// newcomers fill the remaining slots by rank — *except* where a row's
+    /// fresh rank is strictly better than the rows ahead of it, which
+    /// `promote` allows to rise. A survivor absent from `fresh` but still
+    /// matching (pushed past the result cap) keeps its row; its display
+    /// fields refresh from the fresh copy when one exists.
     /// Pinned rows (calculator up top, web fallback at the bottom) keep
     /// their slots — stability only covers the ranked middle.
     private func stabilizedRankedRows(_ fresh: [Item]) -> [ResultRow] {
@@ -325,32 +327,78 @@ final class PanelModel: ObservableObject {
         let trimmed = SearchModel.normalizedQuery(query)
         let freshByID = Dictionary(freshRows.map { ($0.id, $0) },
                                    uniquingKeysWith: { first, _ in first })
-        var head: [ResultRow] = []
+        var head: [RankedRow] = []
         var headIDs = Set<String>()
         for row in results where !Item.isPinnedID(row.id) {
             // Prefer the fresh copy's match surface when one exists — a
             // rescan that renames what the item matches must not keep
             // displaying a row that no longer qualifies.
             let candidate = freshByID[row.id]?.matchText ?? row.matchText
-            guard FuzzyMatcher.match(trimmed, candidate: candidate) != nil,
+            guard let match = FuzzyMatcher.match(trimmed,
+                                                 candidate: candidate),
                   headIDs.insert(row.id).inserted else { continue }
-            head.append(freshByID[row.id] ?? row)
+            head.append(rankedRow(freshByID[row.id] ?? row,
+                                  match: match, text: trimmed))
         }
         // The pins keep their slots around the ranked middle — a head
         // survivor must not push a fresh calculator answer off the top,
         // and the cap applies to the middle only or a full page of
         // survivors would slice the web fallback off the bottom. Same
         // slot math as SearchModel's own `rankedSlots`.
-        let tail = freshRows.filter {
-            !Item.isPinnedID($0.id) && !headIDs.contains($0.id)
-        }
+        let tail = freshRows
+            .filter { !Item.isPinnedID($0.id) && !headIDs.contains($0.id) }
+            .map { rankedRow($0, match: FuzzyMatcher.match(
+                trimmed, candidate: $0.matchText), text: trimmed) }
         let headPins = freshRows.filter { Item.isHeadPinnedID($0.id) }
         let web = freshRows.filter { $0.id.hasPrefix(Item.webIDPrefix) }
         let middleSlots = max(0, SearchModel.maxResults
             - headPins.count - web.count)
         return Array((headPins
-            + Array((head + tail).prefix(middleSlots)) + web)
+            + Array(promote(head + tail).prefix(middleSlots)) + web)
             .prefix(SearchModel.maxResults))
+    }
+
+    /// A row plus the rank keys the stability merge sorts by. The keys
+    /// describe the row's rank under the *new* query — promotion exists
+    /// precisely because they can improve while a row sits displayed.
+    private struct RankedRow {
+        let row: ResultRow
+        /// Entry pins hold the lead through a merge — a stronger-matching
+        /// row must not bubble past the pin contract.
+        let pinned: Bool
+        let tier: FuzzyMatcher.Match.Tier
+        /// Whether the query occurs contiguously in the displayed title —
+        /// `SearchModel.outranks`' second key: a hit the user can see
+        /// beats one hiding in the match-only surface.
+        let inTitle: Bool
+    }
+
+    /// Builds a `RankedRow`: the match/tier under the current text plus
+    /// the pin and title-hit keys. `match` is nil only defensively —
+    /// every caller already filtered on a hit.
+    private func rankedRow(_ row: ResultRow, match: FuzzyMatcher.Match?,
+                           text: String) -> RankedRow {
+        RankedRow(row: row, pinned: entryRules.isPinned(row.id),
+                  tier: match?.tier ?? .fuzzy,
+                  inTitle: match != nil
+                      && FuzzyMatcher.contains(text, in: row.title))
+    }
+
+    /// Stable merge of survivors-then-newcomers: input order wins among
+    /// equal keys — that's the stability half, the still-matching row
+    /// keeps the slot the user sees it in — but a strictly better key
+    /// (pinned over unpinned, better tier, title hit over hidden)
+    /// promotes past worse peers. That's the half absolute-position
+    /// preservation got wrong: "para" kept "Parallels Desktop" buried
+    /// below fuzzy survivors because nothing could ever move up.
+    private func promote(_ rows: [RankedRow]) -> [ResultRow] {
+        rows.enumerated().sorted { lhs, rhs in
+            let l = lhs.element, r = rhs.element
+            if l.pinned != r.pinned { return l.pinned }
+            if l.tier != r.tier { return l.tier < r.tier }
+            if l.inTitle != r.inTitle { return l.inTitle }
+            return lhs.offset < rhs.offset
+        }.map(\.element.row)
     }
 
     /// Stops any scheduled or in-flight filter run and bumps the
@@ -621,10 +669,12 @@ final class PanelModel: ObservableObject {
 
     /// The `stabilizedRankedRows` twin for file scans: when the scan text
     /// only grew, rows that still match keep their displayed positions and
-    /// the fresh list fills the remaining slots by rank. Runs after
-    /// `shapeFileRows`, so the merge sees the pin-ordered list — and only
-    /// ever sees a text extension, since `entryRulesDidChange` applies
-    /// rules changes wholesale instead of routing through here.
+    /// the fresh list fills the remaining slots by rank — with the same
+    /// bounded promotion, so a file whose match tightened past its
+    /// neighbours (fuzzy → infix → prefix) isn't stuck below the fold.
+    /// Runs after `shapeFileRows`, so the merge sees the pin-ordered list —
+    /// and only ever sees a text extension, since `entryRulesDidChange`
+    /// applies rules changes wholesale instead of routing through here.
     private func stabilizedFileRows(_ freshRows: [ResultRow],
                                     text: String) -> [ResultRow] {
         guard let anchor = fileResultText, !anchor.isEmpty,
@@ -633,15 +683,24 @@ final class PanelModel: ObservableObject {
         }
         let freshByID = Dictionary(freshRows.map { ($0.id, $0) },
                                    uniquingKeysWith: { first, _ in first })
-        var head: [ResultRow] = []
+        var head: [RankedRow] = []
         var headIDs = Set<String>()
         for row in results {
-            guard FuzzyMatcher.match(text, candidate: row.matchText) != nil,
+            // Same rule as the ranked twin: the keep-check and the merge
+            // key both read the fresh copy's surface when one exists —
+            // a rescan that renames what the item matches must not keep
+            // (or worse, promote) a row that no longer qualifies.
+            let merged = freshByID[row.id] ?? row
+            guard let match = FuzzyMatcher.match(text,
+                                                 candidate: merged.matchText),
                   headIDs.insert(row.id).inserted else { continue }
-            head.append(freshByID[row.id] ?? row)
+            head.append(rankedRow(merged, match: match, text: text))
         }
-        let tail = freshRows.filter { !headIDs.contains($0.id) }
-        return Array((head + tail).prefix(SearchModel.maxResults))
+        let tail = freshRows
+            .filter { !headIDs.contains($0.id) }
+            .map { rankedRow($0, match: FuzzyMatcher.match(
+                text, candidate: $0.matchText), text: text) }
+        return Array(promote(head + tail).prefix(SearchModel.maxResults))
     }
 
     /// The last scan's rows before pin/block shaping — cached so a rules

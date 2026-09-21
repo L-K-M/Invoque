@@ -1144,22 +1144,102 @@ final class PanelModelTests: XCTestCase {
 
     // MARK: Result stability
 
-    /// Typing more letters must not reorder rows that still match.
-    /// "Safxa" prefix-matches "saf" but only *fuzzy*-matches "safa" — a
-    /// plain re-sort would demote it below the still-prefix "SafariLong";
-    /// stability keeps the displayed order.
+    /// Typing more letters must not reorder rows that still match —
+    /// among peers whose fresh rank is equal. Both survivors land
+    /// infix-tier with a title-visible hit on "safa", where a fresh
+    /// rank would flip them on title length; stability holds the order.
     func testExtendingQueryKeepsStillMatchingRowsInPlace() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:degrades", title: "SafxSafay"),
+            Self.appItem(id: "app:stable", title: "Xsafa"),
+        ])
+        model.query = "saf"
+        // Prefix hit outranks the infix one.
+        XCTAssertEqual(model.results.map(\.id), ["app:degrades", "app:stable"])
+        model.query = "safa"
+        // Both are now infix hits visible in the title — equal merge
+        // keys — so the displayed order holds even though a fresh rank
+        // would order the shorter title first.
+        XCTAssertEqual(model.results.map(\.id), ["app:degrades", "app:stable"])
+    }
+
+    /// The other half of bounded stability: a survivor whose fresh rank
+    /// is strictly better promotes past worse peers — "saf"→"safa" drops
+    /// "Safxa" to fuzzy while "SafariLong" stays prefix, so the prefix
+    /// hit surfaces instead of staying buried. (The reported shape:
+    /// "para" had kept "Parallels Desktop" under fuzzy survivors.)
+    func testExtensionPromotesBetterTierSurvivor() {
         let model = makeModel(items: [
             Self.appItem(id: "app:degrades", title: "Safxa"),
             Self.appItem(id: "app:stable", title: "SafariLong"),
         ])
         model.query = "saf"
-        // Both prefix-hit; the shorter match text leads.
         XCTAssertEqual(model.results.map(\.id), ["app:degrades", "app:stable"])
         model.query = "safa"
-        // A fresh rank would order [stable, degrades] — prefix beats
-        // fuzzy — but the survivor keeps its slot.
-        XCTAssertEqual(model.results.map(\.id), ["app:degrades", "app:stable"])
+        XCTAssertEqual(model.results.map(\.id), ["app:stable", "app:degrades"])
+    }
+
+    /// The reported regression end-to-end: typed incrementally, "para"
+    /// must surface the sole title-prefix match above fuzzy survivors
+    /// inherited from "pa" — positions protect equal ranks, they must
+    /// not hold a better match below the fold.
+    func testExtensionPromotesPrefixSurvivorPastFuzzyOnes() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:pad", title: "Pad"),
+            Self.appItem(id: "app:pan", title: "Pan"),
+            Self.appItem(id: "app:pandora", title: "Pandora"),
+            Self.appItem(id: "app:parallels", title: "Parallels Desktop"),
+        ])
+        model.query = "pa"
+        // All prefix-hit "pa"; shortest titles lead, Parallels last.
+        XCTAssertEqual(model.results.map(\.id),
+                       ["app:pad", "app:pan", "app:pandora",
+                        "app:parallels"])
+        model.query = "para"
+        // Pad/Pan stop matching; Pandora survives only fuzzily, while
+        // Parallels is the prefix hit — it rises to the top.
+        XCTAssertEqual(model.results.map(\.id),
+                       ["app:parallels", "app:pandora"])
+    }
+
+    /// The third merge key: between same-tier survivors, the row whose
+    /// title visibly contains the query promotes over one whose match
+    /// only lives in the hidden matchText surface.
+    func testTitleVisibleHitPromotesOnExtension() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:hidden", title: "Safx",
+                         matchText: "Safx qsafa"),
+            Self.appItem(id: "app:visible", title: "Xsafa"),
+        ])
+        model.query = "saf"
+        // Prefix beats infix: the hidden-surface row leads for now.
+        XCTAssertEqual(model.results.map(\.id), ["app:hidden", "app:visible"])
+        model.query = "safa"
+        // Both land infix-tier ("safa" sits inside "qsafa" and inside
+        // "Xsafa") — only Xsafa's *title* shows the query, so it
+        // promotes past the hidden hit.
+        XCTAssertEqual(model.results.map(\.id), ["app:visible", "app:hidden"])
+    }
+
+    /// A pin's lead is part of the promotion key: an unpinned row whose
+    /// tier improved may pass unpinned peers, but never a pinned one —
+    /// the pin contract outranks a better fresh tier.
+    func testPinnedSurvivorHoldsLeadOverPromotedPrefix() {
+        let rules = RulesStub()
+        rules.pinned = ["app:pandora"]
+        let model = makeManagedModel(items: [
+            Self.appItem(id: "app:pandora", title: "Pandora"),
+            Self.appItem(id: "app:parallels", title: "Parallels Desktop"),
+        ], rules: rules)
+        model.query = "pa"
+        // Pinned band leads; Parallels follows.
+        XCTAssertEqual(model.results.map(\.id),
+                       ["app:pandora", "app:parallels"])
+        model.query = "para"
+        // Parallels is the strictly better match (prefix over fuzzy)
+        // but Pandora is pinned — the pin keeps the top slot.
+        XCTAssertEqual(model.results.map(\.id),
+                       ["app:pandora", "app:parallels"])
     }
 
     /// Non-extension edits re-rank fresh — deletion gets the shorter
@@ -1234,13 +1314,37 @@ final class PanelModelTests: XCTestCase {
     }
 
     /// File scans get the same stability: rows that still match the grown
-    /// text keep their positions even when the fresh scan re-ranks them.
+    /// text keep their positions *among equal-ranked peers* even when the
+    /// fresh scan re-ranks them — here both survivors land infix-tier,
+    /// so the stub's flipped emit order must not take.
     func testFileResultsStabilizeOnExtension() async throws {
         let model = makeModel(items: [])
         withShortFileDebounce()
         model.fileSearcher = { text, _, emit in
-            // The stub re-ranks per query — "safa" puts the longer,
-            // still-prefix file first and demotes the fuzzy survivor.
+            // The stub re-ranks per query — under a plain re-sort the
+            // shorter name would lead the second pass.
+            if text == "saf" {
+                emit([Self.fileItem("safxsafay.txt"), Self.fileItem("xsafa.txt")])
+            } else {
+                emit([Self.fileItem("xsafa.txt"), Self.fileItem("safxsafay.txt")])
+            }
+        }
+        model.query = "find saf"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["safxsafay.txt", "xsafa.txt"])
+        model.query = "find safa"
+        await awaitFileCompletions(model, atLeast: 2)
+        // Both are equal-keyed infix hits now — the order holds.
+        XCTAssertEqual(model.results.map(\.title), ["safxsafay.txt", "xsafa.txt"])
+    }
+
+    /// The promotion half for scans: a survivor whose match tightened to
+    /// a strictly better tier rises past peers that only still match —
+    /// the file-mode twin of the "para"/"Parallels Desktop" burial.
+    func testFileSurvivorPromotesOnExtension() async throws {
+        let model = makeModel(items: [])
+        withShortFileDebounce()
+        model.fileSearcher = { text, _, emit in
             if text == "saf" {
                 emit([Self.fileItem("safxa.txt"), Self.fileItem("safarilong.txt")])
             } else {
@@ -1252,14 +1356,38 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.map(\.title), ["safxa.txt", "safarilong.txt"])
         model.query = "find safa"
         await awaitFileCompletions(model, atLeast: 2)
-        // "safxa.txt" still fuzzy-matches "safa" — it keeps its slot.
-        XCTAssertEqual(model.results.map(\.title), ["safxa.txt", "safarilong.txt"])
+        // "safxa.txt" degrades to fuzzy while "safarilong.txt" stays a
+        // prefix hit — the better rank surfaces over the kept slot.
+        XCTAssertEqual(model.results.map(\.title), ["safarilong.txt", "safxa.txt"])
     }
 
     /// A row that first appears on the extended completion — a streamed
-    /// hit or a refreshed source — joins at its fresh rank *below* the
-    /// survivors, even when the fresh pass outranks them.
-    func testFileNewcomerJoinsBelowSurvivors() async throws {
+    /// hit or a refreshed source — joins *below* equal-ranked survivors,
+    /// even when the fresh pass emitted it first.
+    func testFileNewcomerJoinsBelowEqualRankedSurvivors() async throws {
+        let model = makeModel(items: [])
+        withShortFileDebounce()
+        model.fileSearcher = { text, _, emit in
+            if text == "saf" {
+                emit([Self.fileItem("safxa.txt")])
+            } else {
+                emit([Self.fileItem("safbat.txt"), Self.fileItem("safxa.txt")])
+            }
+        }
+        model.query = "find saf"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["safxa.txt"])
+        model.query = "find safa"
+        await awaitFileCompletions(model, atLeast: 2)
+        // "safbat.txt" fuzzy-matches "safa" just like the survivor —
+        // equal keys, so the survivor's slot leads and it appends.
+        XCTAssertEqual(model.results.map(\.title),
+                       ["safxa.txt", "safbat.txt"])
+    }
+
+    /// ...but a newcomer with a strictly better tier promotes past the
+    /// survivors — joining below only ever protected equal ranks.
+    func testFileNewcomerWithBetterTierPromotes() async throws {
         let model = makeModel(items: [])
         withShortFileDebounce()
         model.fileSearcher = { text, _, emit in
@@ -1274,10 +1402,42 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.map(\.title), ["safxa.txt"])
         model.query = "find safa"
         await awaitFileCompletions(model, atLeast: 2)
-        // "safarilong.txt" wins the fresh pass on tier but is a newcomer —
-        // it lands below the survivor rather than displacing it.
+        // The newcomer is a prefix hit against a fuzzy survivor — it
+        // takes the top slot rather than appending unseen.
         XCTAssertEqual(model.results.map(\.title),
-                       ["safxa.txt", "safarilong.txt"])
+                       ["safarilong.txt", "safxa.txt"])
+    }
+
+    /// A survivor whose fresh copy renamed its match surface can't keep
+    /// its slot on the stale one — the keep-check and the merge key both
+    /// read the surface that would actually display.
+    func testFileSurvivorMatchesOnFreshSurface() async throws {
+        let model = makeModel(items: [])
+        withShortFileDebounce()
+        let renamed = Item(id: Self.fileItem("safa-first.txt").id,
+                           title: "safa-first.txt", subtitle: "/tmp",
+                           icon: .fileURL(URL(fileURLWithPath:
+                                              "/tmp/safa-first.txt")),
+                           action: .openFile(URL(fileURLWithPath:
+                                                 "/tmp/safa-first.txt")),
+                           matchText: "renamed.txt")
+        model.fileSearcher = { text, _, emit in
+            if text == "saf" {
+                emit([Self.fileItem("safa-first.txt")])
+            } else {
+                // Same id, renamed surface — "safa" no longer hits it.
+                emit([renamed, Self.fileItem("safa-second.txt")])
+            }
+        }
+        model.query = "find saf"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["safa-first.txt"])
+        model.query = "find safa"
+        await awaitFileCompletions(model, atLeast: 2)
+        // The stale surface would have kept "safa-first.txt" promoted on
+        // a phantom prefix; on its real surface it sinks below the hit.
+        XCTAssertEqual(model.results.map(\.title),
+                       ["safa-second.txt", "safa-first.txt"])
     }
 
     /// A mode change can't leak the last search's stability anchor — rows
@@ -1448,8 +1608,9 @@ final class PanelModelTests: XCTestCase {
     }
 
     /// Extending the query keeps displayed order inside the pin band too:
-    /// "safi" re-tiers "Safxafi" from prefix to fuzzy — a fresh rank would
-    /// swap the two pins — but the survivor merge holds their slots.
+    /// at "safi" both pins degrade to equal-keyed fuzzy hits, so neither
+    /// promotes — the merge holds their slots even where a fresh rank
+    /// would weigh them differently.
     func testPinnedSurvivorsKeepOrderOnExtension() {
         let rules = RulesStub()
         rules.pinned = ["app:long", "app:short"]
