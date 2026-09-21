@@ -39,8 +39,11 @@ final class CommandSource: ItemSource, @unchecked Sendable {
         // `<trigger> <rest>` binds `rest` as an action command's args —
         // the same routing rule filter mode already uses (`rest` arrives
         // as args[0], the whole remainder). The trigger is the command's
-        // name or first keyword, matched case-sensitively like the filter
-        // routing, and the rest trims like the file-search text.
+        // name or first keyword, and the rest trims like the file-search
+        // text. The compare is case-insensitive: unlike filter routing —
+        // where the trigger consumes input — an action row still runs
+        // when the case misses, so dropping the args would silently
+        // change what the command does.
         let trigger: String?
         let args: [String]
         if let spaceIndex = query.firstIndex(of: " ") {
@@ -62,8 +65,13 @@ final class CommandSource: ItemSource, @unchecked Sendable {
                     keyword: manifest.keywords.first ?? manifest.name,
                     commandName: manifest.name)
             } else {
-                let bound = trigger == manifest.name
-                    || trigger == manifest.keywords.first
+                let bound = trigger.map { word in
+                    [manifest.name, manifest.keywords.first]
+                        .compactMap { $0 }
+                        .contains {
+                            $0.caseInsensitiveCompare(word) == .orderedSame
+                        }
+                } ?? false
                 action = .runCommand(manifest.name, bound ? args : [])
             }
             return Item(

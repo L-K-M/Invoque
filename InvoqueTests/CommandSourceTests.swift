@@ -99,6 +99,12 @@ final class CommandSourceTests: XCTestCase {
         // The remainder is one arg — inner spaces preserved, ends trimmed.
         XCTAssertEqual(source.items(matching: "resize  50%  wide ").first?.action,
                        .runCommand("resize", ["50%  wide"]))
+        // Case-insensitive trigger: the row runs regardless of case, so
+        // a strict match would silently run it without the user's args.
+        XCTAssertEqual(source.items(matching: "Resize 50%").first?.action,
+                       .runCommand("resize", ["50%"]))
+        XCTAssertEqual(source.items(matching: "RSZ 640x480").first?.action,
+                       .runCommand("resize", ["640x480"]))
     }
 
     /// A bare trigger (or a whitespace-only rest) binds no args — the row
