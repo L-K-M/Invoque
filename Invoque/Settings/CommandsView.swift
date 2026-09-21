@@ -41,14 +41,16 @@ struct CommandsView: View {
         .padding()
         .task { await rescan() }
         // Editing a command then clicking back to this window is the
-        // "why isn't it listed" moment — refresh on activation covers it.
-        // Gated on this window being active: once Settings has opened,
-        // its content stays installed, and an ungated subscription would
-        // rescan every command directory on every app activation.
-        .onReceive(NotificationCenter.default.publisher(
-            for: NSApplication.didBecomeActiveNotification)) { _ in
+        // "why isn't it listed" moment — refiring on this window's
+        // active-state transitions covers it, gated to the becoming-key
+        // edge so activation of other windows costs no rescan. `.task(id:)`
+        // rather than `.onChange`: the non-deprecated signature needs
+        // macOS 14, and an `onReceive` snapshot of `controlActiveState`
+        // can lag the window actually becoming key — this fires on the
+        // transition itself.
+        .task(id: controlActiveState) {
             guard controlActiveState == .key else { return }
-            Task { await rescan() }
+            await rescan()
         }
     }
 
