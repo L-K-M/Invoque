@@ -56,13 +56,19 @@ final class CalculatorSource: ItemSource {
     /// a head pin that would outrank real matches. No signs, no
     /// separators: a leading `-` or `_` disqualifies rather than guessing.
     private static func parseBaseQuery(_ trimmed: String) -> BaseQuery? {
-        for (radix, prefix, _) in conversionBases where trimmed.hasPrefix(prefix) {
-            let digits = trimmed.dropFirst(prefix.count)
+        // Case-insensitive prefixes — `0X1A` is as natural as `0x1a`.
+        let lowered = trimmed.lowercased()
+        for (radix, prefix, _) in conversionBases where lowered.hasPrefix(prefix) {
+            let digits = lowered.dropFirst(prefix.count)
             guard !digits.isEmpty,
                   let value = UInt64(digits, radix: radix) else { return nil }
             return BaseQuery(value: value, inputRadix: radix)
         }
-        guard trimmed.count >= 2, trimmed.allSatisfy(\Character.isNumber),
+        // ASCII digits only: `Character.isNumber` alone admits Unicode
+        // digits that `UInt64` then declines — explicit beats relying on
+        // the fallthrough.
+        guard trimmed.count >= 2,
+              trimmed.allSatisfy({ $0.isASCII && $0.isNumber }),
               let value = UInt64(trimmed) else { return nil }
         return BaseQuery(value: value, inputRadix: nil)
     }
