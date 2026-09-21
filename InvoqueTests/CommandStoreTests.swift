@@ -45,13 +45,19 @@ final class CommandStoreTests: XCTestCase {
         try writeCommand("alpha", title: "Alpha")
         let store = CommandStore(rootPaths: [root.path])
         let published = expectation(description: "initial command snapshot")
+        // The panel wires its model after startWatching returns; a
+        // synchronous first publish would run against a half-wired model.
+        var publishedEarly = false
         store.onChange = { commands in
+            publishedEarly = true
             XCTAssertTrue(Thread.isMainThread)
             guard commands.map(\.name) == ["alpha"] else { return }
             published.fulfill()
         }
 
         store.startWatching()
+        XCTAssertFalse(publishedEarly,
+                       "startWatching must return before the first snapshot publishes")
         wait(for: [published], timeout: 2)
 
         XCTAssertEqual(store.commands.map(\.name), ["alpha"])
