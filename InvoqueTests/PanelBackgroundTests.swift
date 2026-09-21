@@ -35,6 +35,24 @@ final class PanelBackgroundTests: XCTestCase {
         }
     }
 
+    func testFallbackTintWashAppliesOnlyToTintedGlass() {
+        XCTAssertNil(PanelBackground.fallbackTintOpacity(
+            for: .liquidGlass, configuredOpacity: 0.9))
+        XCTAssertNil(PanelBackground.fallbackTintOpacity(
+            for: .glassClear, configuredOpacity: 0.9))
+    }
+
+    func testFallbackTintWashClampsToHalf() {
+        XCTAssertEqual(PanelBackground.fallbackTintOpacity(
+            for: .glassTinted, configuredOpacity: 0.0), 0.0)
+        XCTAssertEqual(PanelBackground.fallbackTintOpacity(
+            for: .glassTinted, configuredOpacity: 0.5), 0.5)
+        XCTAssertEqual(PanelBackground.fallbackTintOpacity(
+            for: .glassTinted, configuredOpacity: -0.3), 0.0)
+        XCTAssertEqual(PanelBackground.fallbackTintOpacity(
+            for: .glassTinted, configuredOpacity: 0.9), 0.5)
+    }
+
     @MainActor
     private func host(
         material: PanelMaterial = .liquidGlass,

@@ -15,6 +15,17 @@ import SwiftUI
 struct PanelBackground: View {
     private static let maximumFallbackTintOpacity = 0.5
 
+    /// The restrained wash non-native glass keeps when blur is unavailable
+    /// (Reduce Transparency) or unbuildable (pre-26 SDK). `nil` means no
+    /// wash — only `.glassTinted` carries theme color.
+    static func fallbackTintOpacity(
+        for material: PanelMaterial,
+        configuredOpacity: Double
+    ) -> Double? {
+        guard material == .glassTinted else { return nil }
+        return min(max(0.0, configuredOpacity), maximumFallbackTintOpacity)
+    }
+
     var material: PanelMaterial
     var tint: Color
     var gradientColor: Color
@@ -57,9 +68,9 @@ struct PanelBackground: View {
             // wash so system label colors remain legible in either appearance.
             ZStack {
                 shape.fill(.background)
-                if material == .glassTinted {
-                    shape.fill(tint.opacity(min(Self.maximumFallbackTintOpacity,
-                                                max(0.0, opacity))))
+                if let wash = Self.fallbackTintOpacity(
+                    for: material, configuredOpacity: opacity) {
+                    shape.fill(tint.opacity(wash))
                 }
             }
         } else {
@@ -90,9 +101,9 @@ struct PanelBackground: View {
     private func fallbackGlass(in shape: RoundedRectangle) -> some View {
         ZStack {
             VisualEffectBlur(material: .popover, blendingMode: .behindWindow)
-            if material == .glassTinted {
-                tint.opacity(min(max(0.0, opacity),
-                                 Self.maximumFallbackTintOpacity))
+            if let wash = Self.fallbackTintOpacity(
+                for: material, configuredOpacity: opacity) {
+                tint.opacity(wash)
             }
         }
         .clipShape(shape)
