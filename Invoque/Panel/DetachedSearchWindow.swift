@@ -40,7 +40,11 @@ final class DetachedSearchWindow: NSWindow {
         case 125: onMove?(1)          // ↓
         case 126: onMove?(-1)         // ↑
         case 36, 76:                  // return, keypad enter
-            onSubmit?(modifiers.contains(.command))
+            // Unlike the launcher panel, submitting doesn't dismiss this
+            // window — a held ⏎ would re-fire at the repeat rate.
+            if !event.isARepeat {
+                onSubmit?(modifiers.contains(.command))
+            }
         case 53: close()              // esc
         default: super.keyDown(with: event)
         }

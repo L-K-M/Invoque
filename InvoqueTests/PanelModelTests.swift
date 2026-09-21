@@ -793,6 +793,7 @@ final class PanelModelTests: XCTestCase {
         let model = makeModel(items: [])
         let gate = DispatchSemaphore(value: 0)
         let gate2 = DispatchSemaphore(value: 0)
+        let strayDrained = DispatchSemaphore(value: 0)
         defer { gate.signal(); gate2.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             emit([Self.fileItem("first.txt")])
@@ -801,6 +802,9 @@ final class PanelModelTests: XCTestCase {
             gate2.wait()
             emit([Self.fileItem("first.txt"), Self.fileItem("second.txt"),
                   Self.fileItem("third.txt")])
+            // Queued behind the stray emit's main-queue hop — firing it
+            // proves the absorb/drop decision already ran.
+            DispatchQueue.main.async { strayDrained.signal() }
         }
         var detached: FileSearchSession?
         model.onDetachFileSearch = { detached = $0 }
@@ -831,7 +835,17 @@ final class PanelModelTests: XCTestCase {
         // unwedges via Task.isCancelled.
         session.cancel()
         gate2.signal()
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        // Poll rather than sleep a fixed window — the stray emit's hop
+        // has to drain before the drop is provable.
+        let strayDeadline = Date().addingTimeInterval(5)
+        while strayDrained.wait(timeout: .now()) != .success,
+              Date() < strayDeadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        // Without this, a drained-never-fires timeout would let the
+        // items assertion pass before the stray was even delivered.
+        XCTAssertEqual(strayDrained.wait(timeout: .now()), .success,
+                       "stray emission never reached the main queue")
         XCTAssertEqual(session.items.map(\.title), ["first.txt", "second.txt"])
         XCTAssertFalse(session.isPending)
     }
