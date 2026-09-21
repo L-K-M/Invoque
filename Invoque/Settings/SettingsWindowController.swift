@@ -9,12 +9,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let preferences: Preferences
     private let updateChecker: UpdateChecker
+    private let commandStore: CommandStore
 
     private var activationHandoff: ActivationHandoff?
 
-    init(preferences: Preferences, updateChecker: UpdateChecker) {
+    init(preferences: Preferences, updateChecker: UpdateChecker,
+         commandStore: CommandStore) {
         self.preferences = preferences
         self.updateChecker = updateChecker
+        self.commandStore = commandStore
     }
 
     func show() {
@@ -24,6 +27,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(preferences: preferences,
+                                                                     commandStore: commandStore,
                                                                      updateChecker: updateChecker))
             // Only let the SwiftUI content drive the window's *minimum* size; the
             // user is free to make it larger. `sizingOptions` is only guaranteed

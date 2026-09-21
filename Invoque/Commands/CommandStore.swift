@@ -60,6 +60,10 @@ final class CommandStore: @unchecked Sendable {
     /// The most recent scan's commands, sorted by title.
     var commands: [Command] { stateQueue.sync { _commands } }
 
+    /// The configured roots, in scan order — the settings Commands tab
+    /// lists them. Immutable since init, so no `stateQueue` hop.
+    var rootURLs: [URL] { roots }
+
     /// The first configured root — where the Maker writes new commands, so
     /// a save is immediately picked up by the store's own scan.
     var primaryRootURL: URL {

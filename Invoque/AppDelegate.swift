@@ -8,9 +8,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updateChecker = UpdateChecker(
         configuration: .init(owner: "L-K-M", repo: "Invoque", appName: "Invoque")
     )
+    /// The one commands store — the panel's `CommandSource`, the Maker's
+    /// writer, and the settings Commands tab all read the same instance.
+    private lazy var commandStore = CommandStore()
     private lazy var settingsWindow = SettingsWindowController(preferences: preferences,
-                                                               updateChecker: updateChecker)
-    private lazy var panelController = Self.makePanelController(preferences: preferences)
+                                                               updateChecker: updateChecker,
+                                                               commandStore: commandStore)
+    private lazy var panelController = Self.makePanelController(preferences: preferences,
+                                                                commandStore: commandStore)
 
     private var statusItem: NSStatusItem?
     /// Hidden until a background check queues an update — then it names the
@@ -97,6 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        let commandsItem = NSMenuItem(title: "Commands Folder", action: #selector(openCommandsFolder), keyEquivalent: "")
+        commandsItem.target = self
+        menu.addItem(commandsItem)
+
         let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
         updatesItem.target = self
         menu.addItem(updatesItem)
@@ -126,6 +135,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateChecker.checkNow()
     }
 
+    /// Opens the primary commands root in Finder, creating it first —
+    /// the folder doesn't exist until the first `make` saves into it, and
+    /// a menu item that no-ops reads as broken (PLAN §7 menu).
+    @objc private func openCommandsFolder() {
+        let root = commandStore.primaryRootURL
+        try? FileManager.default.createDirectory(at: root,
+                                                 withIntermediateDirectories: true)
+        NSWorkspace.shared.open(root)
+    }
+
     @objc private func showPendingUpdate() {
         updateChecker.presentPendingUpdateNow()
     }
@@ -133,9 +152,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Assembles the search stack and its owner. `model` is built first so
     /// `AppSource.onReload` can re-run the open query — the hook must be
     /// passed at init (a post-init assignment can miss the first scan).
-    private static func makePanelController(preferences: Preferences) -> PanelController {
+    private static func makePanelController(preferences: Preferences,
+                                            commandStore: CommandStore) -> PanelController {
         let model = PanelModel()
-        let commandStore = CommandStore()
         commandStore.startWatching()
         // autoReload off: the initial scan must not fire onChange before
         // onReload is wired — wire first, then kick the scan explicitly.

@@ -6,6 +6,9 @@ struct SettingsView: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var makerSettings: MakerSettings
     @ObservedObject var updateChecker: UpdateChecker
+    /// The live store — the Commands tab reads its snapshot, so the view
+    /// takes the instance rather than a copy.
+    let commandStore: CommandStore
 
     /// Draft of the API key field — written to Keychain only on Save.
     @State private var apiKeyDraft = ""
@@ -18,9 +21,11 @@ struct SettingsView: View {
 
     init(preferences: Preferences,
          makerSettings: MakerSettings = .shared,
+         commandStore: CommandStore,
          updateChecker: UpdateChecker) {
         self.preferences = preferences
         self.makerSettings = makerSettings
+        self.commandStore = commandStore
         self.updateChecker = updateChecker
     }
 
@@ -30,6 +35,8 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
             AppearanceView(preferences: preferences)
                 .tabItem { Label("Appearance", systemImage: "paintpalette") }
+            CommandsView(store: commandStore)
+                .tabItem { Label("Commands", systemImage: "command") }
         }
     }
 
