@@ -1486,6 +1486,21 @@ final class PanelModelTests: XCTestCase {
                      "a pending confirmation must not greet the next summon")
     }
 
+    /// The card's glyph must mirror the row the user picked — drift (filled
+    /// vs outline, a flipped arrow) undermines "this is the action you chose".
+    func testConfirmationCardSymbolMirrorsSourceRow() {
+        for item in SystemSource().items(matching: "") {
+            guard case .system(let action) = item.action,
+                  action.requiresConfirmation,
+                  case .symbol(let rowSymbol) = item.icon,
+                  let confirmation = SystemActionConfirmation(
+                      row: ResultRow(item: item))
+            else { continue }
+            XCTAssertEqual(confirmation.symbolName, rowSymbol,
+                           "card glyph drifted from the \(action) row")
+        }
+    }
+
     func testCancellingSystemActionConfirmationRearmsInsteadOfRunning() {
         let model = makeModel(items: [])
         var submitted: ResultRow?

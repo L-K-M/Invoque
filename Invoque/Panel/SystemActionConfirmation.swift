@@ -56,11 +56,11 @@ struct SystemActionConfirmation: Equatable {
     var symbolName: String {
         switch action {
         case .restart:
-            return "arrow.clockwise"
+            return "arrow.counterclockwise"
         case .shutDown:
             return "power"
         case .emptyTrash:
-            return "trash"
+            return "trash.fill"
         case .lockScreen:
             return "lock.fill"
         case .sleep:
