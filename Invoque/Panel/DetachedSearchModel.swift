@@ -64,7 +64,7 @@ final class DetachedSearchModel: ObservableObject {
         let selectedID = selectedRow?.id
         rows = shaped
         selection = selectedID
-            .flatMap { shaped.firstIndex(where: { $0.id == $0 }) } ?? 0
+            .flatMap { id in shaped.firstIndex(where: { $0.id == id }) } ?? 0
     }
 
     /// `PanelModel.shapeFileRows`' twin — blocked ids drop, pinned lead,
