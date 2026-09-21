@@ -93,6 +93,8 @@ final class GeneratorSourceTests: XCTestCase {
         XCTAssertNil(GeneratorSource.parseDiceKeyword("roll d"))
         XCTAssertNil(GeneratorSource.parseDiceKeyword("roll 20"))
         XCTAssertNil(GeneratorSource.parseDiceKeyword("xd20"))
+        // Unicode digit forms decline at the parse, not in Int().
+        XCTAssertNil(GeneratorSource.parseDiceKeyword("d\u{0668}\u{0660}"))
     }
 
     // MARK: Exact-match discipline

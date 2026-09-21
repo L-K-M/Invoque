@@ -64,7 +64,8 @@ final class GeneratorSource: ItemSource {
         } else {
             return nil
         }
-        guard !rest.isEmpty, rest.allSatisfy(\Character.isNumber),
+        guard !rest.isEmpty,
+              rest.allSatisfy({ $0.isASCII && $0.isNumber }),
               let sides = Int(rest), sides >= 2 else { return nil }
         return sides
     }
