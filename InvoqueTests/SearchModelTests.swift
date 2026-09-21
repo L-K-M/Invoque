@@ -128,31 +128,35 @@ final class SearchModelTests: XCTestCase {
         for index in 0..<12 {
             frecency.record(String(format: "app:%02d", index))
         }
-        // One extra pick breaks the all-equal scores: item 11 leads.
+        // One extra pick breaks the tie at the top: item 11 leads.
         frecency.record("app:11")
         let model = SearchModel(sources: [source], frecency: frecency)
         let results = model.results(for: "")
         XCTAssertEqual(results.count, SearchModel.maxTopHits)
         XCTAssertEqual(results.first?.id, "app:11")
-        // The remaining eight are equal-scored → title order (the three
-        // App 08–App 10 rows fall past the cap).
+        // The single-visit tail: the decay multiplier reads wall-clock time,
+        // so within equal visit counts the more recently recorded scores
+        // marginally higher — the tail is reverse recording order (the
+        // title/id tie-break only fires on exactly equal scores, e.g.
+        // decay-floored entries a month old). Items 00–02 fall past the cap.
         XCTAssertEqual(Array(results.dropFirst().map(\.id)),
-                       (0..<8).map { String(format: "app:%02d", $0) })
+                       (3...10).reversed().map { String(format: "app:%02d", $0) })
     }
 
-    func testTopHitsTieBreaksByTitle() {
+    /// Within equal visit counts, the more recently recorded entry leads —
+    /// the decay multiplier makes "same number of uses" order by last use.
+    func testTopHitsOrderSingleVisitsByRecency() {
         let source = StubSource()
         source.stubbedItems = [
-            Self.appItem(id: "app:zzz", title: "Safari"),
-            Self.appItem(id: "app:aaa", title: "Terminal"),
+            Self.appItem(id: "app:first-recorded", title: "Aaa"),
+            Self.appItem(id: "app:last-recorded", title: "Zzz"),
         ]
         let frecency = Frecency(defaults: defaults)
-        frecency.record("app:zzz")
-        frecency.record("app:aaa")
+        frecency.record("app:first-recorded")
+        frecency.record("app:last-recorded")
         let model = SearchModel(sources: [source], frecency: frecency)
-        // Equal scores order by title, then id — never by insertion.
-        XCTAssertEqual(model.results(for: "").map(\.title),
-                       ["Safari", "Terminal"])
+        XCTAssertEqual(model.results(for: "").map(\.id),
+                       ["app:last-recorded", "app:first-recorded"])
     }
 
     /// A transient id recorded straight into frecency (a hand-edited
