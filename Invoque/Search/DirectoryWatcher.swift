@@ -49,6 +49,10 @@ final class DirectoryWatcher: @unchecked Sendable {
     var canOpenTarget: (URL) -> Bool = { _ in true }
     private var lastFailureRetry = Date.distantPast
     private var pending: DispatchWorkItem?
+    /// Pending cooldown retry, if any — armed only while idle so event
+    /// bursts during a failure window can't stack redundant timers, each
+    /// of which would pay a full directory walk on this queue.
+    private var retryWorkItem: DispatchWorkItem?
     private var running = false
 
     init(roots: [URL], debounce: TimeInterval = 0.5,
@@ -78,6 +82,8 @@ final class DirectoryWatcher: @unchecked Sendable {
             self.running = false
             self.pending?.cancel()
             self.pending = nil
+            self.retryWorkItem?.cancel()
+            self.retryWorkItem = nil
             self.teardown()
         }
     }
@@ -86,6 +92,7 @@ final class DirectoryWatcher: @unchecked Sendable {
         // Cancel handlers close the descriptors; no queue hop needed.
         sources.forEach { $0.cancel() }
         pending?.cancel()
+        retryWorkItem?.cancel()
     }
 
     /// How many directories are watched right now — exposed for tests,
@@ -218,11 +225,15 @@ final class DirectoryWatcher: @unchecked Sendable {
     /// inside the cooldown just rolls one cycle forward. Must run on
     /// `queue`.
     private func scheduleRetry() {
-        guard running, !failedPaths.isEmpty else { return }
-        queue.asyncAfter(deadline: .now() + Self.retryCooldown) { [weak self] in
-            guard let self, self.running, !self.failedPaths.isEmpty else { return }
+        guard running, !failedPaths.isEmpty, retryWorkItem == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.retryWorkItem = nil
+            guard self.running, !self.failedPaths.isEmpty else { return }
             self.rebuildTargets()
         }
+        retryWorkItem = work
+        queue.asyncAfter(deadline: .now() + Self.retryCooldown, execute: work)
     }
 
     /// Subdirectories under `url`, recursively, bounded by depth and the
