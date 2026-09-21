@@ -132,6 +132,22 @@ final class CommandSourceTests: XCTestCase {
                        .enterFilter(keyword: "em", commandName: "emoji"))
     }
 
+    /// The store's off-main initial pass publishes through onChange — a
+    /// source wired before startWatching must see the first snapshot.
+    func testWatchedInitialScanReloadsWiredSource() throws {
+        try writeCommand("fresh", title: "Fresh")
+        let store = CommandStore(rootPaths: [root.path])
+        let source = CommandSource(store: store, autoReload: false)
+        let reloaded = expectation(description: "source reload")
+        source.onReload = { reloaded.fulfill() }
+
+        store.startWatching()
+        wait(for: [reloaded], timeout: 2)
+
+        XCTAssertEqual(source.items(matching: "").map(\.title), ["Fresh"])
+        store.stopWatching()
+    }
+
     // MARK: Helpers
 
     private func store() -> CommandStore {

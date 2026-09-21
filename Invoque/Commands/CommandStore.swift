@@ -103,9 +103,11 @@ final class CommandStore: @unchecked Sendable {
     /// Rescans and notifies `onChange` if the list changed. The disk pass
     /// runs on the caller's thread; only the state commit hops onto
     /// `stateQueue`. A newer requested scan supersedes this one — its
-    /// collected pass never commits. Returns the newest committed commands
-    /// and errors as one atomic pair; a caller that read them separately
-    /// could pair this pass's commands with a later pass's errors.
+    /// collected pass never commits and the return is the previously
+    /// committed list. Callers needing eventual freshness should rely on
+    /// `onChange`, not the return value. Returns commands and errors as one
+    /// atomic pair; a caller that read them separately could pair this
+    /// pass's commands with a later pass's errors.
     @discardableResult
     func scan() -> (commands: [Command], errors: [ScanError]) {
         let generation = stateQueue.sync {
