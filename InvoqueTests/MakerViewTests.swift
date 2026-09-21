@@ -113,11 +113,18 @@ final class MakerViewTests: XCTestCase {
         XCTAssertEqual(MakerView.previewText("small"), "small")
     }
 
+    func testPreviewTextPassesThroughAtLimit() {
+        let exact = String(repeating: "x", count: 200_000)
+        XCTAssertEqual(MakerView.previewText(exact), exact)
+    }
+
     func testPreviewTextTruncatesOverLimit() {
         let big = String(repeating: "x", count: 200_100)
         let preview = MakerView.previewText(big)
+        let suffix = "\n… preview truncated — save to see the full file"
+        XCTAssertEqual(preview.count, 200_000 + suffix.count)
         XCTAssertTrue(preview.hasPrefix(String(repeating: "x", count: 200_000)))
-        XCTAssertTrue(preview.hasSuffix("preview truncated — save to see the full file"))
+        XCTAssertTrue(preview.hasSuffix(suffix))
     }
 
     // MARK: parseArgs

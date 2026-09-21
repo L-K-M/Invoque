@@ -340,10 +340,16 @@ struct MakerView: View {
     }
 
     /// Caps the preview so very large generated files can't stall layout.
+    /// `index(offsetBy:limitedBy:)` bounds the scan — `count` would walk the
+    /// whole string even when the answer is already clear at `limit`.
     static func previewText(_ contents: String, limit: Int = 200_000) -> String {
-        contents.count <= limit ? contents
-            : String(contents.prefix(limit))
-                + "\n… preview truncated — save to see the full file"
+        guard let cut = contents.index(contents.startIndex,
+                                       offsetBy: limit,
+                                       limitedBy: contents.endIndex),
+              cut < contents.endIndex
+        else { return contents }
+        return String(contents[..<cut])
+            + "\n… preview truncated — save to see the full file"
     }
 
     /// A stale selection after regeneration falls back to executable source.
