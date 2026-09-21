@@ -21,6 +21,14 @@ enum InvoqueBridge {
     /// — see `installStorage`.
     private static let storageQueue = DispatchQueue(label: "com.invoque.storage")
 
+    /// The most body `invoque.fetch` will hand to a command. The download
+    /// task already spools to a temp file instead of memory; the cap
+    /// governs what JS sees — a multi-GB or lying Content-Length response
+    /// is rejected rather than buffered whole. (The transfer itself still
+    /// completes to disk first — aborting mid-stream would need a data
+    /// delegate; the temp file is deleted when the handler returns.)
+    static let maxFetchBytes = 20 * 1024 * 1024
+
     /// Fetch session with a redirect guard: the http(s) allowlist is applied
     /// to the initial URL, and this session re-applies it to every redirect
     /// target rather than trusting URLSession's default cross-scheme policy.
@@ -260,31 +268,29 @@ enum InvoqueBridge {
                     request.httpBody = body.data(using: .utf8)
                 }
             }
+            // A download task, not a data task: the body spools to a temp
+            // file rather than accumulating in memory, and `fetchOutcome`
+            // size-checks before the read — an oversized response is
+            // rejected at `maxFetchBytes` instead of exhausting memory.
+            // The file is deleted when this handler returns, so the read
+            // happens here and only the capped string hops to the JS queue.
             // The task is registered so the runtime can cancel it when the
             // invocation completes or times out — a completion that fires
             // afterward would call JSValues whose context was abandoned.
-            let task = Self.httpSession.dataTask(with: request) { data, response, error in
-                // JSValues are single-threaded: the resolve must run back on
-                // the invocation's JS queue.
-                callbackQueue.async {
-                    if let error {
-                        _ = reject.call(withArguments: ["invoque.fetch: \(error.localizedDescription)"])
-                        return
+            let task = Self.httpSession.downloadTask(with: request) { fileURL, response, error in
+                switch Self.fetchOutcome(fileURL: fileURL, response: response, error: error) {
+                case .failure(let message):
+                    callbackQueue.async {
+                        _ = reject.call(withArguments: [message])
                     }
-                    // Defense in depth: if a redirect slipped past the
-                    // delegate onto a non-http(s) URL, refuse the body.
-                    if let finalScheme = (response?.url?.scheme)?.lowercased(),
-                       finalScheme != "http" && finalScheme != "https" {
-                        _ = reject.call(withArguments: ["invoque.fetch: redirect left http(s): '\(response?.url?.absoluteString ?? "")'"])
-                        return
+                case .success(let status, let body):
+                    callbackQueue.async {
+                        _ = resolve.call(withArguments: [[
+                            "ok": (200..<300).contains(status),
+                            "status": status,
+                            "body": body,
+                        ]])
                     }
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    let body = String(data: data ?? Data(), encoding: .utf8) ?? ""
-                    _ = resolve.call(withArguments: [[
-                        "ok": (200..<300).contains(status),
-                        "status": status,
-                        "body": body,
-                    ]])
                 }
             }
             fetches.add(task)
@@ -302,6 +308,36 @@ enum InvoqueBridge {
         if let shim, !shim.isUndefined {
             invoque.setValue(shim, forProperty: "fetch")
         }
+    }
+
+    /// Maps a completed download to the fetch result — extracted from the
+    /// task callback so the policy (scheme re-check, size cap, decode) is
+    /// unit-testable without a live server. `.failure` carries the full
+    /// `invoque.fetch:` rejection message.
+    static func fetchOutcome(fileURL: URL?, response: URLResponse?,
+                             error: Error?) -> Result<(status: Int, body: String), String> {
+        if let error {
+            return .failure("invoque.fetch: \(error.localizedDescription)")
+        }
+        // Defense in depth: if a redirect slipped past the delegate onto a
+        // non-http(s) URL, refuse the body.
+        if let finalScheme = response?.url?.scheme?.lowercased(),
+           finalScheme != "http", finalScheme != "https" {
+            let target = response?.url?.absoluteString ?? ""
+            return .failure("invoque.fetch: redirect left http(s): '\(target)'")
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard let fileURL,
+              let size = (try? fileURL.resourceValues(
+                forKeys: [.fileSizeKey]))?.fileSize else {
+            return .failure("invoque.fetch: no readable body")
+        }
+        guard size <= maxFetchBytes else {
+            return .failure("invoque.fetch: response exceeds the 20 MB limit")
+        }
+        let body = (try? Data(contentsOf: fileURL))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        return .success((status, body))
     }
 
     // MARK: files
