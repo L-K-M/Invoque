@@ -108,6 +108,10 @@ struct MakerView: View {
                 .scaleEffect(0.7)
             Text("Generating with \(model.lastUsedModel ?? "the model")…")
                 .foregroundStyle(secondaryColor)
+            // Up to the 300 s generation budget of silence needs an
+            // escape hatch. discard() cancels the task; the typed prompt
+            // stays in the query field, so ⏎ simply regenerates.
+            Button("Cancel") { model.discard() }
         }
     }
 

@@ -37,16 +37,28 @@ final class MakerModelTests: XCTestCase {
         }
         private var _responses: [Result<String, Error>] = []
         private var _calls: [[LLMMessage]] = []
+        /// One-shot barrier `complete` blocks on before answering — lets a
+        /// test hold a generation in flight while it cancels underneath.
+        private var _gate: DispatchSemaphore?
         var responses: [Result<String, Error>] {
             get { lock.withLock { _responses } }
             set { lock.withLock { _responses = newValue } }
         }
         var calls: [[LLMMessage]] { lock.withLock { _calls } }
+        var gate: DispatchSemaphore? {
+            get { lock.withLock { _gate } }
+            set { lock.withLock { _gate = newValue } }
+        }
 
         func complete(messages: [LLMMessage]) async throws -> String {
             let next = lock.withLock { () -> Result<String, Error>? in
                 _calls.append(messages)
                 return _responses.isEmpty ? nil : _responses.removeFirst()
+            }
+            let gate = lock.withLock { _gate }
+            if let gate {
+                lock.withLock { _gate = nil }
+                gate.wait()
             }
             guard let next else {
                 // An unexpected extra call must fail loudly — returning ""
@@ -444,6 +456,37 @@ final class MakerModelTests: XCTestCase {
         XCTAssertEqual(phase, .idle)
         let draft = await model.draft
         XCTAssertNil(draft)
+    }
+
+    /// The Cancel button discards while the request is still in flight —
+    /// the late completion must not clobber the idle phase it just set.
+    func testDiscardDuringGenerationKeepsIdle() async {
+        let client = StubClient()
+        client.responses = [.success(generationOutput())]
+        let gate = DispatchSemaphore(value: 0)
+        client.gate = gate
+        let model = makeModel(client)
+
+        let started = Task { await model.start(prompt: "x") }
+        // Wait until the request genuinely reached the client.
+        let deadline = Date().addingTimeInterval(7)
+        while client.calls.isEmpty, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(client.calls.count, 1, "generation never reached the client")
+
+        await model.discard()
+        var phase = await model.phase
+        XCTAssertEqual(phase, .idle)
+
+        // Release the stub — its late answer must be swallowed, not
+        // published over the discarded state.
+        gate.signal()
+        _ = await started.value
+        phase = await model.phase
+        XCTAssertEqual(phase, .idle)
+        let lastError = await model.lastError
+        XCTAssertNil(lastError)
     }
 
     /// ⏎ semantics: save when clean, generate when idle.
