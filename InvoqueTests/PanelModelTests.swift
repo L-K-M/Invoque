@@ -561,8 +561,12 @@ final class PanelModelTests: XCTestCase {
     func testWebKeywordCancelsPendingFileSearch() async throws {
         let model = makeModel(items: [])
         model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        // Gate, not a sleep: the stale emit provably lands after the
+        // switch to web mode — `onStart` posts before the searcher runs,
+        // so blocking the scan can't block `awaitFileStarts`.
+        let releaseStaleScan = DispatchSemaphore(value: 0)
         model.fileSearcher = { _, _, emit in
-            Thread.sleep(forTimeInterval: 1.0)
+            releaseStaleScan.wait()
             emit([Self.fileItem("stale.txt")])
         }
         model.query = "find elephant"
@@ -570,6 +574,7 @@ final class PanelModelTests: XCTestCase {
         model.query = "web elephant"
         XCTAssertEqual(model.results.map(\.id), ["web:elephant"])
         XCTAssertFalse(model.fileSearchIsActive)
+        releaseStaleScan.signal()
         // The cancelled scan still completes on its own thread — its
         // landing is what must not overwrite the web row.
         await awaitFileCompletions(model, atLeast: 1)
