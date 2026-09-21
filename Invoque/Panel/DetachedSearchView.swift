@@ -97,7 +97,7 @@ struct DetachedSearchView: View {
     private var resultList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(spacing: 6) {
+                LazyVStack(spacing: 6) {
                     if model.rows.isEmpty {
                         Text(model.isPending
                              ? "Searching files…"

@@ -236,7 +236,7 @@ struct PanelView: View {
     private var resultList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(spacing: 6) {
+                LazyVStack(spacing: 6) {
                     if model.results.isEmpty {
                         // An empty query hasn't searched yet — hint instead
                         // of claiming there are no results.
