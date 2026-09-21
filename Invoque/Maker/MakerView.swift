@@ -285,12 +285,14 @@ struct MakerView: View {
                         Label(selected.name, systemImage: "doc.plaintext")
                             .font(typeface.font(.caption))
                     }
-                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.borderless)
                     .lineLimit(1)
                 }
 
                 ScrollView([.horizontal, .vertical]) {
-                    Text(selected.contents)
+                    Text(selected.contents.isEmpty
+                         ? "(empty file)"
+                         : Self.previewText(selected.contents))
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(titleColor)
                         .textSelection(.enabled)
@@ -337,10 +339,19 @@ struct MakerView: View {
         return files
     }
 
+    /// Caps the preview so very large generated files can't stall layout.
+    static func previewText(_ contents: String, limit: Int = 200_000) -> String {
+        contents.count <= limit ? contents
+            : String(contents.prefix(limit))
+                + "\n… preview truncated — save to see the full file"
+    }
+
     /// A stale selection after regeneration falls back to executable source.
     static func selectedFile(in files: [ReviewFile], preferred: String,
                              entryName: String) -> ReviewFile {
-        files.first { $0.name == preferred }
+        precondition(!files.isEmpty,
+                     "reviewFiles always seeds the manifest and entry file")
+        return files.first { $0.name == preferred }
             ?? files.first { $0.name == entryName }
             ?? files[0]
     }

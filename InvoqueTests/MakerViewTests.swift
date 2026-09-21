@@ -76,6 +76,50 @@ final class MakerViewTests: XCTestCase {
             entryName: "also-removed.js"), files[0])
     }
 
+    /// When the entry file is itself named command.json the manifest row is
+    /// renamed; a selection holding that renamed id still resolves.
+    func testSelectionResolvesRenamedManifest() {
+        let generation = GeneratedCommand(
+            manifestJSON: "manifest",
+            entryName: "command.json",
+            entrySource: "entry",
+            extraFiles: [:])
+        let files = MakerView.reviewFiles(generation)
+
+        XCTAssertEqual(MakerView.selectedFile(
+            in: files,
+            preferred: "command.json (manifest)",
+            entryName: "command.json").contents, "manifest")
+    }
+
+    /// An extra file literally named like the disambiguated manifest row is
+    /// dropped as reserved — the collision case where a reviewable file is
+    /// hidden must stay visible in tests.
+    func testReviewFilesDropsManifestAliasCollision() {
+        let generation = GeneratedCommand(
+            manifestJSON: "manifest",
+            entryName: "command.json",
+            entrySource: "entry",
+            extraFiles: ["command.json (manifest)": "rogue"])
+
+        XCTAssertEqual(MakerView.reviewFiles(generation).map(\.name), [
+            "command.json (manifest)", "command.json",
+        ])
+        XCTAssertEqual(MakerView.reviewFiles(generation).first?.contents,
+                       "manifest")
+    }
+
+    func testPreviewTextPassesThroughUnderLimit() {
+        XCTAssertEqual(MakerView.previewText("small"), "small")
+    }
+
+    func testPreviewTextTruncatesOverLimit() {
+        let big = String(repeating: "x", count: 200_100)
+        let preview = MakerView.previewText(big)
+        XCTAssertTrue(preview.hasPrefix(String(repeating: "x", count: 200_000)))
+        XCTAssertTrue(preview.hasSuffix("preview truncated — save to see the full file"))
+    }
+
     // MARK: parseArgs
 
     func testParseArgsSplitsOnWhitespace() {
