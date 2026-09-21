@@ -1,5 +1,8 @@
 # Invoque.app
 
+> [!IMPORTANT]
+> LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
+
 A keyboard-first macOS launcher in the Raycast/Alfred tradition — summon a
 panel on a global hotkey, type, hit ⏎. Custom commands are **plain files on
 disk** (a `command.json` manifest plus a `main.js` script on JavaScriptCore),
