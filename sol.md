@@ -578,8 +578,10 @@ it requires. File rows keep the standard Quick Look.
 Before a generated command's first real run, offer a dry rehearsal. Bridge
 methods record intended effects such as "would open URL", "would write
 clipboard", or "would run shell" and return fixtures. Every result must carry an
-unmistakable "simulated" label. This cannot perfectly simulate shell/network,
-but it makes common generated commands reviewable.
+unmistakable "simulated" label. Discard fixtures after the rehearsal: never
+cache them, persist them to history/logs, or count them toward command health
+stats. This cannot perfectly simulate shell/network, but it makes common
+generated commands reviewable.
 
 ### Universal action stack
 
@@ -635,8 +637,9 @@ signed by a retired key surface a visible warning.
 
 ### Tiny optional personality
 
-Theme-specific empty states can rotate concise text art or facts after a delay.
-No animation while typing, no sound by default, and never obscure status/errors.
+Theme-specific empty states can rotate concise text art or facts after a delay,
+paused entirely under Reduce Motion. No animation while typing, no sound by
+default, and never obscure status/errors.
 The retro themes can feel authored without making the core launcher noisy.
 
 ## Recommended implementation sequence
