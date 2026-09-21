@@ -467,9 +467,20 @@ final class MakerModelTests: XCTestCase {
 
         await model.cancelGeneration()
 
-        await started.value // the cancelled task unwinds promptly
+        // Bound the unwind: if generate() ever suspends between the phase
+        // flip and the generationTask assignment, cancellation no-ops and
+        // the started task would never finish — fail, don't hang.
+        let idleDeadline = Date().addingTimeInterval(5)
         phase = await model.phase
-        XCTAssertEqual(phase, .idle)
+        while phase != .idle, Date() < idleDeadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            phase = await model.phase
+        }
+        guard phase == .idle else {
+            XCTFail("cancel did not unwind the generation — did generate() suspend between the phase flip and the generationTask assignment?")
+            return
+        }
+        await started.value // the cancelled task unwinds promptly
         let transcript = await model.transcript
         XCTAssertEqual(transcript.map(\.role), [.system, .user])
     }

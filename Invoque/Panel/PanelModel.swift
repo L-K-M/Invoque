@@ -427,10 +427,15 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
 
     // MARK: Filter mode
 
-    /// Debounce for filter-mode re-runs — PLAN §4.1's ~80 ms.
-    private static let filterDebounceNanoseconds: UInt64 = 80_000_000
+    /// Debounce for filter-mode re-runs — PLAN §4.1's ~80 ms. Internal
+    /// (not private) so tests can derive waits from it instead of
+    /// sleeping a magic number that could drift inside the window.
+    static let filterDebounceNanoseconds: UInt64 = 80_000_000
 
     private var filterTask: Task<Void, Never>?
+    /// A filter run is scheduled — debouncing or in flight. Lets tests
+    /// prove a hide landed mid-debounce instead of trusting a sleep.
+    var filterRunIsPending: Bool { filterTask != nil }
     /// Stale-drop: a result arriving for an older keystroke is discarded.
     private var filterGeneration = 0
     /// Filter runs that reached the main-actor completion point — lets

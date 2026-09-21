@@ -985,9 +985,14 @@ final class PanelModelTests: XCTestCase {
         model.query = "jf x"
 
         // Still inside the debounce — the run is scheduled, not started.
+        XCTAssertTrue(model.filterRunIsPending)
+        XCTAssertEqual(model.filterRunsStarted, 0)
         model.panelDidHide()
+        XCTAssertFalse(model.filterRunIsPending)
 
-        try await Task.sleep(nanoseconds: 200_000_000) // past the debounce
+        // Derived from the production debounce so a tuning change can't
+        // silently shrink this back inside the window.
+        try await Task.sleep(nanoseconds: PanelModel.filterDebounceNanoseconds * 2)
         XCTAssertEqual(model.filterRunsStarted, 0)
     }
 
