@@ -51,7 +51,12 @@ struct PanelBackground: View {
     @ViewBuilder
     private func glass(in shape: RoundedRectangle) -> some View {
         if reduceTransparency {
-            shape.fill(tint)
+            // An opaque semantic base prevents an alpha-bearing theme tint
+            // from exposing the desktop while preserving the configured wash.
+            ZStack {
+                shape.fill(.background)
+                shape.fill(tint.opacity(max(0.0, min(opacity, 1.0))))
+            }
         } else {
             #if compiler(>=6.2)
             // Xcode 26+ carries the macOS 26 SDK, where `Glass`/`glassEffect`

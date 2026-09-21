@@ -12,6 +12,7 @@ final class PanelBackgroundTests: XCTestCase {
 
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
+            // Assumes glassEffect does not vend an NSVisualEffectView internally.
             XCTAssertFalse(containsVisualEffectView(regular))
         } else {
             XCTAssertTrue(containsVisualEffectView(regular))
