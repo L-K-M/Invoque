@@ -329,6 +329,24 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.query, "jf ")
     }
 
+    /// The `.enterFilter` pick is consumed inside the model — `onSubmit`
+    /// never fires — so the model itself must train frecency, or the most
+    /// used filter keyword never rises in the ranked list.
+    func testEnterFilterPickTrainsFrecency() {
+        let item = Item(id: "cmd:json", title: "JSON Tools", subtitle: "",
+                        icon: .symbol("terminal"),
+                        action: .enterFilter(keyword: "jf", commandName: "json"),
+                        matchText: "JSON Tools")
+        let frecency = Frecency(defaults: defaults)
+        let model = PanelModel()
+        model.searchModel = SearchModel(
+            sources: [StubSource(stubbed: [item])], frecency: frecency)
+        model.query = "json"
+        model.submit()
+        XCTAssertEqual(model.query, "jf ")
+        XCTAssertGreaterThan(frecency.score("cmd:json"), 0)
+    }
+
     func testEnterFilterPinsPickedCommandPastKeywordCollision() async throws {
         // Two filter commands claim the same trigger "jf". Picking B's row
         // must run B — the pin routes by identity, not by first match.

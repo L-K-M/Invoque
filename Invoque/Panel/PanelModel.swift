@@ -896,6 +896,10 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         }
         if let row = selectedRow,
            case .enterFilter(let keyword, let commandName) = row.action {
+            // The pick is consumed here — onSubmit never runs — so
+            // frecency training happens in the model or a heavily used
+            // filter command never rises in the ranked list.
+            searchModel?.recordSelection(itemID: row.id)
             // Pin the session to the picked command — its trigger word may
             // collide with another command's, and the row the user chose
             // must be the one that owns the expanded query.
