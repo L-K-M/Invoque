@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import Invoque
 
@@ -246,6 +247,85 @@ final class DetachedSearchModelTests: XCTestCase {
         release.signal()
     }
 
+    /// The tracked-selection write pair must never publish a transient
+    /// `0` between the rows commit and the re-point — a scroll hook
+    /// reading `$selection` would jump to the top and back per batch.
+    func testRefreshNeverPublishesTransientTopSelection() async {
+        let emitReady = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() } // never leave the searcher blocked
+        let slot = EmitSlot()
+        let session = FileSearchSession(
+            query: "find x", text: "x", debounceNanoseconds: 0,
+            searcher: { _, _, emit in
+                slot.emit = emit
+                emitReady.signal()
+                release.wait()
+            })
+        session.start()
+        XCTAssertEqual(emitReady.wait(timeout: .now() + 5), .success,
+                       "searcher never handed off emit")
+        let model = DetachedSearchModel(session: session,
+                                        entryRules: EntryRules(),
+                                        iconResolver: nil)
+        // The sink fires on the emit-delivery thread — the log's lock is
+        // what makes the test-thread assertion a synchronized read.
+        let published = IntLog()
+        let cancellable = model.$selection.sink { published.append($0) }
+        defer { cancellable.cancel() }
+
+        slot.emit?([fileItem("bbb.txt")])
+        await awaitCondition { model.rows.count == 1 }
+        slot.emit?([fileItem("aaa.txt"), fileItem("bbb.txt")])
+        await awaitCondition { model.rows.count == 2 }
+        // Subscribe-emit baseline `0`, then the single re-point — a
+        // reset-first write pair would land `0` again between them.
+        await awaitCondition { published.snapshot.count >= 2 }
+        XCTAssertEqual(published.snapshot, [0, 1])
+        release.signal()
+    }
+
+    /// When the tracked row drops out of a batch entirely (blocked, or
+    /// pushed past the cap), the selection resets to the top — one `0`
+    /// publish, no stale index left behind.
+    func testRefreshResetsSelectionWhenRowVanishes() async {
+        let emitReady = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() } // never leave the searcher blocked
+        let slot = EmitSlot()
+        let session = FileSearchSession(
+            query: "find x", text: "x", debounceNanoseconds: 0,
+            searcher: { _, _, emit in
+                slot.emit = emit
+                emitReady.signal()
+                release.wait()
+            })
+        session.start()
+        XCTAssertEqual(emitReady.wait(timeout: .now() + 5), .success,
+                       "searcher never handed off emit")
+        let model = DetachedSearchModel(session: session,
+                                        entryRules: EntryRules(),
+                                        iconResolver: nil)
+        // The sink fires on the emit-delivery thread — the log's lock is
+        // what makes the test-thread assertion a synchronized read.
+        let published = IntLog()
+        let cancellable = model.$selection.sink { published.append($0) }
+        defer { cancellable.cancel() }
+
+        slot.emit?([fileItem("aaa.txt"), fileItem("bbb.txt")])
+        await awaitCondition { model.rows.count == 2 }
+        model.selection = 1
+        slot.emit?([fileItem("aaa.txt")])
+        await awaitCondition { model.rows.count == 1 }
+        // Wait on the sequence itself — `rows` is written before the
+        // re-point inside `refresh`, so polling rows alone could read the
+        // log before the final `0` lands.
+        await awaitCondition { published.snapshot == [0, 1, 0] }
+        XCTAssertEqual(published.snapshot, [0, 1, 0])
+        XCTAssertEqual(model.selectedRow?.title, "aaa.txt")
+        release.signal()
+    }
+
     /// Close retires the session — the window's esc/⌘W/close button all
     /// land here.
     func testCloseCancelsSession() {
@@ -262,6 +342,24 @@ final class DetachedSearchModelTests: XCTestCase {
     /// `emitReady`'s wait establishes the happens-before.
     private final class EmitSlot {
         var emit: (([Item]) -> Void)?
+    }
+
+    /// A thread-safe `Int` log — `$selection` sinks fire on whichever
+    /// thread assigns, so a plain array would race with the asserting
+    /// test thread (Thread Sanitizer would flag it).
+    private final class IntLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Int] = []
+        func append(_ value: Int) {
+            lock.lock()
+            values.append(value)
+            lock.unlock()
+        }
+        var snapshot: [Int] {
+            lock.lock()
+            defer { lock.unlock() }
+            return values
+        }
     }
 
     /// The `EntryRules` stub — records the writes pin/block generate.

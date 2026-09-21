@@ -16,12 +16,12 @@ final class DetachedSearchModel: ObservableObject {
     /// title and header text.
     let query: String
 
-    /// The session's rows after pin/block shaping — the display list. The
-    /// selection is updated inside `refresh` — the sole writer of `rows` —
-    /// rather than a `didSet`: a didSet reset publishes a transient "row 0"
-    /// before the tracked id re-lands, feeding the view's scroll hook a
-    /// phantom change. Any other writer of `rows` must reconcile
-    /// `selection` itself.
+    /// The session's rows after pin/block shaping — the display list.
+    /// Sole-writer invariant: only `refresh` assigns `rows`, and it
+    /// re-points `selection` in the same synchronous pass — there is no
+    /// didSet backstop, so any new assignment site must own `selection`
+    /// too (a didSet reset would instead publish a phantom top selection
+    /// between the rows write and the re-point).
     @Published private(set) var rows: [ResultRow] = []
     @Published var selection = 0
     @Published private(set) var isPending: Bool
@@ -65,8 +65,11 @@ final class DetachedSearchModel: ObservableObject {
         guard shaped != rows else { return }
         let selectedID = selectedRow?.id
         rows = shaped
-        selection = selectedID
+        // Guard the write: `@Published` emits on every assignment, so an
+        // unchanged re-point would still publish a phantom selection.
+        let index = selectedID
             .flatMap { id in shaped.firstIndex(where: { $0.id == id }) } ?? 0
+        if selection != index { selection = index }
     }
 
     /// `PanelModel.shapeFileRows`' twin — blocked ids drop, pinned lead,
