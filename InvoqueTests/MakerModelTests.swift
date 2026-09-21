@@ -473,6 +473,9 @@ final class MakerModelTests: XCTestCase {
             phase = await model.phase
         }
         XCTAssertEqual(phase, .generating)
+        // A slow-host timeout above shouldn't cascade into the misleading
+        // desync messages below — stop at the first failure.
+        guard phase == .generating else { return }
 
         await model.cancelGeneration()
 
@@ -502,6 +505,10 @@ final class MakerModelTests: XCTestCase {
         }
         XCTAssertTrue(unwound.raised,
                       "cancelled generation did not unwind — did generate() suspend between the phase flip and the generationTask assignment?")
+        // The cancelled task must not clobber the idle phase on its way
+        // out — re-verify after the unwind, not before it.
+        phase = await model.phase
+        XCTAssertEqual(phase, .idle, "unwind left phase at \(phase)")
         let transcript = await model.transcript
         XCTAssertEqual(transcript.map(\.role), [.system, .user])
     }

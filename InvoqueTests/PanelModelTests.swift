@@ -996,6 +996,34 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.filterRunsStarted, 0)
     }
 
+    /// A run already inside the runner when the panel hides is past the
+    /// debounce-cancel window — its late completion must hit the
+    /// generation stale-drop instead of landing rows on the hidden list.
+    func testPanelDidHideDropsInflightFilterRun() async throws {
+        // The bounded busy-spin keeps the run in flight far longer than
+        // the observe-then-hide hop takes, so hide provably lands first —
+        // rows arriving before it would be legitimate, not dropped.
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run() {
+                const t = Date.now();
+                while (Date.now() - t < 300) {}
+                return { items: [{ title: "x" }] };
+            }
+            """)
+        let model = makeModel(items: [])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.commandRunner = CommandRunner()
+        model.query = "jf x"
+
+        await awaitStarts(model, atLeast: 1)
+        model.panelDidHide()
+
+        // The completion still ticks — dropped runs count — but the
+        // bumped generation keeps its rows off the hidden list.
+        await awaitCompletions(model, atLeast: 1)
+        XCTAssertTrue(model.results.isEmpty)
+    }
+
     /// A scan already handed to the detached window is off `fileSession`
     /// when the panel hides — dismissal must not kill it.
     func testPanelDidHideKeepsDetachedSessionAlive() async throws {
