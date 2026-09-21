@@ -318,10 +318,28 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        Text(footerHint)
-            .font(preferences.panelTypeface.font(.caption))
-            .foregroundStyle(tertiaryColor)
-            .frame(maxWidth: .infinity)
+        HStack(spacing: 0) {
+            // Live status left, key hints right — the two clusters scan
+            // separately instead of interleaving in one centered string.
+            Text(footerStatus)
+            Spacer()
+            Text(footerHint)
+        }
+        .font(preferences.panelTypeface.font(.caption))
+        .foregroundStyle(tertiaryColor)
+    }
+
+    /// The footer's left cluster: scan progress while a file walk
+    /// streams, else the visible result count. Empty while a permission
+    /// prompt or the maker owns the panel — the hint column is enough.
+    private var footerStatus: String {
+        if model.permissionRequest != nil || model.makerIsActive { return "" }
+        if model.fileSearchIsActive, model.fileScanIsPending {
+            return "Searching files…"
+        }
+        let count = model.results.count
+        if count == 0 { return "" }
+        return "\(count) \(count == 1 ? "result" : "results")"
     }
 
     /// The footer's key hints. The pin/block chords appear only while the
@@ -337,7 +355,7 @@ struct PanelView: View {
             // into its own window (see `PanelModel.submit`), so the hint
             // can't promise open/reveal until the walk settles.
             if model.fileScanIsPending {
-                return "Searching… ⏎ open in window" + manage + " · esc dismiss"
+                return "⏎ open in window" + manage + " · esc dismiss"
             }
             return "⏎ open · ⌘⏎ reveal in Finder" + manage + " · esc dismiss"
         }
