@@ -11,12 +11,17 @@ import AppKit
 /// and ⌘W/Esc to close.
 final class DetachedSearchWindow: NSWindow {
 
+    /// The list end a boundary key (Home/End, ⌘↑/⌘↓) targets. Window-local
+    /// — every other callback here is a primitive, and the controller owns
+    /// the translation to the model's vocabulary.
+    enum Boundary { case first, last }
+
     /// ↑/↓ by one row. Wired to the model by the window's controller.
     var onMove: ((Int) -> Void)?
     /// Page Up/Down — the model clamps the jump at the list ends.
     var onPage: ((Int) -> Void)?
     /// Home/End and ⌘↑/⌘↓ — jump to a boundary row.
-    var onBoundary: ((DetachedSearchModel.Boundary) -> Void)?
+    var onBoundary: ((Boundary) -> Void)?
     /// ⏎ on the selection — `true` when ⌘ was held (reveal in Finder).
     var onSubmit: ((Bool) -> Void)?
     /// ⌘P / ⌘B — pin and block the selected entry.

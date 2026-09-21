@@ -93,9 +93,9 @@ final class DetachedSearchModel: ObservableObject {
     /// Page Up/Down: a multi-row move that clamps at the ends rather than
     /// wrapping — overshooting the list should land on the boundary row,
     /// not teleport to the other end.
-    func pageSelection(by direction: Int) {
+    func pageSelection(by pages: Int) {
         guard !rows.isEmpty else { return }
-        selection = max(0, min(rows.count - 1, selection + direction * Self.pageStep))
+        selection = max(0, min(rows.count - 1, selection + pages * Self.pageStep))
     }
 
     /// The list end a boundary key (Home/End, ⌘↑/⌘↓) targets.
