@@ -349,7 +349,7 @@ enum InvoqueBridge {
         // filesystems disagree on — so the type check comes first: a
         // non-regular file is an unreadable body either way, and on
         // older macOS Data(contentsOf:) could even hand its bytes back.
-        guard values.isRegularFile else {
+        guard values.isRegularFile == true else {
             return .failure("invoque.fetch: could not read body")
         }
         guard let size = values.fileSize else {
