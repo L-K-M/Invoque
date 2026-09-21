@@ -57,10 +57,59 @@ final class CalculatorSourceTests: XCTestCase {
         XCTAssertTrue(source.items(matching: "hello").isEmpty)
     }
 
-    func testBareNumberRejected() {
-        // No operator, nothing to compute.
-        XCTAssertTrue(source.items(matching: "42").isEmpty)
+    // MARK: Base conversions
+
+    func testDecimalToHexConversion() throws {
+        let item = try XCTUnwrap(source.items(matching: "255").first)
+        XCTAssertEqual(item.title, "255 = 0xFF")
+        XCTAssertTrue(item.subtitle.contains("Hex 0xFF"))
+        XCTAssertTrue(item.subtitle.contains("Bin 0b11111111"))
+        XCTAssertTrue(item.subtitle.contains("Oct 0o377"))
+        XCTAssertEqual(item.action, .copyText("0xFF"))
+        // The id rides the calc: namespace — a head pin, frecency-ineligible.
+        XCTAssertEqual(item.id, "calc:base:255")
     }
+
+    func testHexLiteralToDecimal() throws {
+        let item = try XCTUnwrap(source.items(matching: "0xFF").first)
+        XCTAssertEqual(item.title, "0xFF = 255")
+        XCTAssertEqual(item.action, .copyText("255"))
+        // Same value, same row identity as the decimal form.
+        XCTAssertEqual(item.id, "calc:base:255")
+    }
+
+    func testBinaryLiteralToDecimal() throws {
+        let item = try XCTUnwrap(source.items(matching: "0b1010").first)
+        XCTAssertEqual(item.title, "0b1010 = 10")
+        XCTAssertEqual(item.action, .copyText("10"))
+    }
+
+    func testOctalLiteralToDecimal() throws {
+        let item = try XCTUnwrap(source.items(matching: "0o17").first)
+        XCTAssertEqual(item.title, "0o17 = 15")
+        XCTAssertEqual(item.action, .copyText("15"))
+    }
+
+    /// A single digit is likelier an app-search fragment than a
+    /// conversion request — and the row is a head pin that would outrank
+    /// real matches — so decimal input needs two digits.
+    func testSingleDigitDecimalStaysASearch() {
+        XCTAssertTrue(source.items(matching: "7").isEmpty)
+    }
+
+    func testMalformedLiteralsRejected() {
+        XCTAssertTrue(source.items(matching: "0x").isEmpty)
+        XCTAssertTrue(source.items(matching: "0xG1").isEmpty)
+        XCTAssertTrue(source.items(matching: "0b12").isEmpty)
+        XCTAssertTrue(source.items(matching: "0o9").isEmpty)
+    }
+
+    func testOverflowingValuesRejected() {
+        XCTAssertTrue(source.items(
+            matching: "99999999999999999999999999").isEmpty)
+    }
+
+    // MARK: Rejections
 
     func testBareGroupRejected() {
         XCTAssertTrue(source.items(matching: "(5)").isEmpty)

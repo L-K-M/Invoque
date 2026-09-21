@@ -143,7 +143,10 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - `ItemSource` protocol: `func items(for query: String) -> [Item]` (sync,
   cached sources) and async `reload()` for dynamic ones.
 - Sources v1: `AppSource` (NSWorkspace scan, LaunchServices apps), 
-  `CommandSource` (from CommandStore), `CalculatorSource`,
+  `CommandSource` (from CommandStore), `CalculatorSource` (arithmetic plus
+  bare-integer base conversion — `255`/`0xFF`/`0b1010` offer a
+  hex/dec/bin/oct row, pinned with calculator answers; decimal input
+  needs two digits so a lone digit stays an app search),
   `GeneratorSource` (instant answers: `uuid`, `now`, `flip`, `roll`/`dN` —
   exact-keyword only, never on partials, values fresh per query, ⏎
   copies), `SystemSource`

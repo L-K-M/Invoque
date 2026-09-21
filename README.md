@@ -18,7 +18,9 @@ refine new commands without leaving the panel.
   beats infix beats fuzzy, shorter matches win, and results stay stable
   while you keep typing. An empty panel already lists what you launch
   most — frecency top hits, ⏎ runs the top row.
-- **Calculate** inline (`2+2*3`, unit-free — the answer row pins first, behind only a typed path).
+- **Calculate** inline (`2+2*3`, `sqrt(9)`) and convert bases — `255`,
+  `0xFF`, `0b1010` all answer in the other bases; the answer row pins
+  first, behind only a typed path.
 - **Find files** without Spotlight: `find notes`, `f notes`, or
   `search notes` walks the disk directly — hidden dirs and dependency
   trees pruned, dependency build folders too. Matches stream in as the
