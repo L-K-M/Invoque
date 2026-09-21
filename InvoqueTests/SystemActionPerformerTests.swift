@@ -63,4 +63,18 @@ final class SystemActionPerformerTests: XCTestCase {
         XCTAssertEqual(
             try FileManager.default.contentsOfDirectory(atPath: trash.path).count, 2)
     }
+
+    /// A dangling symlink that can't be removed still counts — the
+    /// vanished-entry check must key on the removal error, not a
+    /// fileExists probe that would follow the dead link to nowhere.
+    func testEmptyTrashContentsCountsUndeadSymlink() throws {
+        try XCTSkipIf(geteuid() == 0, "Root ignores directory permissions")
+        try FileManager.default.createSymbolicLink(
+            at: trash.appendingPathComponent("dangling"),
+            withDestinationURL: trash.appendingPathComponent("gone"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o555],
+                                              ofItemAtPath: trash.path)
+
+        XCTAssertEqual(SystemActionPerformer.emptyTrashContents(at: trash), 1)
+    }
 }

@@ -71,14 +71,12 @@ enum SystemActionPerformer {
         DispatchQueue.global(qos: .utility).async {
             let trash = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".Trash", isDirectory: true)
-            // A fresh account may have no ~/.Trash at all — that is an
-            // empty Trash, not a read failure.
-            guard FileManager.default.fileExists(atPath: trash.path) else {
-                HUD.show("Trash emptied")
-                return
-            }
             guard let failures = emptyTrashContents(at: trash) else {
-                HUD.show("Couldn't read the Trash")
+                // A fresh account may have no ~/.Trash at all — that is
+                // an empty Trash, not a read failure. Checking after the
+                // failed read keeps the happy path to one filesystem hit.
+                HUD.show(FileManager.default.fileExists(atPath: trash.path)
+                         ? "Couldn't read the Trash" : "Trash emptied")
                 return
             }
             HUD.show(failures == 0 ? "Trash emptied"
@@ -100,8 +98,13 @@ enum SystemActionPerformer {
                 try FileManager.default.removeItem(at: item)
             } catch {
                 // Finder or a second Empty Trash may have removed it
-                // first — a vanished entry is not a failure.
-                if !FileManager.default.fileExists(atPath: item.path) {
+                // first — a vanished entry is not a failure. Read the
+                // thrown error rather than re-statting: fileExists would
+                // follow a symlink to a dead target and skip a real
+                // failure.
+                let nsError = error as NSError
+                if nsError.domain == NSCocoaErrorDomain,
+                   nsError.code == NSFileNoSuchFileError {
                     continue
                 }
                 failures += 1
