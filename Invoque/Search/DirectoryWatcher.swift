@@ -78,6 +78,8 @@ final class DirectoryWatcher: @unchecked Sendable {
 
     /// How many directories are watched right now — exposed for tests,
     /// which poll it to know `start` has finished resolving targets.
+    /// Like `stop()`, must not be called from `onEvent` or anything it
+    /// runs synchronously — it syncs onto the watcher's own queue.
     var watchedCount: Int {
         queue.sync { watchedPaths.count }
     }
@@ -129,10 +131,14 @@ final class DirectoryWatcher: @unchecked Sendable {
     /// it changed — a content edit inside a watched directory reopens
     /// nothing. Must run on `queue`.
     private func rebuildTargets() {
-        var budget = Self.maxTargets
+        // Per-root fair share so one deep tree can't consume the whole
+        // cap and starve every later root — each root's base included,
+        // keeping the total under maxTargets.
+        let budgetPerRoot = max(8, Self.maxTargets / max(1, roots.count))
         var seen = Set<String>()
         var targets: [URL] = []
         for root in roots {
+            var budget = budgetPerRoot
             let base = Self.isDirectory(root) ? root
                 : Self.nearestExistingAncestor(of: root)
             guard let base, seen.insert(base.path).inserted else { continue }
@@ -145,15 +151,17 @@ final class DirectoryWatcher: @unchecked Sendable {
             }
         }
         let paths = Set(targets.map(\.path))
-        guard paths != watchedPaths else { return }
+        // Also rebuild when a previous open failed so transient fd
+        // pressure doesn't leave a directory permanently unwatched.
+        guard paths != watchedPaths || sources.count != targets.count else { return }
         teardown()
         watchedPaths = paths
         sources = targets.compactMap { makeSource(for: $0) }
     }
 
     /// Subdirectories under `url`, recursively, bounded by depth and the
-    /// shared fd budget. Packages (`Foo.app`) and symlinked directories
-    /// are not descended into.
+    /// root's fd budget share. Packages (`Foo.app`) and symlinked
+    /// directories are not descended into.
     private static func subdirectories(under url: URL, depth: Int,
                                        budget: inout Int) -> [URL] {
         guard depth < maxDepth, budget > 0,

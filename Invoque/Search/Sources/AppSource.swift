@@ -20,6 +20,11 @@ final class AppSource: ItemSource, @unchecked Sendable {
     /// path reads this and nothing else.
     private var cachedItems: [Item] = []
 
+    /// Set once the first scan has been published so an empty first scan
+    /// still fires `onReload` exactly once — a no-apps machine must not
+    /// leave a "scan landed" consumer waiting forever. Guarded by `lock`.
+    private var didPublishInitialLoad = false
+
     /// Notices apps appearing or disappearing under the catalog's search
     /// folders so the cache is not frozen at launch. `lazy` because the
     /// event closure captures `self`, which is only valid once the
@@ -82,7 +87,8 @@ final class AppSource: ItemSource, @unchecked Sendable {
         // Directory events fire for any child write — a .DS_Store update
         // included — so an identical scan must not republish and kick a
         // pointless result refresh.
-        let changed = sorted != cachedItems
+        let changed = sorted != cachedItems || !didPublishInitialLoad
+        didPublishInitialLoad = true
         cachedItems = sorted
         // The hook is invoked on main by design — the function value is what
         // crosses the queue boundary, so the sendability exemption sits here
