@@ -1350,6 +1350,23 @@ final class PanelModelTests: XCTestCase {
         }
     }
 
+    func testCommandReturnAloneCannotBypassSystemActionConfirmation() {
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: Item.systemIDPrefix + "empty-trash",
+            title: "Empty Trash",
+            subtitle: "",
+            icon: .symbol("trash"),
+            action: .system(.emptyTrash))])
+
+        model.submit(commandModifier: true)
+
+        XCTAssertNil(submitted)
+        XCTAssertEqual(model.systemActionConfirmation?.action, .emptyTrash)
+    }
+
     func testSafeSystemActionsRemainImmediate() {
         for action in [Item.SystemAction.lockScreen, .sleep] {
             let model = makeModel(items: [])
@@ -1374,10 +1391,52 @@ final class PanelModelTests: XCTestCase {
         let consequential: [Item.SystemAction] = [.restart, .shutDown, .emptyTrash]
 
         for action in Item.SystemAction.allCases {
-            XCTAssertEqual(action.requiresConfirmation,
-                           consequential.contains(action),
+            let expected = consequential.contains(action)
+            XCTAssertEqual(action.requiresConfirmation, expected,
                            "\(action) confirmation classification drifted")
+            let row = ResultRow(
+                id: Item.systemIDPrefix + action.rawValue,
+                title: action.rawValue,
+                subtitle: "",
+                icon: .symbol("gear"),
+                action: .system(action))
+            let confirmation = SystemActionConfirmation(row: row)
+            XCTAssertEqual(confirmation != nil, expected)
+            if let confirmation {
+                XCTAssertFalse(confirmation.title.isEmpty)
+                XCTAssertFalse(confirmation.detail.isEmpty)
+                XCTAssertFalse(confirmation.confirmLabel.isEmpty)
+            }
         }
+    }
+
+    func testConfirmationCardsFreezeSelection() throws {
+        let model = makeModel(items: [])
+        model.showCommandResults([
+            ResultRow(id: "one", title: "One", subtitle: "",
+                      icon: .symbol("1.circle"), action: .copyText("one")),
+            ResultRow(id: "two", title: "Two", subtitle: "",
+                      icon: .symbol("2.circle"), action: .copyText("two")),
+        ])
+        let grants = makeFreshGrants()
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.selection, 0)
+
+        model.dismissPermissionRequest()
+        model.showCommandResults([
+            ResultRow(id: Item.systemIDPrefix + "restart", title: "Restart",
+                      subtitle: "", icon: .symbol("arrow.clockwise"),
+                      action: .system(.restart)),
+            ResultRow(id: Item.systemIDPrefix + "sleep", title: "Sleep",
+                      subtitle: "", icon: .symbol("moon"),
+                      action: .system(.sleep)),
+        ])
+        model.submit()
+
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.selection, 0)
     }
 
     func testEditingQueryDismissesSystemActionConfirmation() {

@@ -221,6 +221,10 @@ final class PanelController: NSObject, @unchecked Sendable {
 
         panel.onCancel = { [weak self] in
             guard let self else { return }
+            if self.model.permissionRequest != nil {
+                self.model.dismissPermissionRequest()
+                return
+            }
             if self.model.systemActionConfirmation != nil {
                 self.model.dismissSystemActionConfirmation()
                 return
