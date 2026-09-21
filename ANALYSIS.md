@@ -409,7 +409,7 @@ Filter-budget profiler (staged-run ms vs the ~80 ms keystroke budget, auto-warn 
 Stale-frecency janitor (drop `app:` entries whose bundle no longer exists on `AppSource.reload`); per-engine keyword fallback (`g`/`yt`/`gh` rows above the generic web row); calculator-as-converter (`in`/`to` suffix grammar on the pin-first row).
 
 ### Command X-ray
-Hold Space on a command to show source, capabilities, generated provenance, last diff/runtime/error, and each `invoque.*` call beside its required permission. This turns inspectability into a product surface; PR #58 supplies the first reusable source viewer.
+Press Space on a command row to open X-ray as that row's Quick Look; file rows keep standard Quick Look. Show source, capabilities, generated provenance, last diff/runtime/error, and each `invoque.*` call beside its required permission. PR #58 supplies the first reusable source viewer.
 
 ### Rehearsal mode
 Before a generated command's first real run, let bridge methods record "would open/write/run" effects and return fixtures. Label every simulated result unmistakably; never imply shell or network simulation proves safety.
@@ -424,13 +424,13 @@ Render the top result as faint inline completion; Tab accepts the remaining titl
 Track duration and timeout counts. After repeated failures, show a health badge and remove the command from filter hot paths until the user retries or resets it. Link directly to bounded logs and a reason.
 
 ### Undo capsule
-For reversible actions only, offer a short-lived capsule to restore clipboard contents, panel state, pin/block state, or a Maker revision. Never claim undo for shell execution, deletion, restart, or shutdown.
+For reversible actions only, offer a short-lived capsule to restore clipboard contents, panel state, pin/block state, or a Maker revision. Clipboard snapshots must obey clipboard-history app exclusions and retention. Never claim undo for shell execution, deletion, restart, or shutdown.
 
 ### Make from no result
 Offer `Make a command for “…”` as the last explicit no-result row. It must disclose that a configured model will be called and must never invoke the model from a habitual Return without visible confirmation.
 
 ### Signed command postcards
-Export a read-only preview bundle containing manifest, source, permission summary, provenance, and a result sample. Import must verify signature and manifest digest, reject unsigned/tampered bundles, open X-ray first, and keep execution a separate action.
+Export a read-only preview bundle containing manifest, source, permission summary, provenance, and a result sample. Import must verify the digest and a signature from a public key the user explicitly pinned by fingerprint; reject unsigned, unpinned, or mismatched bundles, open X-ray first, and keep execution separate.
 
 ---
 
@@ -442,6 +442,7 @@ Export a read-only preview bundle containing manifest, source, permission summar
 - Race source replacement and symlinks at loader, consent, runtime, storage, Maker save, history, and import boundaries; approved bytes must equal executed bytes.
 - Manually verify mouse/keyboard destructive-action confirmation and paste Accessibility denial/recovery.
 - Run VoiceOver, Full Keyboard Access, larger text, RTL, Reduce Motion, Reduce Transparency, Increase Contrast, multiple displays, and full-screen Spaces on macOS 13, 15, and 26 where available.
+- Verify command-postcard import rejects unsigned, unpinned, and digest-mismatched bundles and shows only pinned-key-verified contents in X-ray.
 - From a clean quarantined account, verify Developer ID identity, notarization, stapling, updater signature/version checks, replacement, relaunch, failure recovery, and rollback.
 
 ---
