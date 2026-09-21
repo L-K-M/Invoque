@@ -4,7 +4,8 @@ import Foundation
 ///
 /// Path strings are validated elsewhere. This policy handles the filesystem
 /// state those strings cannot express, chiefly symlinks introduced by copied
-/// or externally edited command folders.
+/// or externally edited command folders. Hard links are indistinguishable from
+/// regular files and remain outside this path-based policy.
 enum CommandDirectoryPolicy {
 
     enum Violation: Error, Equatable, LocalizedError {
@@ -33,6 +34,9 @@ enum CommandDirectoryPolicy {
         in commandDirectory: URL
     ) throws -> URL {
         let commandDirectory = commandDirectory.standardizedFileURL
+        guard !isSymbolicLink(commandDirectory) else {
+            throw Violation.symbolicLink(".")
+        }
         let dataDirectory = commandDirectory
             .appendingPathComponent(dataName, isDirectory: true)
             .standardizedFileURL

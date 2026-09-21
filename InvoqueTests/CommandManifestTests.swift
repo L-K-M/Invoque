@@ -145,6 +145,22 @@ final class CommandManifestTests: XCTestCase {
         }
     }
 
+    func testRejectsSymlinkedCommandDirectory() throws {
+        // A symlinked root would let canonicalization pass while data paths
+        // are reached through a location outside the commands root.
+        let realDirectory = try makeLoadableCommandDirectory()
+        let linkParent = try makeTemporaryDirectory(prefix: "invoque-link-parent")
+        let link = linkParent.appendingPathComponent("linked-command")
+        try FileManager.default.createSymbolicLink(
+            at: link,
+            withDestinationURL: realDirectory)
+
+        XCTAssertThrowsError(try Command(directory: link)) { error in
+            XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
+                           .symbolicLink("."))
+        }
+    }
+
     func testRejectsSymlinkedStorageFile() throws {
         let directory = try makeLoadableCommandDirectory()
         let dataDirectory = directory.appendingPathComponent("data")
