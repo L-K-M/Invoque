@@ -349,7 +349,7 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertNil(result.error)
         let stored = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: storageFile)) as? [String: String])
-        XCTAssertEqual(stored["key"], "value")
+        XCTAssertEqual(stored, ["key": "value"])
     }
 
     func testConcurrentStorageWritesKeepBothKeys() async throws {

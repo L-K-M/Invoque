@@ -238,6 +238,30 @@ final class CommandWriterTests: XCTestCase {
         }
     }
 
+    /// `data/` is a real directory but `data/storage.json` is a symlink out —
+    /// the write-through-symlink escape the leaf check exists to stop.
+    func testSaveRejectsSymlinkedStorageFile() throws {
+        let directory = root.appendingPathComponent("demo")
+        let dataDirectory = directory.appendingPathComponent("data")
+        try FileManager.default.createDirectory(
+            at: dataDirectory,
+            withIntermediateDirectories: true)
+        let sentinel = root.appendingPathComponent("outside.json")
+        try "unchanged".write(to: sentinel, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: dataDirectory.appendingPathComponent("storage.json"),
+            withDestinationURL: sentinel)
+
+        let (generation, _) = try generation()
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertNotNil(error as? CommandWriter.SaveError)
+        }
+        XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "unchanged")
+    }
+
     func testSaveRejectsSymlinkedManifest() throws {
         let directory = root.appendingPathComponent("demo")
         try FileManager.default.createDirectory(
