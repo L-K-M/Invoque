@@ -67,7 +67,8 @@ enum InvoqueBridge {
 
         invoque.setValue(args, forProperty: "args")
         installUtilities(on: invoque, logs: logs)
-        installStorage(on: invoque, context: context, dataDirectory: command.dataDirectory)
+        installStorage(on: invoque, context: context,
+                       commandDirectory: command.directory)
 
         if permissions.contains(.clipboardRead) || permissions.contains(.clipboardWrite) {
             installClipboard(on: invoque, context: context, permissions: permissions)
@@ -77,7 +78,8 @@ enum InvoqueBridge {
                          fetches: fetches)
         }
         if permissions.contains(.files) {
-            installFileSystem(on: invoque, context: context, dataDirectory: command.dataDirectory)
+            installFileSystem(on: invoque, context: context,
+                              commandDirectory: command.directory)
         }
         if permissions.contains(.open) {
             installOpen(on: invoque)
@@ -138,32 +140,41 @@ enum InvoqueBridge {
     /// Per-command key-value store at `<command>/data/storage.json`. The file
     /// (and `data/`) is created lazily on first write — never merely because
     /// a command ran.
-    private static func installStorage(on invoque: JSValue, context: JSContext, dataDirectory: URL) {
+    private static func installStorage(on invoque: JSValue, context: JSContext,
+                                       commandDirectory: URL) {
         guard let storage = JSValue(newObjectIn: context) else { return }
-
-        let fileURL = dataDirectory.appendingPathComponent("storage.json")
 
         // Always reads disk — a per-invocation cache goes stale the moment
         // another invocation writes, and persisting the stale snapshot would
         // silently drop the other invocation's keys.
-        func load() -> [String: Any] {
-            guard let data = try? Data(contentsOf: fileURL),
-                  let object = try? JSONSerialization.jsonObject(with: data),
-                  let dictionary = object as? [String: Any] else { return [:] }
-            return dictionary
+        func load() throws -> [String: Any] {
+            let fileURL = try CommandDirectoryPolicy.validatedStorageURL(
+                in: commandDirectory)
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                return [:]
+            }
+            let data = try Data(contentsOf: fileURL)
+            let object = try JSONSerialization.jsonObject(with: data)
+            return object as? [String: Any] ?? [:]
         }
 
-        func persist(_ stored: [String: Any]) {
-            guard JSONSerialization.isValidJSONObject(stored),
-                  let data = try? JSONSerialization.data(withJSONObject: stored) else { return }
-            do {
-                try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
-                try data.write(to: fileURL, options: .atomic)
-            } catch {
-                // Best-effort: persistence failures surface only as a lost
-                // write, so they are logged rather than thrown into JS.
-                NSLog("Invoque: storage persist failed: \(error)")
-            }
+        func persist(_ stored: [String: Any]) throws {
+            guard JSONSerialization.isValidJSONObject(stored) else { return }
+            let data = try JSONSerialization.data(withJSONObject: stored)
+            let initialURL = try CommandDirectoryPolicy.validatedStorageURL(
+                in: commandDirectory)
+            try FileManager.default.createDirectory(
+                at: initialURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            // Revalidate after directory creation to catch replacement during
+            // setup before the atomic write.
+            let fileURL = try CommandDirectoryPolicy.validatedStorageURL(
+                in: commandDirectory)
+            try data.write(to: fileURL, options: .atomic)
+        }
+
+        func report(_ operation: String, _ error: Error) {
+            throwError("invoque.storage.\(operation): \(error.localizedDescription)")
         }
 
         // All storage I/O runs on a shared serial queue: the read-modify-
@@ -176,9 +187,14 @@ enum InvoqueBridge {
             // JS thread, do disk I/O inside the serial queue, then build
             // the JSValue back on the JS thread.
             guard let context = JSContext.current() else { return nil }
-            let stored = storageQueue.sync { load() }
-            guard let value = stored[key] else { return nil }
-            return JSValue(object: value, in: context)
+            do {
+                let stored = try storageQueue.sync { try load() }
+                guard let value = stored[key] else { return nil }
+                return JSValue(object: value, in: context)
+            } catch {
+                report("get", error)
+                return nil
+            }
         }
         let set: @convention(block) (String, JSValue) -> Void = { key, value in
             guard let object = value.toObject(),
@@ -186,17 +202,25 @@ enum InvoqueBridge {
                 throwError("invoque.storage.set: value must be JSON-serializable")
                 return
             }
-            storageQueue.sync {
-                var stored = load()
-                stored[key] = object
-                persist(stored)
+            do {
+                try storageQueue.sync {
+                    var stored = try load()
+                    stored[key] = object
+                    try persist(stored)
+                }
+            } catch {
+                report("set", error)
             }
         }
         let delete: @convention(block) (String) -> Void = { key in
-            storageQueue.sync {
-                var stored = load()
-                stored.removeValue(forKey: key)
-                persist(stored)
+            do {
+                try storageQueue.sync {
+                    var stored = try load()
+                    stored.removeValue(forKey: key)
+                    try persist(stored)
+                }
+            } catch {
+                report("delete", error)
             }
         }
         storage.setValue(get, forProperty: "get")
@@ -377,15 +401,19 @@ enum InvoqueBridge {
     /// Paths are resolved against that base and `..`/symlink escapes are
     /// refused — this module is the untrusted-code boundary, so a command
     /// must not be able to reach the rest of the disk through it.
-    private static func installFileSystem(on invoque: JSValue, context: JSContext, dataDirectory: URL) {
+    private static func installFileSystem(on invoque: JSValue, context: JSContext,
+                                          commandDirectory: URL) {
         guard let fs = JSValue(newObjectIn: context) else { return }
 
-        let base = dataDirectory.standardizedFileURL.resolvingSymlinksInPath()
         func resolve(_ path: String) -> URL? {
+            guard let base = try? CommandDirectoryPolicy.validatedDataDirectory(
+                in: commandDirectory) else { return nil }
             let resolved = base.appendingPathComponent(path)
                 .standardizedFileURL
                 .resolvingSymlinksInPath()
-            guard resolved.path == base.path || resolved.path.hasPrefix(base.path + "/") else {
+            let canonicalBase = base.resolvingSymlinksInPath().standardizedFileURL
+            guard resolved.path == canonicalBase.path
+                    || resolved.path.hasPrefix(canonicalBase.path + "/") else {
                 return nil
             }
             return resolved

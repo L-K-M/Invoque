@@ -61,7 +61,8 @@ struct Command: Equatable, Identifiable, Sendable {
     }
 
     /// Loads `command.json` from `directory` and validates it. Throws
-    /// `LoadError`, a `DecodingError`, or `CommandManifest.ValidationError`.
+    /// `LoadError`, a `DecodingError`, `CommandManifest.ValidationError`, or
+    /// `CommandDirectoryPolicy.Violation`.
     init(directory: URL) throws {
         // Standardize before validating so the path `validate` checks and
         // the stored directory/entryURL are the same path.
@@ -79,6 +80,7 @@ struct Command: Equatable, Identifiable, Sendable {
         }
         let manifest = try JSONDecoder().decode(CommandManifest.self, from: data)
         try manifest.validate(in: directory)
+        _ = try CommandDirectoryPolicy.validatedStorageURL(in: directory)
         self.init(manifest: manifest, directory: directory)
     }
 }

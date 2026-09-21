@@ -138,7 +138,10 @@ final class CommandManifestTests: XCTestCase {
             at: directory.appendingPathComponent("data"),
             withDestinationURL: outside)
 
-        XCTAssertThrowsError(try Command(directory: directory))
+        XCTAssertThrowsError(try Command(directory: directory)) { error in
+            XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
+                           .symbolicLink("data"))
+        }
     }
 
     func testRejectsSymlinkedStorageFile() throws {
@@ -155,7 +158,10 @@ final class CommandManifestTests: XCTestCase {
             at: dataDirectory.appendingPathComponent("storage.json"),
             withDestinationURL: target)
 
-        XCTAssertThrowsError(try Command(directory: directory))
+        XCTAssertThrowsError(try Command(directory: directory)) { error in
+            XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
+                           .symbolicLink("data/storage.json"))
+        }
     }
 
     // MARK: Helpers

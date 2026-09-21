@@ -178,6 +178,57 @@ final class CommandWriterTests: XCTestCase {
 
     // MARK: Defense
 
+    func testSaveRejectsSymlinkedDataDirectory() throws {
+        let directory = root.appendingPathComponent("demo")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        let outside = root.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(
+            at: outside,
+            withIntermediateDirectories: true)
+        let sentinel = outside.appendingPathComponent("sentinel.txt")
+        try "unchanged".write(to: sentinel, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: directory.appendingPathComponent("data"),
+            withDestinationURL: outside)
+
+        let (generation, _) = try generation()
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertNotNil(error as? CommandWriter.SaveError)
+        }
+        XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "unchanged")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("command.json").path))
+    }
+
+    func testSaveRejectsSymlinkedGeneratedPathComponent() throws {
+        let directory = root.appendingPathComponent("demo")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        let outside = root.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(
+            at: outside,
+            withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: directory.appendingPathComponent("lib"),
+            withDestinationURL: outside)
+
+        let (generation, _) = try generation(extraFiles: ["lib/util.js": "escaped"])
+        XCTAssertThrowsError(
+            try CommandWriter(rootURL: root)
+                .save(generation, prompt: "p", model: "m")
+        ) { error in
+            XCTAssertNotNil(error as? CommandWriter.SaveError)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: outside.appendingPathComponent("util.js").path))
+    }
+
     /// An unsafe name on a later file must abort the save before anything
     /// lands — no manifest, no snapshot, no directory.
     func testUnsafeExtraFileNameWritesNothing() throws {
