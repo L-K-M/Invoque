@@ -73,7 +73,7 @@ struct HotkeyRecorder: NSViewRepresentable {
             alignment = .center
             font = .systemFont(ofSize: NSFont.systemFontSize)
             setAccessibilityLabel("Summon hotkey recorder")
-            setAccessibilityHint(
+            setAccessibilityHelp(
                 "Activate, then press the new keyboard shortcut")
         }
 
