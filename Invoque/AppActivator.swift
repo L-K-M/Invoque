@@ -91,9 +91,6 @@ enum AppActivator {
     private static func verifyActivation(of app: NSRunningApplication, allWindows: Bool,
                                          remainingRetries: Int, originPID: pid_t?,
                                          generation: Int) {
-        // `app` is an immutable-ish proxy read only on the main queue after
-        // the hop — the reference crossing is what needs the exemption.
-        nonisolated(unsafe) let app = app
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             guard !app.isTerminated else { return }
             let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier

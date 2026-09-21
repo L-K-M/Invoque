@@ -1,6 +1,7 @@
 import XCTest
 @testable import Invoque
 
+@MainActor
 final class MakerModelTests: XCTestCase {
 
     private var root: URL!

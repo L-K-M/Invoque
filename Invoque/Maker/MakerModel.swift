@@ -92,9 +92,9 @@ final class MakerModel: ObservableObject {
     /// `client` is a factory, not an instance, so each generation snapshots
     /// the current Settings (a mid-session model change applies at once).
     /// `store` is rescanned after a save; nil is fine for tests.
-    /// Nonisolated by default (global-actor inits always are) — an explicit
-    /// `nonisolated` would void the exemption that lets an initializer
-    /// assign the actor-isolated stored `let`s below.
+    /// Actor-isolated like the rest of the class — a `nonisolated` init
+    /// could not assign the actor-isolated stored `let`s below, so callers
+    /// (AppDelegate, the test helpers) construct on the main actor.
     init(client: @escaping () -> LLMClientServing,
          runner: CommandRunner,
          writer: CommandWriter,
