@@ -13,7 +13,7 @@ import Foundation
 final class CommandStore: @unchecked Sendable {
 
     /// A directory under a root that failed to load as a command.
-    struct ScanError {
+    struct ScanError: Sendable {
         let directory: URL
         let error: Error
     }
@@ -102,13 +102,15 @@ final class CommandStore: @unchecked Sendable {
 
     /// Rescans and notifies `onChange` if the list changed. The disk pass
     /// runs on the caller's thread; only the state commit hops onto
-    /// `stateQueue`. Returns the resulting command list.
+    /// `stateQueue`. Returns the committed commands and errors as one
+    /// atomic pair — a caller that read them separately could pair this
+    /// pass's commands with a later pass's errors.
     @discardableResult
-    func scan() -> [Command] {
+    func scan() -> (commands: [Command], errors: [ScanError]) {
         let outcome = collectCommands()
         return stateQueue.sync {
             commit(outcome)
-            return _commands
+            return (_commands, _errors)
         }
     }
 

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// The Commands settings tab (PLAN §7.3): the command inventory the
-/// launcher actually loaded — title, mode, granted permissions, and the
+/// launcher actually loaded — title, mode, declared permissions, and the
 /// directory each lives in — plus the roots they were scanned from and
 /// any folders that failed to load. Read-only for now: editable roots
 /// and per-command enable/disable are separate milestones; today the
@@ -10,13 +10,21 @@ import SwiftUI
 struct CommandsView: View {
 
     let store: CommandStore
+    /// The consent ledger — a declared `shell`/`paste` is only capability
+    /// until first-run consent; the badge shows which state it's in.
+    let permissionGrants: CommandPermissionGrants
 
-    /// Snapshots of the store's last scan — refreshed on appear and by
-    /// the Rescan button. The store's `onChange` slot is already claimed
-    /// by `CommandSource`, so this view polls deliberately instead of
-    /// subscribing.
+    /// Snapshots of the store's last scan — refreshed on appear, when the
+    /// app re-activates (returning from the editor that changed a file),
+    /// and by the Rescan button. The store's `onChange` slot is already
+    /// claimed by `CommandSource`, so this view doesn't subscribe — a
+    /// disk change while the window sits open waits for the next refresh.
     @State private var commands: [Command] = []
     @State private var scanErrors: [CommandStore.ScanError] = []
+    /// Commands' ungranted risky permissions, keyed by command id —
+    /// computed in `rescan`'s detached pass since `ungranted(for:)`
+    /// hashes the entry file.
+    @State private var pendingConsent: [String: Set<CommandManifest.Permission>] = [:]
     @State private var rescanning = false
 
     var body: some View {
@@ -28,6 +36,12 @@ struct CommandsView: View {
         .formStyle(.grouped)
         .padding()
         .task { await rescan() }
+        // Editing a command then clicking back to this window is the
+        // "why isn't it listed" moment — refresh on activation covers it.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await rescan() }
+        }
     }
 
     /// The inventory, one row per command: title, mode and permission
@@ -107,8 +121,9 @@ struct CommandsView: View {
                     badge(command.manifest.mode.rawValue, tint: .secondary)
                     ForEach(Self.sortedPermissions(of: command), id: \.self) { permission in
                         // shell/paste are the consent-gated capabilities —
-                        // they get the warning tint so a granted command's
-                        // reach is visible at a glance (PLAN §4.3).
+                        // the warning tint marks declared reach; the
+                        // consent note below says whether the user already
+                        // allowed it (PLAN §4.3).
                         badge(permission.rawValue,
                               tint: CommandPermissionGrants.risky.contains(permission)
                                   ? .orange : .secondary)
@@ -119,6 +134,11 @@ struct CommandsView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let note = consentNote(for: command) {
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             Button("Reveal") {
@@ -128,7 +148,22 @@ struct CommandsView: View {
         }
     }
 
-    /// A tiny capsule label — a mode or a granted permission.
+    /// The consent state of a command's risky permissions, e.g.
+    /// "shell · asks on first run" — nil when it declares none.
+    private func consentNote(for command: Command) -> String? {
+        let risky = command.permissions
+            .intersection(CommandPermissionGrants.risky)
+            .sorted { $0.rawValue < $1.rawValue }
+        guard !risky.isEmpty else { return nil }
+        let pending = pendingConsent[command.id] ?? []
+        return risky.map {
+            pending.contains($0)
+                ? "\($0.rawValue) · asks on first run"
+                : "\($0.rawValue) · consented"
+        }.joined(separator: ", ")
+    }
+
+    /// A tiny capsule label — a mode or a declared permission.
     private func badge(_ text: String, tint: Color) -> some View {
         Text(text)
             .font(.caption2)
@@ -138,7 +173,7 @@ struct CommandsView: View {
             .background(tint.opacity(0.12), in: Capsule())
     }
 
-    /// Granted permissions in manifest-string order for a stable row.
+    /// Declared permissions in manifest-string order for a stable row.
     private static func sortedPermissions(of command: Command) -> [CommandManifest.Permission] {
         command.permissions.sorted { $0.rawValue < $1.rawValue }
     }
@@ -147,23 +182,35 @@ struct CommandsView: View {
     /// doesn't exist until the first `make` saves into it, and a Reveal
     /// that silently no-ops would read as a broken button.
     private func reveal(_ root: URL) {
-        try? FileManager.default.createDirectory(at: root,
-                                                 withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: root,
+                                                    withIntermediateDirectories: true)
+        } catch {
+            HUD.show("Couldn't create \(root.lastPathComponent) — \(error.localizedDescription)")
+            return
+        }
         NSWorkspace.shared.activateFileViewerSelecting([root])
     }
 
     /// Reloads the snapshots from a fresh disk pass. `scan()` does its
-    /// I/O on the caller's thread, so the pass hops off-main.
+    /// I/O on the caller's thread, so the pass hops off-main — where the
+    /// consent check's per-command entry-file hashing belongs too.
     private func rescan() async {
         rescanning = true
         defer { rescanning = false }
         let store = self.store
-        // Immutable structs crossing the hop — the exemption sits on the
-        // value, like HUD's font hand-off.
-        nonisolated(unsafe) let snapshot = await Task.detached {
-            (store.scan(), store.scanErrors)
+        let grants = permissionGrants
+        let outcome = await Task.detached {
+            let scan = store.scan()
+            var pending: [String: Set<CommandManifest.Permission>] = [:]
+            for command in scan.commands {
+                let ungranted = Set(grants.ungranted(for: command))
+                if !ungranted.isEmpty { pending[command.id] = ungranted }
+            }
+            return (scan, pending)
         }.value
-        commands = snapshot.0
-        scanErrors = snapshot.1
+        commands = outcome.0.commands
+        scanErrors = outcome.0.errors
+        pendingConsent = outcome.1
     }
 }

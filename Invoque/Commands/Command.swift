@@ -1,7 +1,7 @@
 import Foundation
 
 /// A command directory that loaded and validated successfully.
-struct Command: Equatable, Identifiable {
+struct Command: Equatable, Identifiable, Sendable {
 
     let manifest: CommandManifest
     /// The command's directory: `command.json`, the entry file, `data/`,

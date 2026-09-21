@@ -11,11 +11,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The one commands store — the panel's `CommandSource`, the Maker's
     /// writer, and the settings Commands tab all read the same instance.
     private lazy var commandStore = CommandStore()
+    /// One consent ledger shared by the panel's run path, the Maker's test
+    /// path, and the Commands tab's consent display (PLAN §4.3).
+    private lazy var permissionGrants = CommandPermissionGrants()
     private lazy var settingsWindow = SettingsWindowController(preferences: preferences,
                                                                updateChecker: updateChecker,
-                                                               commandStore: commandStore)
+                                                               commandStore: commandStore,
+                                                               permissionGrants: permissionGrants)
     private lazy var panelController = Self.makePanelController(preferences: preferences,
-                                                                commandStore: commandStore)
+                                                                commandStore: commandStore,
+                                                                permissionGrants: permissionGrants)
 
     private var statusItem: NSStatusItem?
     /// Hidden until a background check queues an update — then it names the
@@ -37,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenu.install(into: NSApplication.shared)
         setUpStatusItem()
         setUpSummonHotkey()
+        // The store is app-scoped — Settings can open before the panel is
+        // ever summoned, so watching can't wait for the lazy controller.
+        commandStore.startWatching()
         // A background check that finds an update while the app is inactive
         // queues it — the menu item is its discoverable surface until the
         // alert can present without stealing focus.
@@ -140,8 +148,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a menu item that no-ops reads as broken (PLAN §7 menu).
     @objc private func openCommandsFolder() {
         let root = commandStore.primaryRootURL
-        try? FileManager.default.createDirectory(at: root,
-                                                 withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: root,
+                                                    withIntermediateDirectories: true)
+        } catch {
+            HUD.show("Couldn't create the commands folder — \(error.localizedDescription)")
+            return
+        }
         NSWorkspace.shared.open(root)
     }
 
@@ -153,9 +166,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `AppSource.onReload` can re-run the open query — the hook must be
     /// passed at init (a post-init assignment can miss the first scan).
     private static func makePanelController(preferences: Preferences,
-                                            commandStore: CommandStore) -> PanelController {
+                                            commandStore: CommandStore,
+                                            permissionGrants: CommandPermissionGrants) -> PanelController {
         let model = PanelModel()
-        commandStore.startWatching()
         // autoReload off: the initial scan must not fire onChange before
         // onReload is wired — wire first, then kick the scan explicitly.
         let commandSource = CommandSource(store: commandStore, autoReload: false)
@@ -168,10 +181,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.commandLookup = { [commandStore] name in
             commandStore.command(named: name)
         }
-        // First-run consent for risky permissions — one store shared by the
-        // panel's run path and the Maker's test path, so Allow once covers
-        // both (PLAN §4.3).
-        let permissionGrants = CommandPermissionGrants()
+        // First-run consent for risky permissions comes in as a shared
+        // app-scope ledger — Allow once covers the panel's run path, the
+        // Maker's test path, and the Commands tab's display (PLAN §4.3).
         // The Maker: `make `/`mk ` routes to it. The client is a factory so
         // each generation picks up the current Settings (model/key changes
         // apply without a relaunch).

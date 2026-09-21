@@ -6,7 +6,7 @@ import Foundation
 /// manifest file itself. Decoding is tolerant — most fields fall back to the
 /// schema's default — so a minimal manifest still loads far enough to produce
 /// a useful validation error.
-struct CommandManifest: Codable, Equatable {
+struct CommandManifest: Codable, Equatable, Sendable {
 
     /// The only manifest schema this build understands.
     static let currentSchemaVersion = 1
@@ -34,11 +34,11 @@ struct CommandManifest: Codable, Equatable {
 
     // MARK: Schema types
 
-    enum Runtime: String, Codable {
+    enum Runtime: String, Codable, Sendable {
         case js
     }
 
-    enum Mode: String, Codable {
+    enum Mode: String, Codable, Sendable {
         /// Run once; the return value (title or item list) is the output.
         case action
         /// Re-run per keystroke; the return value is the result list.
@@ -46,7 +46,7 @@ struct CommandManifest: Codable, Equatable {
     }
 
     /// The v1 capability set. Raw values are the manifest strings.
-    enum Permission: String, Codable {
+    enum Permission: String, Codable, Sendable {
         case clipboardRead = "clipboard.read"
         case clipboardWrite = "clipboard.write"
         case network
@@ -65,7 +65,7 @@ struct CommandManifest: Codable, Equatable {
         static let filterWithheld: Set<Permission> = [.shell, .paste, .apps]
     }
 
-    struct Argument: Codable, Equatable {
+    struct Argument: Codable, Equatable, Sendable {
         let name: String
         /// Free-form ("text" today); interpreted by whoever renders the field.
         let type: String
@@ -85,7 +85,7 @@ struct CommandManifest: Codable, Equatable {
 
     /// Provenance for LLM-written commands (PLAN §6): the originating prompt,
     /// the model that produced it, and a revision counter for `history/`.
-    struct GeneratedInfo: Codable, Equatable {
+    struct GeneratedInfo: Codable, Equatable, Sendable {
         let prompt: String?
         let model: String?
         let revision: Int?
