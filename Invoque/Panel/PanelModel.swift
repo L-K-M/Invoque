@@ -173,8 +173,15 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         didSet {
             // A replaced list is a new result set: restart at the top row —
             // Spotlight-style — rather than keeping an index that now names
-            // an unrelated row.
-            selection = 0
+            // an unrelated row. The file-scan merge arms the flag instead:
+            // it re-points `selection` at the tracked row id itself, and a
+            // reset in between would publish a phantom top selection to
+            // scroll subscribers.
+            if skipNextSelectionReset {
+                skipNextSelectionReset = false
+            } else if selection != 0 {
+                selection = 0
+            }
         }
     }
 
@@ -558,6 +565,10 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// anchor for scan completions, mirroring `rankedText`. `nil` whenever
     /// `results` isn't a file-scan list.
     private var fileResultText: String?
+    /// Arms the `results` didSet for one tracked-selection write: the
+    /// file-scan merge re-points `selection` itself, so the reset-to-top
+    /// must not fire between the replace and the re-point.
+    private var skipNextSelectionReset = false
 
     /// Debounced per-keystroke scan — the session streams batches into
     /// `results` as the walk finds them; a stale session's callbacks
@@ -627,13 +638,16 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         guard merged != results else { return }
         // Streaming batches replace the list mid-scan — track the
         // selection by row id so a merge inserting above the picked row
-        // doesn't snap it back to the top.
+        // doesn't snap it back to the top. The flag keeps the didSet's
+        // reset from publishing a phantom `0` between the replace and
+        // the re-point.
         let selectedID = selectedRow?.id
+        skipNextSelectionReset = true
         results = merged
-        if let selectedID,
-           let index = merged.firstIndex(where: { $0.id == selectedID }) {
-            selection = index
-        }
+        let index = selectedID.flatMap { id in
+            merged.firstIndex(where: { $0.id == id })
+        } ?? 0
+        if selection != index { selection = index }
     }
 
     /// The session's walk ended — count it (stale ones too), then drop

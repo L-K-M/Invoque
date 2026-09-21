@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import Invoque
 
@@ -803,6 +804,30 @@ final class PanelModelTests: XCTestCase {
         gate.signal()
         await awaitResults(model) { $0.count == 2 }
         XCTAssertEqual(model.selectedRow?.title, "bbb.txt")
+    }
+
+    /// The tracked-selection write pair must never publish a transient
+    /// `0` between the `results` commit and the re-point — a scroll hook
+    /// reading `$selection` would jump to the top and back per batch.
+    func testFileStreamNeverPublishesTransientTopSelection() async throws {
+        let model = makeModel(items: [])
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("bbb.txt")])
+            gate.wait()
+            emit([Self.fileItem("aaa.txt"), Self.fileItem("bbb.txt")])
+        }
+        var published: [Int] = []
+        let cancellable = model.$selection.sink { published.append($0) }
+        defer { cancellable.cancel() }
+        model.query = "find x"
+        await awaitResults(model) { $0.count == 1 }
+        gate.signal()
+        await awaitResults(model) { $0.count == 2 }
+        // Subscribe-emit baseline `0`, then the single re-point — a
+        // didSet reset between the writes would land `0` again mid-pair.
+        XCTAssertEqual(published, [0, 1])
     }
 
     /// ⏎ while a scan is in flight hands the session to the detach hook —

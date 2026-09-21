@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import Invoque
 
@@ -196,6 +197,41 @@ final class DetachedSearchModelTests: XCTestCase {
         slot.emit?([fileItem("aaa.txt"), fileItem("bbb.txt")])
         await awaitCondition { model.rows.count == 2 }
         XCTAssertEqual(model.selectedRow?.title, "bbb.txt")
+        release.signal()
+    }
+
+    /// The tracked-selection write pair must never publish a transient
+    /// `0` between the rows commit and the re-point — a scroll hook
+    /// reading `$selection` would jump to the top and back per batch.
+    func testRefreshNeverPublishesTransientTopSelection() async {
+        let emitReady = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() } // never leave the searcher blocked
+        let slot = EmitSlot()
+        let session = FileSearchSession(
+            query: "find x", text: "x", debounceNanoseconds: 0,
+            searcher: { _, _, emit in
+                slot.emit = emit
+                emitReady.signal()
+                release.wait()
+            })
+        session.start()
+        XCTAssertEqual(emitReady.wait(timeout: .now() + 5), .success,
+                       "searcher never handed off emit")
+        let model = DetachedSearchModel(session: session,
+                                        entryRules: EntryRules(),
+                                        iconResolver: nil)
+        var published: [Int] = []
+        let cancellable = model.$selection.sink { published.append($0) }
+        defer { cancellable.cancel() }
+
+        slot.emit?([fileItem("bbb.txt")])
+        await awaitCondition { model.rows.count == 1 }
+        slot.emit?([fileItem("aaa.txt"), fileItem("bbb.txt")])
+        await awaitCondition { model.rows.count == 2 }
+        // Subscribe-emit baseline `0`, then the single re-point — a
+        // reset-first write pair would land `0` again between them.
+        XCTAssertEqual(published, [0, 1])
         release.signal()
     }
 
