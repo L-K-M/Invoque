@@ -51,7 +51,11 @@ struct ResultRow: Identifiable, Equatable {
 /// The search is synchronous: sources serve cached data (`AppSource` holds
 /// an in-memory scan; calculator/system/web compute in microseconds), so a
 /// `results(for:)` per keystroke stays on the main thread by design.
-final class PanelModel: ObservableObject {
+/// `Sendable` is asserted: every member is main-queue confined — the model
+/// is the panel's UI state and is only ever driven from the main thread.
+/// The annotation exists so a reference can ride a `@Sendable` hop *back*
+/// to main, not to license off-main use.
+final class PanelModel: ObservableObject, @unchecked Sendable {
 
     /// Receives the selected row when the user presses ⏎ — `nil` when there
     /// are no results. The panel's owner (PanelController) performs the

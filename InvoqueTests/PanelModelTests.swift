@@ -793,7 +793,9 @@ final class PanelModelTests: XCTestCase {
         let model = makeModel(items: [])
         let gate = DispatchSemaphore(value: 0)
         let gate2 = DispatchSemaphore(value: 0)
-        let strayDrained = DispatchSemaphore(value: 0)
+        // `DispatchSemaphore.wait` is unavailable in async contexts, so the
+        // drain signal uses a lock-guarded flag the poll below can check.
+        let strayDrained = DrainFlag()
         defer { gate.signal(); gate2.signal() } // never leave the searcher blocked
         model.fileSearcher = { _, _, emit in
             emit([Self.fileItem("first.txt")])
@@ -804,7 +806,7 @@ final class PanelModelTests: XCTestCase {
                   Self.fileItem("third.txt")])
             // Queued behind the stray emit's main-queue hop — firing it
             // proves the absorb/drop decision already ran.
-            DispatchQueue.main.async { strayDrained.signal() }
+            DispatchQueue.main.async { strayDrained.raise() }
         }
         var detached: FileSearchSession?
         model.onDetachFileSearch = { detached = $0 }
@@ -836,13 +838,11 @@ final class PanelModelTests: XCTestCase {
         session.cancel()
         gate2.signal()
         // Poll rather than sleep a fixed window — the stray emit's hop
-        // has to drain before the drop is provable. `wait` consumes the
-        // token, so a flag records the exit reason — a second `wait`
-        // would report timedOut on an already-drained semaphore.
+        // has to drain before the drop is provable.
         var drained = false
         let strayDeadline = Date().addingTimeInterval(5)
         while !drained, Date() < strayDeadline {
-            drained = strayDrained.wait(timeout: .now()) == .success
+            drained = strayDrained.raised
             if !drained {
                 try? await Task.sleep(nanoseconds: 5_000_000)
             }
@@ -1718,8 +1718,20 @@ final class PanelModelTests: XCTestCase {
 
     // MARK: Helpers
 
-    private final class MakerStubClient: LLMClientServing {
+    /// Lock-guarded one-way flag for cross-thread signals observed from
+    /// `async` tests — `DispatchSemaphore.wait` is unavailable there.
+    private final class DrainFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var flag = false
+        func raise() { lock.withLock { flag = true } }
+        var raised: Bool { lock.withLock { flag } }
+    }
+
+    private final class MakerStubClient: LLMClientServing, @unchecked Sendable {
         var model = "stub"
+        // Written before the model's task is created and read inside it —
+        // task-creation happens-before covers the hop; do not mutate while
+        // a generation is in flight.
         var response = ""
         func complete(messages: [LLMMessage]) async throws -> String { response }
     }

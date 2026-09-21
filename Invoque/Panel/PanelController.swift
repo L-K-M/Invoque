@@ -4,7 +4,11 @@ import SwiftUI
 /// Owns the launcher panel: lazy creation, Spotlight-style positioning on the
 /// screen under the mouse, show/hide/toggle, and dismissal when the panel is
 /// cancelled or loses key status.
-final class PanelController: NSObject {
+/// `Sendable` is asserted: the controller and its panel are main-queue
+/// confined — every entry point is a main-affine caller (hotkey, menu,
+/// model callbacks). The annotation exists so a reference can ride a
+/// `@Sendable` hop *back* to main, not to license off-main use.
+final class PanelController: NSObject, @unchecked Sendable {
 
     /// The panel's fixed content size. PLAN.md §3: fixed, not resizable — the
     /// card fills the window and the results list scrolls instead.
@@ -127,9 +131,9 @@ final class PanelController: NSObject {
             // attached yet, so `preferredFirstResponder` is still nil.
             // SearchTextField.viewDidMoveToWindow covers this too, but a
             // next-runloop retry keeps focus deterministic either way.
-            DispatchQueue.main.async { [weak panel] in
-                if let field = panel?.preferredFirstResponder {
-                    panel?.makeFirstResponder(field)
+            DispatchQueue.main.async { [weak self] in
+                if let field = self?.panel?.preferredFirstResponder {
+                    self?.panel?.makeFirstResponder(field)
                 }
             }
         }

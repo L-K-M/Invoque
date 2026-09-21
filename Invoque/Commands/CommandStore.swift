@@ -8,8 +8,9 @@ import Foundation
 /// Thread safety: all mutable state lives on `stateQueue` (serial). The
 /// public getters and `scan()`/`startWatching()`/`stopWatching()` dispatch
 /// onto it — so they must not be called from a filesystem event handler.
-/// `onChange` is always invoked on the main queue.
-final class CommandStore {
+/// `onChange` is always invoked on the main queue. That serialization is
+/// what the `Sendable` conformance asserts.
+final class CommandStore: @unchecked Sendable {
 
     /// A directory under a root that failed to load as a command.
     struct ScanError {

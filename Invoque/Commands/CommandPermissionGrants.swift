@@ -16,7 +16,9 @@ import Foundation
 /// inheriting a grant it never earned. (The entry file is the only
 /// executable surface — nothing can `require` extra files. Manifest perm
 /// growth is caught separately by the declared∩risky intersection.)
-final class CommandPermissionGrants {
+/// Immutable after init — `defaults` is a `UserDefaults`, which is
+/// thread-safe but not `Sendable` on this SDK, hence `@unchecked`.
+final class CommandPermissionGrants: @unchecked Sendable {
 
     /// Permissions that require explicit first-run consent. Filter-mode
     /// commands never receive these modules (JSRuntime strips them), so the

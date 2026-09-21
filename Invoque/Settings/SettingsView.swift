@@ -287,7 +287,9 @@ struct SettingsView: View {
         connectionTestRunning = true
         connectionTestResult = nil
         connectionTestedDraft = keyOverride
-        let client = makerSettings.makeClient(keyOverride: keyOverride)
+        // The client is a one-shot immutable config — the value hops to the
+        // main-actor task with the request.
+        nonisolated(unsafe) let client = makerSettings.makeClient(keyOverride: keyOverride)
         Task { @MainActor in
             let result: String
             do {

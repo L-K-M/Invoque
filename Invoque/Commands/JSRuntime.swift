@@ -7,7 +7,10 @@ import JavaScriptCore
 /// — a JSContext is not thread-safe, so every JSValue the run produces is
 /// touched only from that queue. Nothing is shared between invocations;
 /// `invoque.storage` is the persistence path (PLAN §4.2).
-final class JSRuntime {
+/// `Sendable` is asserted: the two pieces of mutable state (`defaultTimeout`,
+/// `stuckCommands`) are lock-guarded, and each invocation's context is
+/// confined to its own serial queue.
+final class JSRuntime: @unchecked Sendable {
 
     /// Wall-clock limit per invocation. On expiry the context is abandoned:
     /// JavaScriptCore cannot interrupt a tight synchronous loop, so a stuck
@@ -469,7 +472,7 @@ final class JSRuntime {
 
 /// Single-shot wrapper for the awaited continuation: the JS queue and the
 /// off-queue timeout race to complete it, and exactly one of them wins.
-private final class CompletionBox {
+private final class CompletionBox: @unchecked Sendable {
 
     private let lock = NSLock()
     private var continuation: CheckedContinuation<JSResult, Never>?
@@ -501,7 +504,7 @@ private final class CompletionBox {
 /// Lock-guarded flag telling the timeout whether `execute` returned (the
 /// invocation is parked awaiting a promise and its queue thread is free) or
 /// the script is still running synchronously (queue thread held hostage).
-private final class InvocationParkedFlag {
+private final class InvocationParkedFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
     func set() { lock.lock(); value = true; lock.unlock() }

@@ -39,7 +39,7 @@ final class UpdateCheckerTests: XCTestCase {
         var calls: Int { lock.lock(); defer { lock.unlock() }; return storage }
         init(release: GitHubRelease) { self.release = release }
         func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease {
-            lock.lock(); storage += 1; lock.unlock()
+            lock.withLock { storage += 1 }
             return release
         }
     }
@@ -152,11 +152,14 @@ final class UpdateCheckerTests: XCTestCase {
         var calls: Int { lock.lock(); defer { lock.unlock() }; return storage }
         init(release: GitHubRelease) { self.release = release }
         func latestRelease(includePrereleases: Bool) async throws -> GitHubRelease {
-            lock.lock(); storage += 1; lock.unlock()
+            lock.withLock { storage += 1 }
             return await withCheckedContinuation { c in
-                lock.lock()
-                if released { lock.unlock(); c.resume(returning: release) }
-                else { continuation = c; lock.unlock() }
+                let fastPath = lock.withLock { () -> GitHubRelease? in
+                    if released { return release }
+                    continuation = c
+                    return nil
+                }
+                if let fastPath { c.resume(returning: fastPath) }
             }
         }
         /// Releases the suspended fetch — also valid if the fetch hasn't

@@ -3,7 +3,7 @@ import Foundation
 /// The face the rest of the app uses to execute commands — the panel's
 /// search and action paths go through here rather than touching `JSRuntime`
 /// directly.
-final class CommandRunner {
+final class CommandRunner: Sendable {
 
     private let runtime: JSRuntime
 

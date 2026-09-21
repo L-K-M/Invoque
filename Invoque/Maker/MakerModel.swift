@@ -72,11 +72,15 @@ final class MakerModel: ObservableObject {
     /// is the published projection for the view.
     private(set) var transcript: [LLMMessage] = []
 
-    private let clientProvider: () -> LLMClientServing
-    private let runner: CommandRunner
-    private let writer: CommandWriter
-    private let store: CommandStore?
-    private let permissionGrants: CommandPermissionGrants
+    // Assigned once at init and frozen thereafter — `nonisolated` lets the
+    // nonisolated init write them and keeps their reads out of the actor for
+    // a set that can never change anyway. All five types are Sendable, so
+    // the exemption is checked rather than unsafe.
+    nonisolated private let clientProvider: @Sendable () -> LLMClientServing
+    nonisolated private let runner: CommandRunner
+    nonisolated private let writer: CommandWriter
+    nonisolated private let store: CommandStore?
+    nonisolated private let permissionGrants: CommandPermissionGrants
 
     private var generationTask: Task<Void, Never>?
     /// Temp directory the current draft is staged into for test runs.
@@ -92,11 +96,14 @@ final class MakerModel: ObservableObject {
     /// `client` is a factory, not an instance, so each generation snapshots
     /// the current Settings (a mid-session model change applies at once).
     /// `store` is rescanned after a save; nil is fine for tests.
-    nonisolated init(client: @escaping () -> LLMClientServing,
-                     runner: CommandRunner,
-                     writer: CommandWriter,
-                     store: CommandStore? = nil,
-                     permissionGrants: CommandPermissionGrants) {
+    /// Nonisolated so the model can be constructed off the main actor
+    /// (AppDelegate's lazy panel factory, non-actor test helpers) — the
+    /// stored `let`s it assigns are `nonisolated` above.
+    nonisolated init(client: @escaping @Sendable () -> LLMClientServing,
+         runner: CommandRunner,
+         writer: CommandWriter,
+         store: CommandStore? = nil,
+         permissionGrants: CommandPermissionGrants) {
         self.clientProvider = client
         self.runner = runner
         self.writer = writer

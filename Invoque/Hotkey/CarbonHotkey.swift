@@ -6,7 +6,9 @@ import Carbon.HIToolbox
 /// This is the panel's summon trigger: Carbon hotkeys need no TCC permission,
 /// unlike an event tap (PLAN.md §5). They report key-down only — no
 /// modifier-release observation — which is all summoning requires.
-final class CarbonHotkey {
+/// `Sendable` is asserted: registration, teardown, and `onPressed` are all
+/// main-thread confined (the Carbon handler fires on the main run loop).
+final class CarbonHotkey: @unchecked Sendable {
 
     /// Invoked on the main thread when the hotkey fires.
     var onPressed: (() -> Void)?

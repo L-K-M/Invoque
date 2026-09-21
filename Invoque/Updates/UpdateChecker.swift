@@ -13,7 +13,12 @@ import AppKit
 /// flag, skipped version, last-check date) in `UserDefaults` under namespaced
 /// keys. Depends on AppKit + Foundation plus `AppActivator`/`ActivationHandoff`
 /// for the alert presentation.
-final class UpdateChecker: ObservableObject {
+///
+/// Main-confined by contract: every caller is main-affine (status-menu
+/// actions, the main-run-loop `Timer`, SwiftUI, `.main` notification
+/// delivery), and `@Sendable` hops only ever carry the reference *to* the
+/// main actor — that confinement is what `Sendable` asserts.
+final class UpdateChecker: ObservableObject, @unchecked Sendable {
 
     /// The one call the checker needs — seams the network for tests.
     protocol ReleaseFetching {

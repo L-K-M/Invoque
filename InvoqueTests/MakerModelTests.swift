@@ -25,20 +25,36 @@ final class MakerModelTests: XCTestCase {
 
     /// Canned responses for `LLMClientServing`; captures the transcripts it
     /// was called with so tests can check the feedback loop.
-    private final class StubClient: LLMClientServing {
-        var model = "stub-model"
-        var responses: [Result<String, Error>] = []
-        var calls: [[LLMMessage]] = []
+    private final class StubClient: LLMClientServing, @unchecked Sendable {
+        // `complete` mutates from the generation task while assertions read
+        // from the test thread — lock both sides like UpdateCheckerTests'
+        // stubs do.
+        private let lock = NSLock()
+        private var _model = "stub-model"
+        var model: String {
+            get { lock.withLock { _model } }
+            set { lock.withLock { _model = newValue } }
+        }
+        private var _responses: [Result<String, Error>] = []
+        private var _calls: [[LLMMessage]] = []
+        var responses: [Result<String, Error>] {
+            get { lock.withLock { _responses } }
+            set { lock.withLock { _responses = newValue } }
+        }
+        var calls: [[LLMMessage]] { lock.withLock { _calls } }
 
         func complete(messages: [LLMMessage]) async throws -> String {
-            calls.append(messages)
-            guard !responses.isEmpty else {
+            let next = lock.withLock { () -> Result<String, Error>? in
+                _calls.append(messages)
+                return _responses.isEmpty ? nil : _responses.removeFirst()
+            }
+            guard let next else {
                 // An unexpected extra call must fail loudly — returning ""
                 // would surface as a confusing parse failure downstream.
                 XCTFail("StubClient.complete called with no canned response queued")
                 return ""
             }
-            switch responses.removeFirst() {
+            switch next {
             case .success(let text): return text
             case .failure(let error): throw error
             }
@@ -223,7 +239,11 @@ final class MakerModelTests: XCTestCase {
         // it builds its own suite rather than using makeFreshGrants().
         let suiteName = "MakerModelTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        // `addTeardownBlock` takes a `@Sendable` closure; `UserDefaults` is
+        // thread-safe but not Sendable on this SDK, so the capture is
+        // exempted rather than checked.
+        nonisolated(unsafe) let teardownDefaults = defaults
+        addTeardownBlock { teardownDefaults.removePersistentDomain(forName: suiteName) }
         let grants = CommandPermissionGrants(defaults: defaults)
         let client = StubClient()
         client.responses = [.success(generationOutput(permissions: ["shell"],

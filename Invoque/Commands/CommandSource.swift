@@ -6,7 +6,9 @@ import Foundation
 ///
 /// `CommandStore` owns scanning and watching; this source only reads
 /// `store.commands`, which is cheap enough to serve per keystroke.
-final class CommandSource: ItemSource {
+/// `Sendable` is asserted: the sole mutable member (`onReload`) is
+/// main-queue confined by usage — set once during model wiring.
+final class CommandSource: ItemSource, @unchecked Sendable {
 
     /// Fires on the main queue whenever the store's command set changes —
     /// the panel re-runs the open query so new/edited commands appear
