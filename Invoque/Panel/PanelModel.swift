@@ -15,23 +15,27 @@ struct ResultRow: Identifiable, Equatable {
     /// The row's search surface — kept on the row so an extended query can
     /// re-check "still matches" without going back to the source `Item`.
     let matchText: String
+    /// The source category — used for the colored badge in the row.
+    let sourceType: Item.SourceType
 
     init(item: Item) {
         self.init(id: item.id, title: item.title, subtitle: item.subtitle,
                   icon: item.icon, action: item.action,
-                  matchText: item.matchText)
+                  matchText: item.matchText, sourceType: item.sourceType)
     }
 
     /// Direct construction for rows that aren't `Item`s — filter-mode
     /// results and error rows.
     init(id: String, title: String, subtitle: String,
-         icon: Item.Icon, action: Item.Action, matchText: String? = nil) {
+         icon: Item.Icon, action: Item.Action,
+         matchText: String? = nil, sourceType: Item.SourceType = .unknown) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.icon = icon
         self.action = action
         self.matchText = matchText ?? title
+        self.sourceType = sourceType
     }
 
     /// Equality covers display fields only — `matchText` is derived search
@@ -40,7 +44,7 @@ struct ResultRow: Identifiable, Equatable {
     static func == (lhs: ResultRow, rhs: ResultRow) -> Bool {
         lhs.id == rhs.id && lhs.title == rhs.title
             && lhs.subtitle == rhs.subtitle && lhs.icon == rhs.icon
-            && lhs.action == rhs.action
+            && lhs.action == rhs.action && lhs.sourceType == rhs.sourceType
     }
 }
 

@@ -67,6 +67,26 @@ struct Item: Identifiable, Equatable {
     /// Kept separate from `title` so sources can add invisible match words.
     let matchText: String
 
+    /// The source category, derived from the id prefix. Used for the
+    /// colored source badge in result rows — a quick visual cue for where
+    /// a result came from.
+    var sourceType: SourceType {
+        if id.hasPrefix(Self.appIDPrefix) { return .app }
+        if id.hasPrefix(Self.commandIDPrefix) { return .command }
+        if id.hasPrefix(Self.systemIDPrefix) { return .system }
+        if id.hasPrefix(Self.fileIDPrefix) { return .file }
+        if id.hasPrefix(Self.pathIDPrefix) { return .path }
+        if id.hasPrefix(Self.calculatorIDPrefix) { return .calculator }
+        if id.hasPrefix(Self.webIDPrefix) { return .web }
+        if id.hasPrefix(Self.filterRowIDPrefix) { return .filter }
+        return .unknown
+    }
+
+    /// Source categories for the colored badge.
+    enum SourceType: String {
+        case app, command, system, file, path, calculator, web, filter, unknown
+    }
+
     // MARK: Icon
 
     /// How the results list renders this item. No image data lives here; the
