@@ -2423,6 +2423,40 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(history.entries, ["safari"])
     }
 
+    // MARK: Title highlight query
+
+    /// Normal mode highlights the trimmed live query; blank highlights
+    /// nothing.
+    func testHighlightQueryIsTrimmedLiveQuery() {
+        let model = makeModel(items: [])
+        XCTAssertEqual(model.highlightQuery, nil)
+        model.query = "  safari "
+        XCTAssertEqual(model.highlightQuery, "safari")
+    }
+
+    /// File mode highlights the scan text, not the keyword or the whole
+    /// query — the rows match against the text alone.
+    func testHighlightQueryInFileModeIsScanText() {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _, _ in }
+        model.query = "find notes"
+        XCTAssertEqual(model.highlightQuery, "notes")
+        model.query = "f  "
+        XCTAssertEqual(model.highlightQuery, nil)
+    }
+
+    /// Filter mode: rows come from the command, not the matcher — no
+    /// query-to-title matching to emphasize.
+    func testHighlightQueryInFilterModeIsNil() throws {
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run() { return { items: [] }; }
+            """)
+        let model = makeModel(items: [])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.query = "jf x"
+        XCTAssertEqual(model.highlightQuery, nil)
+    }
+
     // MARK: Helpers
 
     /// Lock-guarded one-way flag for cross-thread signals observed from

@@ -286,7 +286,8 @@ struct PanelView: View {
                                               : secondaryColor,
                                           typeface: preferences.panelTypeface,
                                           glows: isSelected && preferences.adaptiveAccent,
-                                          showSourceBadge: true)
+                                          showSourceBadge: true,
+                                          highlight: model.highlightQuery)
                                 .id(row.id)
                                 .onTapGesture {
                                     model.select(row)

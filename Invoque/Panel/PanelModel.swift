@@ -295,6 +295,28 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         activeFileSearch()?.text.isEmpty ?? false
     }
 
+    /// The text to emphasize inside displayed titles: the file-search
+    /// text in file mode, else the normalized live query. nil when
+    /// nothing should highlight — a blank query, or filter mode, where
+    /// rows come from the command rather than the matcher. Read-only and
+    /// side-effect free by design: the view evaluates it per row per
+    /// render (`activeFilter` mutates `pinnedFilter`, so it is not
+    /// consulted here).
+    var highlightQuery: String? {
+        if fileSearchIsActive {
+            let text = activeFileSearch()?.text ?? ""
+            return text.isEmpty ? nil : text
+        }
+        // Filter mode: the first token routes to a command whose rows
+        // are its own — no query-to-title matching to emphasize.
+        if let spaceIndex = query.firstIndex(of: " "),
+           filterLookup?(String(query[..<spaceIndex])) != nil {
+            return nil
+        }
+        let trimmed = SearchModel.normalizedQuery(query)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     /// True between scheduling a scan and its last batch landing — the
     /// view says "Searching files…" rather than a premature "No matching
     /// files". `fileSession` is nilled on completion, cancel, mode exit,

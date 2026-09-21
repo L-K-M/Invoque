@@ -16,7 +16,8 @@ refine new commands without leaving the panel.
 
 - **Launch** apps and commands, fuzzy-matched and ranked — exact prefix
   beats infix beats fuzzy, shorter matches win, and results stay stable
-  while you keep typing. An empty panel already lists what you launch
+  while you keep typing — the matched characters read bolder in each
+  title. An empty panel already lists what you launch
   most — frecency top hits, ⏎ runs the top row.
 - **Calculate** inline (`2+2*3`, `sqrt(9)`) and convert bases — `255`,
   `0xFF`, `0b1010` all answer in the other bases; the answer row pins
