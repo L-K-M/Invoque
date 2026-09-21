@@ -109,8 +109,8 @@ struct HotkeyRecorder: NSViewRepresentable {
                 cancel()
             // Bare ⌫/⌦ reset to the default — a chorded one (⌥⌫, ⌘⌦)
             // is a legitimate hotkey and must record like any other.
-            case UInt16(kVK_Delete), UInt16(kVK_ForwardDelete)
-                where modifiers == 0:
+            case UInt16(kVK_Delete) where modifiers == 0,
+                 UInt16(kVK_ForwardDelete) where modifiers == 0:
                 commit(.default)
             default:
                 guard HotkeyRecorder.isRecordable(modifiers: modifiers)
