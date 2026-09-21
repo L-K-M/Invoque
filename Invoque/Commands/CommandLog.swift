@@ -7,7 +7,7 @@ import os
 ///
 /// Thread-safe via a lock: lines are appended on the invocation's JS queue
 /// but a timeout snapshot can be taken from a different queue.
-final class CommandLog {
+final class CommandLog: @unchecked Sendable {
 
     private let lock = NSLock()
     private var lines: [String] = []

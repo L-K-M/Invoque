@@ -72,18 +72,16 @@ struct GitHubRelease: Decodable {
         // runs on Apple Silicon hardware where arm64 is what's actually
         // native — detect translation at runtime and pick hints for the
         // machine, not the binary.
-        let runningOnAppleSilicon: Bool
         let nativeHints: [String]
         let foreignHints: [String]
         #if arch(arm64)
-        runningOnAppleSilicon = true
         nativeHints = ["arm64", "aarch64", "universal"]
         foreignHints = ["x86_64", "x64", "intel"]
         #else
         var procTranslated: Int32 = 0
         var size = MemoryLayout<Int32>.size
         _ = sysctlbyname("sysctl.proc_translated", &procTranslated, &size, nil, 0)
-        runningOnAppleSilicon = (procTranslated == 1)
+        let runningOnAppleSilicon = (procTranslated == 1)
         // A translated build runs on Apple Silicon: arm64 is native there
         // and x86_64 is what runs translated — flip the hint sets.
         nativeHints = runningOnAppleSilicon ? ["arm64", "aarch64", "universal"]
@@ -112,6 +110,12 @@ struct GitHubRelease: Decodable {
             let name = asset.name.lowercased()
             return !foreignHints.contains { name.contains($0) }
         }
+        #if arch(arm64)
+        // Foreign-arch assets still run — x86_64 via Rosetta 2 — so
+        // falling back to the best-ranked asset is safe.
+        return runnable.min { rank($0) < rank($1) }
+            ?? assets.min { rank($0) < rank($1) }
+        #else
         if runningOnAppleSilicon {
             // Foreign-arch assets still run — x86_64 via Rosetta 2 — so
             // falling back to the best-ranked asset is safe.
@@ -122,6 +126,7 @@ struct GitHubRelease: Decodable {
         // nothing this machine can run — offer nothing (the caller opens
         // the release page) rather than an unusable download.
         return runnable.min { rank($0) < rank($1) }
+        #endif
     }
 
     /// A trimmed, length-capped form of the release body, suitable for an alert's

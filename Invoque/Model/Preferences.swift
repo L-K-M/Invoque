@@ -6,7 +6,9 @@ import ServiceManagement
 ///
 /// An `ObservableObject` so SwiftUI settings views update live. A custom
 /// `UserDefaults` can be injected for tests.
-final class Preferences: ObservableObject {
+/// `Sendable` is asserted: storage lives in `UserDefaults` (thread-safe) and
+/// the observable surface is main-confined by usage.
+final class Preferences: ObservableObject, @unchecked Sendable {
 
     static let shared = Preferences()
 

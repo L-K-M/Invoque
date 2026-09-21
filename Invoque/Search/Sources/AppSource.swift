@@ -4,7 +4,9 @@ import Foundation
 /// touches the disk; `reload()` runs on a background queue at launch (and,
 /// later, from a file watcher) to refresh. The actual scan lives in
 /// `AppCatalog`, shared with the `invoque.apps` command module.
-final class AppSource: ItemSource {
+/// `Sendable` is asserted: the item cache and reload hook are lock-guarded,
+/// and the initial scan deliberately runs on a background queue.
+final class AppSource: ItemSource, @unchecked Sendable {
 
     // MARK: State
 
@@ -67,7 +69,11 @@ final class AppSource: ItemSource {
         let sorted = AppCatalog.installedApps().map(Self.item)
         lock.lock()
         cachedItems = sorted
-        let hook = _onReload
+        // The hook is invoked on main by design — the function value is what
+        // crosses the queue boundary, so the sendability exemption sits here
+        // rather than on the property's type (a `@Sendable` requirement would
+        // leak into every assigner's captures).
+        nonisolated(unsafe) let hook = _onReload
         lock.unlock()
         DispatchQueue.main.async { hook?() }
     }

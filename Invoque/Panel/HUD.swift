@@ -16,7 +16,8 @@ enum HUD {
     /// one so the toast reads in the launcher's voice. The toast's size and
     /// weight live here alone — callers can't drift them.
     static func show(_ text: String, typeface: PanelTypeface? = nil) {
-        let font = typeface?.nsFont(size: 16, weight: .medium)
+        // Immutable once built — the value hops to main with the task.
+        nonisolated(unsafe) let font = typeface?.nsFont(size: 16, weight: .medium)
             ?? .systemFont(ofSize: 16, weight: .medium)
         Task { @MainActor in present(text, font: font) }
     }

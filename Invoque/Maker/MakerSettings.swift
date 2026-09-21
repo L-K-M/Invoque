@@ -5,7 +5,9 @@ import Foundation
 ///
 /// `ObservableObject` like `Preferences` so Settings edits update live.
 /// Injectable `UserDefaults`/`Keychain` keep tests off the real stores.
-final class MakerSettings: ObservableObject {
+/// `Sendable` is asserted: storage lives in `UserDefaults`/`Keychain`
+/// (thread-safe) and the observable surface is main-confined by usage.
+final class MakerSettings: ObservableObject, @unchecked Sendable {
 
     static let shared = MakerSettings()
 

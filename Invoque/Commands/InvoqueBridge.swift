@@ -617,7 +617,7 @@ private final class PipeDrain {
 /// Per-invocation registry of in-flight `invoque.fetch` tasks. The runtime
 /// cancels them all when the invocation completes or times out, so a late
 /// completion never calls resolve/reject JSValues in an abandoned context.
-final class FetchTaskRegistry {
+final class FetchTaskRegistry: @unchecked Sendable {
 
     private let lock = NSLock()
     private var tasks: [URLSessionTask] = []

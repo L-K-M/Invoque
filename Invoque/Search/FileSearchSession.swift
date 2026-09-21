@@ -12,7 +12,9 @@ import Foundation
 /// onto the UI thread. Emissions hop to the main queue via
 /// `DispatchQueue.main.async` — FIFO ordering guarantees `items` only
 /// ever advances forward and `finish` lands after the last absorb.
-final class FileSearchSession {
+/// `Sendable` is asserted on that contract: the reference may cross queues,
+/// but every member is touched on the main queue alone.
+final class FileSearchSession: @unchecked Sendable {
 
     /// The scan backend — `FileSearch.stream` in production, a stub in
     /// tests. `emit` delivers the accumulated ranked snapshot (never a
@@ -71,9 +73,12 @@ final class FileSearchSession {
         // whose emissions `absorb` drops anyway.
         guard task == nil, !finished else { return }
         let text = self.text
-        let searcher = self.searcher
+        // The searcher is invoked on the task's thread by design — the
+        // session IS the handoff. A `@Sendable Searcher` type would push
+        // the requirement onto every producer's captures instead.
+        nonisolated(unsafe) let searcher = self.searcher
         let debounce = self.debounceNanoseconds
-        task = Task.detached(priority: .userInitiated) {
+        task = Task.detached(priority: .userInitiated) { [weak self] in
             try? await Task.sleep(nanoseconds: debounce)
             guard !Task.isCancelled else { return }
             DispatchQueue.main.async { [weak self] in
