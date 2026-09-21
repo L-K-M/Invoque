@@ -109,7 +109,14 @@ final class DirectoryWatcherTests: XCTestCase {
         DirectoryWatcher.retryCooldown = 0.1
 
         let gate = OpenGate()
-        let watcher = DirectoryWatcher(roots: [scratch], debounce: 0.05) {}
+        // Recovery owes the consumer a rescan: while every open failed,
+        // changes under the root produced no events, so the retry that
+        // heals it is the only signal left. Exactly one fire — not per
+        // rebuild.
+        let fires = LockedCounter()
+        let watcher = DirectoryWatcher(roots: [scratch], debounce: 0.05) {
+            fires.bump()
+        }
         watcher.canOpenTarget = { _ in gate.isAllowed }
         watcher.start()
         XCTAssertTrue(waitFor { watcher.failedCount > 0 },
@@ -120,6 +127,8 @@ final class DirectoryWatcherTests: XCTestCase {
         XCTAssertTrue(waitFor { watcher.failedCount == 0 },
                       "failed open was never retried")
         XCTAssertEqual(watcher.liveSourceCount, 1)
+        XCTAssertTrue(waitFor { fires.value == 1 },
+                      "recovery never notified the consumer")
         watcher.stop()
     }
 

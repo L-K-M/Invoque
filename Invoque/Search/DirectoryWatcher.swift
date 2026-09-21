@@ -220,17 +220,26 @@ final class DirectoryWatcher: @unchecked Sendable {
 
     /// Arms a cooldown retry for failed opens. Events drive the same
     /// retry, but with zero healthy sources no event will ever fire —
-    /// recovery must not wait on unrelated filesystem activity. Re-armed
-    /// after every rebuild while failures remain, so a timer that lands
-    /// inside the cooldown just rolls one cycle forward. Must run on
-    /// `queue`.
+    /// recovery must not wait on unrelated filesystem activity. A
+    /// recovery also notifies: the target was blind while it failed, so
+    /// changes under it produced no events and the consumer is owed a
+    /// rescan. Re-armed after every rebuild while failures remain, so a
+    /// timer that lands inside the cooldown just rolls one cycle
+    /// forward. Must run on `queue`.
     private func scheduleRetry() {
         guard running, !failedPaths.isEmpty, retryWorkItem == nil else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.retryWorkItem = nil
             guard self.running, !self.failedPaths.isEmpty else { return }
+            let failedBefore = self.failedPaths.count
             self.rebuildTargets()
+            // The recovered target was blind while it failed — changes
+            // under it produced no events, so recovery itself is the
+            // only signal that a rescan is owed.
+            if self.failedPaths.count < failedBefore {
+                self.onEvent()
+            }
         }
         retryWorkItem = work
         queue.asyncAfter(deadline: .now() + Self.retryCooldown, execute: work)
