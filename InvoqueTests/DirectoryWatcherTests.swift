@@ -134,8 +134,10 @@ final class DirectoryWatcherTests: XCTestCase {
 
         let failing = scratch.appendingPathComponent("Failing", isDirectory: true)
         let healthy = scratch.appendingPathComponent("Healthy", isDirectory: true)
-        try FileManager.default.createDirectory(at: failing)
-        try FileManager.default.createDirectory(at: healthy)
+        try FileManager.default.createDirectory(at: failing,
+                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: healthy,
+                                                withIntermediateDirectories: true)
 
         let attempts = LockedCounter()
         let fires = LockedCounter()
