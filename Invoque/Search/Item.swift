@@ -28,6 +28,10 @@ struct Item: Identifiable, Equatable {
     /// filesystem path. Pinned first — a typed address is a direct intent,
     /// not a candidate among fuzzy matches.
     static let pathIDPrefix = "path:"
+    /// Generator rows (`uuid`, `now`, `flip`, `roll`) — instant answers,
+    /// one stable id per generator so selection behaves while values are
+    /// fresh per query.
+    static let generatorIDPrefix = "gen:"
 
     /// Whether an id belongs to a pinned row — one that bypasses ranking
     /// entirely. One place so `SearchModel` and `PanelModel` can't drift.

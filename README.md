@@ -35,6 +35,8 @@ refine new commands without leaving the panel.
 - **Pin and block** entries: ⌘P (or right-click → Pin) keeps an app,
   command, action or file hit above other matches whenever it matches;
   ⌘B blocks it outright. Manage the lists in Settings → General.
+- **Generate** instant values: `uuid`, `now` (UTC ISO 8601), `flip`,
+  `roll` / `d20` / `d6` — ⏎ copies the fresh value.
 - **System actions** — lock, sleep, restart, empty trash…
 - **Make commands** with natural language: `make command to format
   clipboard json` generates the manifest and script, runs it on real input
