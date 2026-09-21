@@ -79,7 +79,7 @@ final class LauncherPanel: NSPanel {
                 if !event.isARepeat { onBlockChord?() }
                 return true
             case "c":
-                if (firstResponder as? NSTextView)?.selectedRange().length ?? 0 > 0 {
+                if ((firstResponder as? NSTextView)?.selectedRange().length ?? 0) > 0 {
                     return super.performKeyEquivalent(with: event)
                 }
                 if !event.isARepeat { onCopyChord?() }
