@@ -341,8 +341,18 @@ enum InvoqueBridge {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard let fileURL,
-              let size = (try? fileURL.resourceValues(
-                forKeys: [.fileSizeKey]))?.fileSize else {
+              let values = try? fileURL.resourceValues(
+                  forKeys: [.isRegularFileKey, .fileSizeKey]) else {
+            return .failure("invoque.fetch: no readable body")
+        }
+        // A directory or pipe can report a size — or none at all, which
+        // filesystems disagree on — so the type check comes first: a
+        // non-regular file is an unreadable body either way, and on
+        // older macOS Data(contentsOf:) could even hand its bytes back.
+        guard values.isRegularFile else {
+            return .failure("invoque.fetch: could not read body")
+        }
+        guard let size = values.fileSize else {
             return .failure("invoque.fetch: no readable body")
         }
         guard size <= maxFetchBytes else {
