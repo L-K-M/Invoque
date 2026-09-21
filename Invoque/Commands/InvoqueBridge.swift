@@ -342,24 +342,30 @@ enum InvoqueBridge {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard let fileURL,
               let values = try? fileURL.resourceValues(
-                  forKeys: [.isRegularFileKey, .fileSizeKey]) else {
+                  forKeys: [.isRegularFileKey]) else {
             return .failure("invoque.fetch: no readable body")
         }
-        // A directory or pipe can report a size — or none at all, which
-        // filesystems disagree on — so the type check comes first: a
-        // non-regular file is an unreadable body either way, and on
-        // older macOS Data(contentsOf:) could even hand its bytes back.
+        // A directory open can succeed on macOS and opening a FIFO would
+        // block, so the type check still comes first.
         guard values.isRegularFile == true else {
             return .failure("invoque.fetch: could not read body")
         }
-        guard let size = values.fileSize else {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
             return .failure("invoque.fetch: no readable body")
         }
-        guard size <= maxFetchBytes else {
-            return .failure("invoque.fetch: response exceeds the \(maxFetchBytes / 1024 / 1024) MB limit")
-        }
-        guard let raw = try? Data(contentsOf: fileURL) else {
+        defer { try? handle.close() }
+        // Read one byte past the cap so the limit is enforced by the read
+        // itself — no stat-then-read window, no reliance on fileSize,
+        // which filesystems disagree on reporting. nil means EOF, i.e. a
+        // legitimately empty body.
+        let raw: Data
+        do {
+            raw = try handle.read(upToCount: maxFetchBytes + 1) ?? Data()
+        } catch {
             return .failure("invoque.fetch: could not read body")
+        }
+        guard raw.count <= maxFetchBytes else {
+            return .failure("invoque.fetch: response exceeds the \(maxFetchBytes / 1024 / 1024) MB limit")
         }
         let body = String(data: raw, encoding: .utf8) ?? ""
         return .success(status: status, body: body)

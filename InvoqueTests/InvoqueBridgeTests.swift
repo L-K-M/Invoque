@@ -102,9 +102,9 @@ final class InvoqueBridgeTests: XCTestCase {
         XCTAssertTrue(message.contains("no readable body"))
     }
 
-    /// A body that exists on disk but can't be read fails distinctly —
-    /// not as a silent empty string. A directory URL is the fixture: its
-    /// size passes the cap while `Data(contentsOf:)` throws — robust to
+    /// A body that exists on disk but isn't a readable regular file
+    /// fails distinctly — not as a silent empty string. A directory URL
+    /// is the fixture: it fails the `isRegularFile` check — robust to
     /// CI running as root, where permission bits can't force the failure.
     func testFetchOutcomeFailsOnUnreadableBody() throws {
         let dir = scratch.appendingPathComponent("unreadable", isDirectory: true)
