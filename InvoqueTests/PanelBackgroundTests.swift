@@ -10,7 +10,15 @@ final class PanelBackgroundTests: XCTestCase {
         let regular = host(reduceTransparency: false)
         let reduced = host(reduceTransparency: true)
 
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            XCTAssertFalse(containsVisualEffectView(regular))
+        } else {
+            XCTAssertTrue(containsVisualEffectView(regular))
+        }
+        #else
         XCTAssertTrue(containsVisualEffectView(regular))
+        #endif
         XCTAssertFalse(containsVisualEffectView(reduced))
     }
 
