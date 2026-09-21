@@ -232,12 +232,13 @@ final class DirectoryWatcher: @unchecked Sendable {
             guard let self else { return }
             self.retryWorkItem = nil
             guard self.running, !self.failedPaths.isEmpty else { return }
-            let failedBefore = self.failedPaths.count
+            let failedBefore = self.failedPaths
             self.rebuildTargets()
             // The recovered target was blind while it failed — changes
             // under it produced no events, so recovery itself is the
-            // only signal that a rescan is owed.
-            if self.failedPaths.count < failedBefore {
+            // only signal that a rescan is owed. Subset, not count: one
+            // heal plus one new failure in the same pass still owes it.
+            if !failedBefore.isSubset(of: self.failedPaths) {
                 self.onEvent()
             }
         }

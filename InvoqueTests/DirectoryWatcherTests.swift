@@ -127,8 +127,12 @@ final class DirectoryWatcherTests: XCTestCase {
         XCTAssertTrue(waitFor { watcher.failedCount == 0 },
                       "failed open was never retried")
         XCTAssertEqual(watcher.liveSourceCount, 1)
-        XCTAssertTrue(waitFor { fires.value == 1 },
+        XCTAssertTrue(waitFor { fires.value >= 1 },
                       "recovery never notified the consumer")
+        // Settle past debounce + cooldown so a per-rebuild double-fire
+        // would land before the exact-count assert reads the counter.
+        Thread.sleep(forTimeInterval: 0.3)
+        XCTAssertEqual(fires.value, 1, "recovery must notify exactly once")
         watcher.stop()
     }
 
