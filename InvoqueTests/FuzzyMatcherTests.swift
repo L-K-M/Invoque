@@ -94,10 +94,12 @@ final class FuzzyMatcherTests: XCTestCase {
                            tier == .prefix || tier == .infix,
                            "\(query) in \(candidate)")
         }
-        // Nothing beyond lowercasing is folded — "cafe" is neither a
-        // contiguous hit nor a match in "Café Notes".
+        // Nothing beyond lowercasing is folded — "cafe" isn't contiguous
+        // in "Café Notes" (é ≠ e), so the probe says false while the
+        // matcher still finds the scattered fallback (…e in "Notes").
         XCTAssertFalse(FuzzyMatcher.contains("cafe", in: "Café Notes"))
-        XCTAssertNil(FuzzyMatcher.match("cafe", candidate: "Café Notes"))
+        XCTAssertEqual(FuzzyMatcher.match("cafe", candidate: "Café Notes")?
+            .tier, .fuzzy)
         XCTAssertFalse(FuzzyMatcher.contains("", in: "Safari"))
     }
 
