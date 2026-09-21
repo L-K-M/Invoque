@@ -24,9 +24,14 @@ enum InvoqueBridge {
     /// The most body `invoque.fetch` will hand to a command. The download
     /// task already spools to a temp file instead of memory; the cap
     /// governs what JS sees — a multi-GB or lying Content-Length response
-    /// is rejected rather than buffered whole. (The transfer itself still
-    /// completes to disk first — aborting mid-stream would need a data
-    /// delegate; the temp file is deleted when the handler returns.)
+    /// is rejected rather than buffered whole. Enforced in `fetchOutcome`
+    /// once the download finishes: the spooled temp file is rejected
+    /// before being read back, so an oversized body never crosses into JS
+    /// memory, and the file is deleted when the handler returns. The
+    /// transfer itself is bounded by the invocation timeout (`fetches`
+    /// cancels on teardown); aborting the download mid-flight would take
+    /// a `URLSessionDownloadDelegate` with per-task callback plumbing the
+    /// completion-handler API doesn't have.
     static let maxFetchBytes = 20 * 1024 * 1024
 
     /// Fetch session with a redirect guard: the http(s) allowlist is applied
@@ -341,10 +346,12 @@ enum InvoqueBridge {
             return .failure("invoque.fetch: no readable body")
         }
         guard size <= maxFetchBytes else {
-            return .failure("invoque.fetch: response exceeds the 20 MB limit")
+            return .failure("invoque.fetch: response exceeds the \(maxFetchBytes / 1024 / 1024) MB limit")
         }
-        let body = (try? Data(contentsOf: fileURL))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        guard let raw = try? Data(contentsOf: fileURL) else {
+            return .failure("invoque.fetch: could not read body")
+        }
+        let body = String(data: raw, encoding: .utf8) ?? ""
         return .success((status, body))
     }
 
