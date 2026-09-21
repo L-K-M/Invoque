@@ -66,7 +66,7 @@ final class URLSourceTests: XCTestCase {
 
     /// A raw space means prose, not a pasted address — browsers
     /// percent-encode spaces, so whitespace disqualifies the query even
-    /// though Foundation's lenient `URL(string:)` parser would accept it.
+    /// though the lenient parser would encode it through.
     func testQueryWithUnencodedSpaceEmitsNothing() {
         XCTAssertTrue(
             source.items(matching: "https://example.com/a b").isEmpty)
