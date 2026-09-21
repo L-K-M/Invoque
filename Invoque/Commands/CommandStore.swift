@@ -104,10 +104,11 @@ final class CommandStore: @unchecked Sendable {
     /// runs on the caller's thread; only the state commit hops onto
     /// `stateQueue`. A newer requested scan supersedes this one — its
     /// collected pass never commits and the return is the previously
-    /// committed list. Callers needing eventual freshness should rely on
-    /// `onChange`, not the return value. Returns commands and errors as one
-    /// atomic pair; a caller that read them separately could pair this
-    /// pass's commands with a later pass's errors.
+    /// committed list, empty if nothing has committed yet. Treat the return
+    /// value as best-effort; eventual freshness arrives through `onChange`.
+    /// Returns commands and errors as one atomic pair; a caller that read
+    /// them separately could pair this pass's commands with a later pass's
+    /// errors.
     @discardableResult
     func scan() -> (commands: [Command], errors: [ScanError]) {
         let generation = stateQueue.sync {
@@ -270,9 +271,10 @@ final class CommandStore: @unchecked Sendable {
 
     // MARK: Watching
 
-    /// Starts watching roots and command directories. The initial disk pass
-    /// runs at user-initiated QoS so panel construction never waits on command
-    /// files; `onChange` publishes the resulting snapshot on main.
+    /// Starts watching roots and command directories, then returns before the
+    /// first snapshot commits. The initial disk pass runs at user-initiated QoS
+    /// so panel construction never waits on command files; `onChange` publishes
+    /// the first snapshot on main. A new store's `commands` stays empty until then.
     func startWatching() {
         stateQueue.sync {
             watching = true
