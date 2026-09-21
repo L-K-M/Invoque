@@ -331,6 +331,10 @@ final class MakerModel: ObservableObject {
     /// conversation. The panel calls this on dismiss: a hidden spinner
     /// would keep spending API budget for up to the request budget.
     /// No-op outside `.generating` — a test run isn't cancelled this way.
+    /// `generate()` assigns `generationTask` in the same synchronous
+    /// main-actor block that flips the phase, so observing `.generating`
+    /// implies a tracked task — keep it that way (no suspension between
+    /// the two writes) or this guard could desync them.
     func cancelGeneration() {
         guard phase == .generating else { return }
         generationTask?.cancel()

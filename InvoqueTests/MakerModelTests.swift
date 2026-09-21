@@ -453,8 +453,10 @@ final class MakerModelTests: XCTestCase {
                                store: store,
                                permissionGrants: makeFreshGrants())
         let started = Task { await model.start(prompt: "demo") }
-        // Wait for the request to be in flight, plus a beat for the task
-        // handle to land — phase flips a line before the assignment.
+        // Wait for the request to be in flight. generate() assigns
+        // generationTask in the same synchronous main-actor block that
+        // flips the phase, so observing .generating implies the task is
+        // already cancelable.
         let deadline = Date().addingTimeInterval(5)
         var phase = await model.phase
         while phase != .generating, Date() < deadline {
@@ -462,13 +464,12 @@ final class MakerModelTests: XCTestCase {
             phase = await model.phase
         }
         XCTAssertEqual(phase, .generating)
-        try? await Task.sleep(nanoseconds: 50_000_000)
 
         await model.cancelGeneration()
 
+        await started.value // the cancelled task unwinds promptly
         phase = await model.phase
         XCTAssertEqual(phase, .idle)
-        await started.value // the cancelled task unwinds promptly
         let transcript = await model.transcript
         XCTAssertEqual(transcript.map(\.role), [.system, .user])
     }
