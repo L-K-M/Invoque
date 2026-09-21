@@ -71,14 +71,17 @@ final class CommandStoreTests: XCTestCase {
         let store = CommandStore(rootPaths: [root.path])
         let published = expectation(description: "snapshot after restart")
         store.onChange = { commands in
-            guard commands.map(\.name) == ["alpha"] else { return }
+            guard commands.map(\.name) == ["alpha", "beta"] else { return }
             published.fulfill()
         }
         store.startWatching()
         store.stopWatching()
+        // Written while the watcher is down: only a restarted pass that
+        // re-walks disk can publish this — a stale first-pass snapshot can't.
+        try writeCommand("beta", title: "Beta")
         store.startWatching()
         wait(for: [published], timeout: 2)
-        XCTAssertEqual(store.commands.map(\.name), ["alpha"])
+        XCTAssertEqual(store.commands.map(\.name), ["alpha", "beta"])
         store.stopWatching()
     }
 
