@@ -82,6 +82,25 @@ final class FuzzyMatcherTests: XCTestCase {
                        FuzzyMatcher.score("sfr", candidate: "Safari"))
     }
 
+    /// The title-visible probe shares `match`'s normalization: a
+    /// contiguous hit is exactly a match whose tier is prefix or infix.
+    func testContainsMirrorsMatchNormalization() {
+        for (query, candidate) in [("saf", "Safari"),
+                                   ("rowser", "Zen Zen Browser"),
+                                   ("sfr", "Safari"),
+                                   ("xyz", "Safari")] {
+            let tier = FuzzyMatcher.match(query, candidate: candidate)?.tier
+            XCTAssertEqual(FuzzyMatcher.contains(query, in: candidate),
+                           tier == .prefix || tier == .infix,
+                           "\(query) in \(candidate)")
+        }
+        // Nothing beyond lowercasing is folded — "cafe" is neither a
+        // contiguous hit nor a match in "Café Notes".
+        XCTAssertFalse(FuzzyMatcher.contains("cafe", in: "Café Notes"))
+        XCTAssertNil(FuzzyMatcher.match("cafe", candidate: "Café Notes"))
+        XCTAssertFalse(FuzzyMatcher.contains("", in: "Safari"))
+    }
+
     // MARK: Case
 
     func testCaseInsensitive() {

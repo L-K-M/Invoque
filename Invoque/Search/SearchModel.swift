@@ -139,8 +139,8 @@ final class SearchModel {
                         // no contiguous hit by definition, and every
                         // source's matchText leads with the title, so a
                         // title hit always lands inside matchText too.
-                        matchedInTitle: item.title.range(
-                            of: trimmed, options: .caseInsensitive) != nil,
+                        matchedInTitle: FuzzyMatcher.contains(
+                            trimmed, in: item.title),
                         titleLength: item.title.count)
                     if let existing = bestByID[item.id],
                        !Self.outranks(scored, over: existing) { continue }
