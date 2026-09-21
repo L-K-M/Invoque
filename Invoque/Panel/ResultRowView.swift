@@ -80,9 +80,14 @@ struct ResultRowView: View {
     /// faint version of the same color on hover, clear otherwise.
     private var rowFill: Color {
         if isSelected { return Color(nsColor: fill).opacity(fillOpacity) }
-        if isHovered { return Color(nsColor: fill).opacity(fillOpacity * 0.45) }
+        if isHovered {
+            return Color(nsColor: fill).opacity(fillOpacity * Self.hoverFillFraction)
+        }
         return .clear
     }
+
+    /// Fraction of the selection fill used for the hover affordance.
+    private static let hoverFillFraction: Double = 0.45
 
     /// SF Symbols render as vectors; file/app icons arrive resolved as
     /// bitmaps, so they need explicit sizing. An empty `iconImage` is the
