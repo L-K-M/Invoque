@@ -142,6 +142,10 @@ final class PanelController: NSObject, @unchecked Sendable {
     func hide() {
         panelSession += 1
         panel?.orderOut(nil)
+        // A dismissed panel must not keep working: a `find` walk would
+        // scan the disk for minutes, and a `make` generation would keep
+        // spending API budget for a result nobody sees.
+        model.panelDidHide()
     }
 
     // MARK: Commands

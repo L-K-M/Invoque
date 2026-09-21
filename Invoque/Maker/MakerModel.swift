@@ -326,6 +326,22 @@ final class MakerModel: ObservableObject {
         phase = .saved
     }
 
+    /// Cancels an in-flight generation without discarding the session —
+    /// the transcript survives so a resummoned `make …` can retry the same
+    /// conversation. The panel calls this on dismiss: a hidden spinner
+    /// would keep spending API budget for up to the request budget.
+    /// No-op outside `.generating` — a test run isn't cancelled this way.
+    /// `generate()` assigns `generationTask` in the same synchronous
+    /// main-actor block that flips the phase, so observing `.generating`
+    /// implies a tracked task — keep it that way (no suspension between
+    /// the two writes) or this guard could desync them.
+    func cancelGeneration() {
+        guard phase == .generating else { return }
+        generationTask?.cancel()
+        generationTask = nil
+        phase = .idle
+    }
+
     /// Drops the draft and the conversation, back to `idle`.
     func discard() {
         generationTask?.cancel()

@@ -452,6 +452,105 @@ final class MakerModelTests: XCTestCase {
         XCTAssertEqual(transcript.last?.content, "second fix")
     }
 
+    // MARK: Cancel generation
+
+    /// Lock-guarded one-way flag for cross-thread signals observed from
+    /// `async` tests — `DispatchSemaphore.wait` is unavailable there.
+    private final class LockedFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var flag = false
+        func raise() { lock.withLock { flag = true } }
+        var raised: Bool { lock.withLock { flag } }
+    }
+
+    /// A provider that never answers — the cancel path is what ends the
+    /// spend, so the stub hangs until its task is cancelled.
+    private final class HangingClient: LLMClientServing, @unchecked Sendable {
+        var model = "hanging"
+        func complete(messages: [LLMMessage]) async throws -> String {
+            try await Task.sleep(nanoseconds: 60_000_000_000)
+            return ""
+        }
+    }
+
+    /// Dismissing the panel mid-generation must stop the API spend — but
+    /// without discarding the session: the transcript survives so a
+    /// resummoned `make` can retry the same conversation.
+    func testCancelGenerationStopsInflightRequest() async {
+        let model = MakerModel(client: { HangingClient() },
+                               runner: CommandRunner(),
+                               writer: CommandWriter(rootURL: root),
+                               store: store,
+                               permissionGrants: makeFreshGrants())
+        let started = Task { await model.start(prompt: "demo") }
+        // Wait for the request to be in flight. generate() assigns
+        // generationTask in the same synchronous main-actor block that
+        // flips the phase, so observing .generating implies the task is
+        // already cancelable.
+        let deadline = Date().addingTimeInterval(5)
+        var phase = await model.phase
+        while phase != .generating, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            phase = await model.phase
+        }
+        XCTAssertEqual(phase, .generating)
+        // A slow-host timeout above shouldn't cascade into the misleading
+        // desync messages below — stop at the first failure.
+        guard phase == .generating else { return }
+
+        await model.cancelGeneration()
+
+        // Bound the unwind: if generate() ever suspends between the phase
+        // flip and the generationTask assignment, cancellation no-ops and
+        // the started task would never finish — fail, don't hang.
+        let idleDeadline = Date().addingTimeInterval(5)
+        phase = await model.phase
+        while phase != .idle, Date() < idleDeadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            phase = await model.phase
+        }
+        guard phase == .idle else {
+            XCTFail("cancel did not unwind the generation — did generate() suspend between the phase flip and the generationTask assignment?")
+            return
+        }
+        // The phase poll exits on its first .idle read — the real unwind
+        // signal is `started` resolving. Observe it via a flag and poll:
+        // `await started.value` — directly or inside a task group (a group
+        // joins ALL children even after cancelAll) — would hang the suite
+        // on exactly the regression this test exists to catch.
+        let unwound = LockedFlag()
+        Task { await started.value; unwound.raise() }
+        let unwindDeadline = Date().addingTimeInterval(5)
+        while !unwound.raised, Date() < unwindDeadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(unwound.raised,
+                      "cancelled generation did not unwind — did generate() suspend between the phase flip and the generationTask assignment?")
+        // The cancelled task must not clobber the idle phase on its way
+        // out — re-verify after the unwind, not before it.
+        phase = await model.phase
+        XCTAssertEqual(phase, .idle, "unwind left phase at \(phase)")
+        let transcript = await model.transcript
+        XCTAssertEqual(transcript.map(\.role), [.system, .user])
+    }
+
+    /// Outside `.generating` the cancel is a no-op — a settled draft stays.
+    func testCancelGenerationIsNoOpWhenNotGenerating() async {
+        let client = StubClient()
+        client.responses = [.success(generationOutput())]
+        let model = makeModel(client)
+        await model.start(prompt: "demo")
+        var phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+
+        await model.cancelGeneration()
+
+        phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+        let draft = await model.draft
+        XCTAssertNotNil(draft)
+    }
+
     // MARK: Discard
 
     func testDiscardReturnsToIdle() async {

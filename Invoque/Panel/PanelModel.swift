@@ -485,10 +485,15 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
 
     // MARK: Filter mode
 
-    /// Debounce for filter-mode re-runs — PLAN §4.1's ~80 ms.
-    private static let filterDebounceNanoseconds: UInt64 = 80_000_000
+    /// Debounce for filter-mode re-runs — PLAN §4.1's ~80 ms. Internal
+    /// (not private) so tests can derive waits from it instead of
+    /// sleeping a magic number that could drift inside the window.
+    static let filterDebounceNanoseconds: UInt64 = 80_000_000
 
     private var filterTask: Task<Void, Never>?
+    /// A filter run is scheduled — debouncing or in flight. Lets tests
+    /// prove a hide landed mid-debounce instead of trusting a sleep.
+    var filterRunIsPending: Bool { filterTask != nil }
     /// Stale-drop: a result arriving for an older keystroke is discarded.
     private var filterGeneration = 0
     /// Filter runs that reached the main-actor completion point — lets
@@ -888,6 +893,19 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         // A pending consent prompt belongs to the last summon — it must
         // not greet the next one.
         permissionRequest = nil
+    }
+
+    /// The panel dismissed — stop work still burning for a list nobody can
+    /// see: a `find` walk would keep scanning the disk for minutes, a
+    /// debounced filter run would land rows into a hidden list, and an
+    /// in-flight `make` generation would keep spending API budget. Rows and
+    /// the query are untouched — `reset` owns resummon state, and a
+    /// detached file session is already off `fileSession` by then.
+    func panelDidHide() {
+        cancelFileSearch()
+        cancelFilterRun()
+        // MakerModel is @MainActor — the cancel hops over.
+        if let maker { Task { await maker.cancelGeneration() } }
     }
 
     /// Moves the selection by `delta` rows, wrapping at both ends.
