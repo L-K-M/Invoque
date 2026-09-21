@@ -59,6 +59,9 @@ final class PanelController: NSObject, @unchecked Sendable {
                 return
             }
             self.searchModel.recordSelection(itemID: row.id)
+            // A submitted query is a recallable one — a real pick, not a
+            // dismiss, not a keystroke.
+            self.model.recordSubmittedQuery()
             if case .runCommand(let name, let args) = row.action {
                 self.runCommand(named: name, args: args)
                 return

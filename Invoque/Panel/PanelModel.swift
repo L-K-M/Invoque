@@ -96,6 +96,11 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         didSet { refreshResults() }
     }
 
+    /// Recently submitted queries for ↑-recall — nil in tests that don't
+    /// exercise history (the same "unwired stays normal" convention as
+    /// `filterLookup` and `fileSearcher`).
+    var queryHistory: QueryHistory?
+
     /// Fires when the user detaches an in-flight file scan — the
     /// controller hands `session` to a standalone results window and
     /// hides the panel. Unwired (tests), ⏎ during a pending scan falls
@@ -185,6 +190,10 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             // go through the same dismissal path as Esc and Decline.
             dismissPermissionRequest()
             dismissSystemActionConfirmation()
+            // A user edit leaves recall mode — the depth indexes a history
+            // that no longer matches what's on screen. Recall's own
+            // assignments set `applyingRecall` so they don't land here.
+            if !applyingRecall { recallDepth = 0 }
             refreshResults()
         }
     }
@@ -931,12 +940,67 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
                    action: .copyText(message))]
     }
 
+    // MARK: Query history recall
+
+    /// Recall depth: 0 = the live query, n = `queryHistory.entries[n-1]`.
+    /// Reset by any user edit, by `reset`, and by exhausting the rail.
+    private var recallDepth = 0
+    /// The query as typed before the first ↑-recall — stepping forward
+    /// past the newest entry restores it (Alfred's contract).
+    private var preRecallQuery = ""
+    /// Reentrancy flag — a recall assignment is not a user edit.
+    private var applyingRecall = false
+
+    /// Alfred-style recall: ↑ at the top row (or on an empty list) steps
+    /// back through recently submitted queries; ↓ at the last row steps
+    /// forward while recalling, and forward past the newest restores the
+    /// pre-recall query. Returns false when nothing was recalled — no
+    /// history wired, or the rail is exhausted — so `moveSelection` keeps
+    /// its wrap behavior exactly as before.
+    @discardableResult
+    private func recallPreviousQuery() -> Bool {
+        guard let entries = queryHistory?.entries, !entries.isEmpty,
+              recallDepth < entries.count else { return false }
+        if recallDepth == 0 { preRecallQuery = query }
+        recallDepth += 1
+        applyingRecall = true
+        query = entries[recallDepth - 1]
+        applyingRecall = false
+        return true
+    }
+
+    /// The forward twin of `recallPreviousQuery`.
+    @discardableResult
+    private func recallNextQuery() -> Bool {
+        guard recallDepth > 0 else { return false }
+        recallDepth -= 1
+        applyingRecall = true
+        query = recallDepth == 0
+            ? preRecallQuery
+            : queryHistory?.entries[recallDepth - 1] ?? ""
+        applyingRecall = false
+        return true
+    }
+
+    /// Records the query that produced a submitted row — the controller
+    /// calls this from `onSubmit` (a real pick, not a dismiss). Blank
+    /// queries never recall; re-submitting the current front entry is a
+    /// no-op in `QueryHistory.record`.
+    func recordSubmittedQuery() {
+        let trimmed = SearchModel.normalizedQuery(query)
+        guard !trimmed.isEmpty else { return }
+        queryHistory?.record(trimmed)
+    }
+
     // MARK: State changes
 
     /// Prepares a fresh summon: selection back to the first row, query cleared
     /// unless the caller keeps it (the "keep query on re-show" setting).
     func reset(clearQuery: Bool) {
         if clearQuery { query = "" }
+        // A kept query still exits recall mode — the next ↑ must recall the
+        // newest entry, not resume a stale depth.
+        recallDepth = 0
         selection = 0
         // Pending confirmations belong to the last summon — they must not
         // greet the next one.
@@ -957,11 +1021,29 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         if let maker { Task { await maker.cancelGeneration() } }
     }
 
-    /// Moves the selection by `delta` rows, wrapping at both ends.
+    /// Moves the selection by `delta` rows, wrapping at both ends. Two
+    /// recall hooks share the boundary positions: ↑ at the top row (or on
+    /// an empty list) recalls the previous query when history is wired,
+    /// and ↓ at the last row recalls forward while a recall is active —
+    /// unwired or exhausted, both fall through to the wrap this method
+    /// has always had.
     func moveSelection(by delta: Int) {
-        guard permissionRequest == nil, systemActionConfirmation == nil,
-              !results.isEmpty else { return }
+        // A card (consent, action confirmation) owns the panel — arrows
+        // must not move a hidden selection or recall behind it.
+        guard permissionRequest == nil, systemActionConfirmation == nil else { return }
+        guard !results.isEmpty else {
+            if delta < 0 {
+                recallPreviousQuery()
+            } else if recallDepth > 0 {
+                // ↓ on an empty list historically did nothing — only a live
+                // recall gives it a forward step.
+                recallNextQuery()
+            }
+            return
+        }
         let count = results.count
+        if delta < 0, selection == 0, recallPreviousQuery() { return }
+        if delta > 0, selection == count - 1, recallNextQuery() { return }
         // Double modulo: plain `%` would go out of range for negative deltas.
         selection = ((selection + delta) % count + count) % count
     }

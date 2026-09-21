@@ -176,6 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         commandSource.onReload = { [weak model] in model?.refreshResults() }
         let commandRunner = CommandRunner()
         model.commandRunner = commandRunner
+        // Alfred-style ↑-recall of recently submitted queries.
+        model.queryHistory = QueryHistory()
         model.filterLookup = { [commandSource] keyword in
             commandSource.filterCommand(forKeyword: keyword)
         }

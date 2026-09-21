@@ -2254,6 +2254,159 @@ final class PanelModelTests: XCTestCase {
         XCTAssertNil(model.copySelectedRowPayload())
     }
 
+    // MARK: Query history recall
+
+    /// ↑ on an empty list steps back through recently submitted queries —
+    /// Alfred's muscle memory. The rail is exhausted at the oldest entry.
+    func testRecallStepsBackThroughHistoryOnEmptyResults() {
+        let history = QueryHistory(defaults: defaults)
+        history.record("alpha")
+        history.record("beta")
+        let model = makeModel(items: [])
+        model.queryHistory = history
+        XCTAssertTrue(model.results.isEmpty)
+
+        model.moveSelection(by: -1)
+        XCTAssertEqual(model.query, "beta")
+        model.moveSelection(by: -1)
+        XCTAssertEqual(model.query, "alpha")
+        // Oldest entry: further ↑ recalls nothing and changes nothing.
+        model.moveSelection(by: -1)
+        XCTAssertEqual(model.query, "alpha")
+    }
+
+    /// ↑ at the top row (selection 0) recalls; ↑ mid-list still moves the
+    /// selection.
+    func testRecallFiresAtTopRowNotMidList() {
+        let history = QueryHistory(defaults: defaults)
+        history.record("beta")
+        let model = makeModel(items: [
+            Self.appItem(id: "app:beacon", title: "Beacon"),
+            Self.appItem(id: "app:bedlam", title: "Bedlam"),
+        ])
+        model.queryHistory = history
+        model.query = "be"
+        XCTAssertEqual(model.results.count, 2)
+
+        // Mid-list ↑ moves the selection, query untouched.
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.selection, 1)
+        model.moveSelection(by: -1)
+        XCTAssertEqual(model.selection, 0)
+        XCTAssertEqual(model.query, "be")
+
+        // Top-row ↑ recalls.
+        model.moveSelection(by: -1)
+        XCTAssertEqual(model.query, "beta")
+    }
+
+    /// ↓ at the last row while recalling steps forward, and forward past
+    /// the newest entry restores the pre-recall query.
+    func testRecallForwardRestoresLiveQuery() {
+        let history = QueryHistory(defaults: defaults)
+        history.record("alpha")
+        history.record("beta")
+        let model = makeModel(items: [
+            Self.appItem(id: "app:beacon", title: "Beacon"),
+        ])
+        model.queryHistory = history
+        model.query = "be"
+
+        model.moveSelection(by: -1)   // → "beta"
+        model.moveSelection(by: -1)   // → "alpha"
+        XCTAssertEqual(model.query, "alpha")
+
+        // "alpha" has no results, so ↓ lands on the empty-list guard —
+        // stepping forward is a recall hook there too (delta > 0 on an
+        // empty list does nothing, matching the pre-recall behavior).
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.query, "beta")
+
+        // "beta" matches nothing either; forward again restores the live
+        // query and its row.
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.query, "be")
+        XCTAssertEqual(model.selectedRow?.id, "app:beacon")
+    }
+
+    /// Any user edit leaves recall mode — ↓ at the last row wraps again
+    /// instead of stepping forward through history.
+    func testTypingExitsRecall() {
+        let history = QueryHistory(defaults: defaults)
+        history.record("beta")
+        let model = makeModel(items: [
+            Self.appItem(id: "app:beacon", title: "Beacon"),
+            Self.appItem(id: "app:bedlam", title: "Bedlam"),
+        ])
+        model.queryHistory = history
+        model.query = "be"
+        model.moveSelection(by: -1)
+        XCTAssertEqual(model.query, "beta")
+
+        // The user edits the recalled query — a normal didSet write.
+        model.query = "bed"
+        XCTAssertEqual(model.results.map(\.id), ["app:bedlam"])
+        model.moveSelection(by: 1)   // last row, not recalling → wrap
+        XCTAssertEqual(model.selection, 0)
+        // Forward recall is dead: the query stays as typed, not restored.
+        XCTAssertEqual(model.query, "bed")
+    }
+
+    /// Unwired or empty history keeps the old behavior exactly: ↑ at the
+    /// top row wraps, ↑ on an empty list does nothing.
+    func testUnwiredHistoryKeepsWrapBehavior() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:beacon", title: "Beacon"),
+            Self.appItem(id: "app:bedlam", title: "Bedlam"),
+        ])
+        model.query = "be"
+        model.moveSelection(by: -1)
+        XCTAssertEqual(model.selection, 1)   // wrapped to the bottom
+
+        let empty = makeModel(items: [])
+        empty.queryHistory = QueryHistory(defaults: defaults)
+        empty.moveSelection(by: -1)
+        XCTAssertEqual(empty.query, "")
+    }
+
+    /// A fresh summon must not resume a stale recall depth — even with
+    /// the query kept ("keep query on re-show").
+    func testResetExitsRecall() {
+        let history = QueryHistory(defaults: defaults)
+        history.record("beta")
+        let model = makeModel(items: [
+            Self.appItem(id: "app:beacon", title: "Beacon"),
+            Self.appItem(id: "app:bedlam", title: "Bedlam"),
+        ])
+        model.queryHistory = history
+        model.query = "be"
+        model.moveSelection(by: -1)
+        XCTAssertEqual(model.query, "beta")
+
+        model.reset(clearQuery: false)
+        // No forward recall is live anymore — ↓ at the last row wraps.
+        XCTAssertEqual(model.query, "beta")
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.query, "beta")
+    }
+
+    /// A submitted query records; a blank one never does.
+    func testRecordSubmittedQuery() {
+        let history = QueryHistory(defaults: defaults)
+        let model = makeModel(items: [
+            Self.appItem(id: "app:safari", title: "Safari"),
+        ])
+        model.queryHistory = history
+        model.query = "safari"
+        model.recordSubmittedQuery()
+        model.recordSubmittedQuery()   // consecutive repeat is a no-op
+        XCTAssertEqual(history.entries, ["safari"])
+
+        model.query = "   "
+        model.recordSubmittedQuery()
+        XCTAssertEqual(history.entries, ["safari"])
+    }
+
     // MARK: Helpers
 
     /// Lock-guarded one-way flag for cross-thread signals observed from
