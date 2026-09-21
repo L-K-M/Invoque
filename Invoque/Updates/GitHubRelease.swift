@@ -154,7 +154,7 @@ struct GitHubRelease: Decodable {
     /// tokenized name — "x86_64" (tokens "x86", "64") matches "App-x86_64.dmg"
     /// but neither "x86" nor "64" alone promotes a build.
     private static func tokensContain(_ tokens: [String], hint: String) -> Bool {
-        let parts = tokens(in: hint)
+        let parts = Self.tokens(in: hint)
         guard !parts.isEmpty else { return false }
         return tokens.indices.contains { start in
             start + parts.count <= tokens.count
