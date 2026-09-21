@@ -25,13 +25,22 @@ final class AppSource: ItemSource, @unchecked Sendable {
     /// leave a "scan landed" consumer waiting forever. Guarded by `lock`.
     private var didPublishInitialLoad = false
 
+    /// Serial queue for catalog scans — the launch scan and every
+    /// watcher-triggered rescan share it, so bursts coalesce into one
+    /// walk at a time and `installedApps()` never occupies the watcher's
+    /// own serial queue (which services events, retries, and `stop()`).
+    private let scanQueue = DispatchQueue(label: "appsource.scan",
+                                          qos: .userInitiated)
+
     /// Notices apps appearing or disappearing under the catalog's search
     /// folders so the cache is not frozen at launch. `lazy` because the
     /// event closure captures `self`, which is only valid once the
     /// non-lazy members above are initialized.
     private lazy var watcher = DirectoryWatcher(
         roots: AppCatalog.searchDirectories) { [weak self] in
-        self?.reload()
+        self?.scanQueue.async { [weak self] in
+            self?.reload()
+        }
     }
 
     /// Backing store for `onReload` — assigned once in `init`, read by
@@ -59,7 +68,7 @@ final class AppSource: ItemSource, @unchecked Sendable {
     /// would be missed entirely.
     init(onReload: (() -> Void)? = nil) {
         _onReload = onReload
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        scanQueue.async { [weak self] in
             self?.reload()
         }
         watcher.start()
