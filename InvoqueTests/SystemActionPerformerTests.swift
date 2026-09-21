@@ -74,6 +74,15 @@ final class SystemActionPerformerTests: XCTestCase {
             withDestinationURL: trash.appendingPathComponent("gone"))
         try FileManager.default.setAttributes([.posixPermissions: 0o555],
                                               ofItemAtPath: trash.path)
+        defer {
+            // The fixture is shared and the symlink can't be deleted
+            // while the directory is read-only — restore writability
+            // first or teardown (and every later test) inherits both.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755],
+                                                   ofItemAtPath: trash.path)
+            try? FileManager.default.removeItem(
+                at: trash.appendingPathComponent("dangling"))
+        }
 
         XCTAssertEqual(SystemActionPerformer.emptyTrashContents(at: trash), 1)
     }
