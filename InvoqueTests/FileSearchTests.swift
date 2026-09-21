@@ -375,4 +375,99 @@ final class FileSearchTests: XCTestCase {
         XCTAssertEqual(Set(matches.map(\.url.lastPathComponent)),
                        ["notes.txt", "keep-notes.txt"])
     }
+
+    // MARK: Streaming
+
+    /// Past the emit stride the walk reports mid-scan — each batch is the
+    /// accumulated ranked list so far, so the last emission equals
+    /// `scan`'s output and every earlier batch is a subsequence of it
+    /// (a late match can outrank an earlier one, so prefix-ness doesn't
+    /// hold — sorted-subset does).
+    func testStreamEmitsAccumulatedBatches() throws {
+        let defaultStride = FileSearch.emitStride
+        FileSearch.emitStride = 2
+        defer { FileSearch.emitStride = defaultStride }
+        for index in 0..<5 {
+            try makeFile(String(format: "probe-%02d.txt", index))
+        }
+        var batches: [[String]] = []
+        FileSearch.stream(query: "probe", roots: [root]) { batch in
+            batches.append(batch.map(\.title))
+        }
+        XCTAssertGreaterThan(batches.count, 1,
+                             "a 5-match walk at stride 2 must emit mid-scan")
+        let final = try XCTUnwrap(batches.last)
+        XCTAssertEqual(final,
+                       FileSearch.items(query: "probe", roots: [root])
+                           .map(\.title))
+        for (index, batch) in batches.dropLast().enumerated() {
+            var cursor = final.startIndex
+            for name in batch {
+                guard let found = final[cursor...].firstIndex(of: name) else {
+                    XCTFail("batch \(index) element \(name) missing or "
+                        + "out of rank order in the final list")
+                    break
+                }
+                cursor = final.index(after: found)
+            }
+        }
+    }
+
+    /// The stride is the throttle contract: with the interval gate
+    /// effectively off, five matches emit exactly at counts 2 and 4, then
+    /// the trailing flush delivers the complete list — three emissions,
+    /// each the accumulated snapshot.
+    func testStreamThrottlesEmissionsByStride() throws {
+        let defaultStride = FileSearch.emitStride
+        let defaultInterval = FileSearch.emitInterval
+        FileSearch.emitStride = 2
+        FileSearch.emitInterval = .greatestFiniteMagnitude
+        defer {
+            FileSearch.emitStride = defaultStride
+            FileSearch.emitInterval = defaultInterval
+        }
+        for index in 0..<5 {
+            try makeFile(String(format: "pace-%02d.txt", index))
+        }
+        var batchSizes: [Int] = []
+        FileSearch.stream(query: "pace", roots: [root]) { batch in
+            batchSizes.append(batch.count)
+        }
+        XCTAssertEqual(batchSizes, [2, 4, 5])
+    }
+
+    /// A pinned match leads whatever batch it lands in — the streaming
+    /// boost must agree with `scan`'s pins-ahead-of-cap rule even when
+    /// the pin arrives late in the walk.
+    func testStreamBoostedMatchLeadsFinalBatch() throws {
+        try makeFile("stream-one.txt")
+        try makeFile("stream-two.txt")
+        let boostedID = try XCTUnwrap(
+            FileSearch.items(query: "stream-two", roots: [root])
+                .first?.id)
+        var lastBatch: [String] = []
+        FileSearch.stream(query: "stream", roots: [root],
+                          isBoosted: { $0 == boostedID }) { batch in
+            lastBatch = batch.map(\.title)
+        }
+        XCTAssertEqual(lastBatch.first, "stream-two.txt")
+        XCTAssertEqual(Set(lastBatch), ["stream-one.txt", "stream-two.txt"])
+    }
+
+    /// A walk that finds nothing emits nothing — the session's pending
+    /// flag, not an empty batch, is the "no matches" signal.
+    func testStreamNoMatchesEmitsNothing() {
+        var emissions = 0
+        FileSearch.stream(query: "nothing-matches-this",
+                          roots: [root]) { _ in emissions += 1 }
+        XCTAssertEqual(emissions, 0)
+    }
+
+    /// A cancelled scan reports nothing — the pre-walk guard covers it.
+    func testStreamCancelledUpfrontEmitsNothing() {
+        var emissions = 0
+        FileSearch.stream(query: "notes", roots: [root],
+                          isCancelled: { true }) { _ in emissions += 1 }
+        XCTAssertEqual(emissions, 0)
+    }
 }

@@ -552,7 +552,7 @@ final class PanelModelTests: XCTestCase {
 
     func testFindKeywordRunsFileSearch() async throws {
         let model = makeModel(items: [])
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "find notes"
         await awaitResults(model) { $0.count == 1 }
         XCTAssertEqual(model.results.first?.title, "notes.txt")
@@ -562,7 +562,7 @@ final class PanelModelTests: XCTestCase {
 
     func testFAliasRunsFileSearch() async throws {
         let model = makeModel(items: [])
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "f notes"
         await awaitResults(model) { $0.count == 1 }
         XCTAssertEqual(model.results.first?.title, "notes.txt")
@@ -572,7 +572,7 @@ final class PanelModelTests: XCTestCase {
 
     func testSearchKeywordRunsFileSearch() async throws {
         let model = makeModel(items: [])
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "search notes"
         await awaitResults(model) { $0.count == 1 }
         XCTAssertEqual(model.results.first?.title, "notes.txt")
@@ -589,7 +589,7 @@ final class PanelModelTests: XCTestCase {
 
     func testBareFindKeywordStaysNormalSearch() {
         let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "find"
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
     }
@@ -597,7 +597,7 @@ final class PanelModelTests: XCTestCase {
     /// The `f` alias follows the same bare-keyword rule as `find`.
     func testBareFAliasStaysNormalSearch() {
         let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "f"
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
     }
@@ -608,7 +608,7 @@ final class PanelModelTests: XCTestCase {
     func testBareSearchKeywordStaysNormalSearch() {
         let model = makeModel(items: [Self.appItem(id: "app:searcher",
                                                   title: "Searcher")])
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "search"
         XCTAssertEqual(model.results.map(\.id), ["app:searcher"])
     }
@@ -635,7 +635,7 @@ final class PanelModelTests: XCTestCase {
     /// scanned query — `activeFileSearch` trims before the searcher sees it.
     func testFileSearchTrimsExtraSpaces() async throws {
         let model = makeModel(items: [])
-        model.fileSearcher = { text, _ in [Self.fileItem("\(text).txt")] }
+        model.fileSearcher = { text, _, emit in emit([Self.fileItem("\(text).txt")]) }
         model.query = "f  alpha"
         await awaitFileCompletions(model, atLeast: 1)
         XCTAssertEqual(model.results.map(\.title), ["alpha.txt"])
@@ -647,7 +647,7 @@ final class PanelModelTests: XCTestCase {
     func testNewlineOnlyFileTextIsBlank() async throws {
         let model = makeModel(items: [])
         withShortFileDebounce()
-        model.fileSearcher = { _, _ in [Self.fileItem("x")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("x")]) }
         model.query = "find \n"
         XCTAssertTrue(model.fileSearchTextIsBlank)
         try await Task.sleep(nanoseconds: 100_000_000) // past the debounce
@@ -658,9 +658,9 @@ final class PanelModelTests: XCTestCase {
     /// reads this to show progress rather than "No matching files".
     func testFileScanIsPendingDuringScan() async throws {
         let model = makeModel(items: [])
-        model.fileSearcher = { _, _ in
+        model.fileSearcher = { _, _, emit in
             Thread.sleep(forTimeInterval: 0.2)
-            return [Self.fileItem("x.txt")]
+            emit([Self.fileItem("x.txt")])
         }
         model.query = "find x"
         XCTAssertTrue(model.fileScanIsPending) // debouncing already counts
@@ -673,7 +673,7 @@ final class PanelModelTests: XCTestCase {
     func testEmptyFileTextOwnsEmptyList() async throws {
         let model = makeModel(items: [Self.appItem(id: "app:finder", title: "Finder")])
         withShortFileDebounce()
-        model.fileSearcher = { _, _ in [Self.fileItem("x")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("x")]) }
         model.query = "finder"
         XCTAssertEqual(model.results.map(\.id), ["app:finder"])
         model.query = "find "
@@ -686,7 +686,7 @@ final class PanelModelTests: XCTestCase {
     /// rows — a stale row left on screen is still selectable.
     func testBlankingFileTextClearsRows() async throws {
         let model = makeModel(items: [])
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "find a"
         await awaitResults(model) { $0.count == 1 }
         model.query = "find "
@@ -698,7 +698,7 @@ final class PanelModelTests: XCTestCase {
     func testIdenticalFileQuerySkipsRescan() async throws {
         let model = makeModel(items: [])
         withShortFileDebounce()
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "find a"
         await awaitFileCompletions(model, atLeast: 1)
         model.refreshResults()
@@ -708,12 +708,12 @@ final class PanelModelTests: XCTestCase {
     }
 
     /// A slow earlier scan must not stamp rows over a newer keystroke's
-    /// results — `fileGeneration` drops it.
+    /// results — the session-identity check drops it.
     func testStaleFileResultIsDropped() async throws {
         let model = makeModel(items: [])
-        model.fileSearcher = { text, _ in
+        model.fileSearcher = { text, _, emit in
             if text == "a" { Thread.sleep(forTimeInterval: 1.0) }
-            return [Self.fileItem("\(text).txt")]
+            emit([Self.fileItem("\(text).txt")])
         }
         model.query = "find a"
         // The "a" scan must be in flight — not merely scheduled — before
@@ -728,9 +728,9 @@ final class PanelModelTests: XCTestCase {
     /// late completion is discarded rather than stamped over them.
     func testLeavingFileSearchDropsInFlightResult() async throws {
         let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
-        model.fileSearcher = { _, _ in
+        model.fileSearcher = { _, _, emit in
             Thread.sleep(forTimeInterval: 1.0)
-            return [Self.fileItem("stale.txt")]
+            emit([Self.fileItem("stale.txt")])
         }
         model.query = "find a"
         await awaitFileStarts(model, atLeast: 1)
@@ -742,6 +742,205 @@ final class PanelModelTests: XCTestCase {
         // capture, and would then wait for a second run that never comes.
         await awaitFileCompletions(model, atLeast: 1)
         XCTAssertEqual(model.results.map(\.id), ["app:safari"])
+    }
+
+    /// Batches land progressively: the list shows the first snapshot while
+    /// the walk is still running instead of waiting for the whole scan.
+    /// The gate holds the searcher between emissions so the mid-scan state
+    /// is observable rather than a race.
+    func testFileSearchStreamsBatches() async throws {
+        let model = makeModel(items: [])
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("first.txt")])
+            gate.wait()
+            emit([Self.fileItem("first.txt"), Self.fileItem("second.txt")])
+        }
+        model.query = "find x"
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertTrue(model.fileScanIsPending)
+        XCTAssertEqual(model.results.map(\.title), ["first.txt"])
+        gate.signal()
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["first.txt", "second.txt"])
+        XCTAssertFalse(model.fileScanIsPending)
+    }
+
+    /// A batch merging above the picked row must not snap the selection
+    /// back to the top — the update tracks it by row id.
+    func testFileStreamKeepsSelectionOnRow() async throws {
+        let model = makeModel(items: [])
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("bbb.txt")])
+            gate.wait()
+            emit([Self.fileItem("aaa.txt"), Self.fileItem("bbb.txt")])
+        }
+        model.query = "find x"
+        await awaitResults(model) { $0.count == 1 }
+        XCTAssertEqual(model.selectedRow?.title, "bbb.txt")
+        gate.signal()
+        await awaitResults(model) { $0.count == 2 }
+        XCTAssertEqual(model.selectedRow?.title, "bbb.txt")
+    }
+
+    /// ⏎ while a scan is in flight hands the session to the detach hook —
+    /// the panel releases its list, and the same walk keeps streaming for
+    /// the new subscriber rather than restarting or dying with the panel.
+    func testReturnDuringPendingScanDetachesSession() async throws {
+        let model = makeModel(items: [])
+        let gate = DispatchSemaphore(value: 0)
+        let gate2 = DispatchSemaphore(value: 0)
+        let strayDrained = DispatchSemaphore(value: 0)
+        defer { gate.signal(); gate2.signal() } // never leave the searcher blocked
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("first.txt")])
+            gate.wait()
+            emit([Self.fileItem("first.txt"), Self.fileItem("second.txt")])
+            gate2.wait()
+            emit([Self.fileItem("first.txt"), Self.fileItem("second.txt"),
+                  Self.fileItem("third.txt")])
+            // Queued behind the stray emit's main-queue hop — firing it
+            // proves the absorb/drop decision already ran.
+            DispatchQueue.main.async { strayDrained.signal() }
+        }
+        var detached: FileSearchSession?
+        model.onDetachFileSearch = { detached = $0 }
+        var submitCalled = false
+        model.onSubmit = { _ in submitCalled = true }
+        model.query = "find x"
+        await awaitResults(model) { $0.count == 1 }
+
+        model.submit()
+
+        let session = try XCTUnwrap(detached)
+        XCTAssertFalse(submitCalled, "a detach is not a row submit")
+        XCTAssertTrue(session.isPending)
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertFalse(model.fileScanIsPending)
+
+        // The released session is the window's problem now — it keeps
+        // accumulating after the panel drops it.
+        gate.signal()
+        let deadline = Date().addingTimeInterval(7)
+        while session.items.count < 2, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(session.items.map(\.title), ["first.txt", "second.txt"])
+
+        // Closing the window retires the scan: post-cancel emissions
+        // drop on `absorb`'s isPending guard, and the searcher itself
+        // unwedges via Task.isCancelled.
+        session.cancel()
+        gate2.signal()
+        // Poll rather than sleep a fixed window — the stray emit's hop
+        // has to drain before the drop is provable. `wait` consumes the
+        // token, so a flag records the exit reason — a second `wait`
+        // would report timedOut on an already-drained semaphore.
+        var drained = false
+        let strayDeadline = Date().addingTimeInterval(5)
+        while !drained, Date() < strayDeadline {
+            drained = strayDrained.wait(timeout: .now()) == .success
+            if !drained {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+        }
+        // Without this, a drained-never-fires timeout would let the
+        // items assertion pass before the stray was even delivered.
+        XCTAssertTrue(drained, "stray emission never reached the main queue")
+        XCTAssertEqual(session.items.map(\.title), ["first.txt", "second.txt"])
+        XCTAssertFalse(session.isPending)
+    }
+
+    /// Leaving file mode after a detach must not kill the handed-off
+    /// session — the window owns it now.
+    func testModeSwitchAfterDetachKeepsSessionAlive() async throws {
+        let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
+        model.fileSearcher = { _, _, emit in
+            gate.wait()
+            emit([Self.fileItem("late.txt")])
+        }
+        var detached: FileSearchSession?
+        model.onDetachFileSearch = { detached = $0 }
+        model.query = "find x"
+        await awaitFileStarts(model, atLeast: 1)
+
+        model.submit()
+        let session = try XCTUnwrap(detached)
+        // Normal search resumes — the in-flight session is untouched.
+        model.query = "safari"
+        XCTAssertEqual(model.results.map(\.id), ["app:safari"])
+
+        gate.signal()
+        let deadline = Date().addingTimeInterval(7)
+        while session.isPending, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertFalse(session.isPending)
+        XCTAssertEqual(session.items.map(\.title), ["late.txt"])
+    }
+
+    /// With no detach handler wired, ⏎ mid-scan is the normal submit —
+    /// the same "unwired stays normal" convention as the other seams.
+    func testPendingSubmitWithoutDetachHandlerFallsThrough() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _, emit in
+            Thread.sleep(forTimeInterval: 0.3)
+            emit([Self.fileItem("x.txt")])
+        }
+        var submitted = false
+        model.onSubmit = { _ in submitted = true }
+        model.query = "find x"
+        await awaitFileStarts(model, atLeast: 1)
+        XCTAssertTrue(model.fileScanIsPending)
+        model.submit()
+        XCTAssertTrue(submitted)
+        await awaitFileCompletions(model, atLeast: 1)
+    }
+
+    /// A tap mid-scan is an explicit pick of *that* row — it performs the
+    /// row's action rather than detaching the session (the
+    /// `detachesPendingScan` flag).
+    func testTapSubmitDoesNotDetach() async throws {
+        let model = makeModel(items: [])
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() } // never leave the searcher blocked
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("first.txt")])
+            gate.wait()
+        }
+        var detached = false
+        model.onDetachFileSearch = { _ in detached = true }
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.query = "find x"
+        await awaitResults(model) { $0.count == 1 }
+
+        model.submit(detachesPendingScan: false)
+
+        XCTAssertFalse(detached)
+        XCTAssertEqual(submitted?.title, "first.txt")
+        gate.signal()
+        await awaitFileCompletions(model, atLeast: 1)
+    }
+
+    /// A settled scan isn't pending — ⏎ picks the row, nothing detaches.
+    func testSubmitAfterScanCompletesDoesNotDetach() async throws {
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("x.txt")]) }
+        var detachFired = false
+        model.onDetachFileSearch = { _ in detachFired = true }
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.query = "find x"
+        await awaitFileCompletions(model, atLeast: 1)
+        model.submit()
+        XCTAssertFalse(detachFired)
+        XCTAssertEqual(submitted?.title, "x.txt")
     }
 
     /// ⌘⏎ on a file row reveals it in Finder rather than opening — the
@@ -1039,13 +1238,14 @@ final class PanelModelTests: XCTestCase {
     func testFileResultsStabilizeOnExtension() async throws {
         let model = makeModel(items: [])
         withShortFileDebounce()
-        model.fileSearcher = { text, _ in
+        model.fileSearcher = { text, _, emit in
             // The stub re-ranks per query — "safa" puts the longer,
             // still-prefix file first and demotes the fuzzy survivor.
             if text == "saf" {
-                return [Self.fileItem("safxa.txt"), Self.fileItem("safarilong.txt")]
+                emit([Self.fileItem("safxa.txt"), Self.fileItem("safarilong.txt")])
+            } else {
+                emit([Self.fileItem("safarilong.txt"), Self.fileItem("safxa.txt")])
             }
-            return [Self.fileItem("safarilong.txt"), Self.fileItem("safxa.txt")]
         }
         model.query = "find saf"
         await awaitFileCompletions(model, atLeast: 1)
@@ -1062,9 +1262,12 @@ final class PanelModelTests: XCTestCase {
     func testFileNewcomerJoinsBelowSurvivors() async throws {
         let model = makeModel(items: [])
         withShortFileDebounce()
-        model.fileSearcher = { text, _ in
-            if text == "saf" { return [Self.fileItem("safxa.txt")] }
-            return [Self.fileItem("safarilong.txt"), Self.fileItem("safxa.txt")]
+        model.fileSearcher = { text, _, emit in
+            if text == "saf" {
+                emit([Self.fileItem("safxa.txt")])
+            } else {
+                emit([Self.fileItem("safarilong.txt"), Self.fileItem("safxa.txt")])
+            }
         }
         model.query = "find saf"
         await awaitFileCompletions(model, atLeast: 1)
@@ -1085,7 +1288,7 @@ final class PanelModelTests: XCTestCase {
             Self.appItem(id: "app:nope", title: "Nope"),
         ])
         withShortFileDebounce()
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "find notes"
         await awaitFileCompletions(model, atLeast: 1)
         XCTAssertEqual(model.results.map(\.title), ["notes.txt"])
@@ -1284,8 +1487,8 @@ final class PanelModelTests: XCTestCase {
         let rules = RulesStub()
         let model = makeManagedModel(items: [], rules: rules)
         withShortFileDebounce()
-        model.fileSearcher = { _, _ in
-            [Self.fileItem("keep.txt"), Self.fileItem("drop.txt")]
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("keep.txt"), Self.fileItem("drop.txt")])
         }
         model.query = "find txt"
         await awaitFileCompletions(model, atLeast: 1)
@@ -1305,8 +1508,8 @@ final class PanelModelTests: XCTestCase {
         let rules = RulesStub()
         let model = makeManagedModel(items: [], rules: rules)
         withShortFileDebounce()
-        model.fileSearcher = { _, _ in
-            [Self.fileItem("alpha.txt"), Self.fileItem("beta.txt")]
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("alpha.txt"), Self.fileItem("beta.txt")])
         }
         model.query = "find txt"
         await awaitFileCompletions(model, atLeast: 1)
@@ -1324,8 +1527,8 @@ final class PanelModelTests: XCTestCase {
         let rules = RulesStub()
         let model = makeManagedModel(items: [], rules: rules)
         withShortFileDebounce()
-        model.fileSearcher = { _, _ in
-            [Self.fileItem("alpha.txt"), Self.fileItem("beta.txt")]
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("alpha.txt"), Self.fileItem("beta.txt")])
         }
         model.query = "find txt"
         await awaitFileCompletions(model, atLeast: 1)
@@ -1345,7 +1548,7 @@ final class PanelModelTests: XCTestCase {
             Self.appItem(id: "app:notes", title: "Notes"),
         ], rules: rules)
         withShortFileDebounce()
-        model.fileSearcher = { _, _ in [Self.fileItem("notes.txt")] }
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("notes.txt")]) }
         model.query = "find notes"
         await awaitFileCompletions(model, atLeast: 1)
         model.query = "notes"

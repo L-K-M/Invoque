@@ -279,11 +279,11 @@ struct PanelView: View {
                                 .id(row.id)
                                 .onTapGesture {
                                     model.select(row)
-                                    model.submit()
+                                    model.submit(detachesPendingScan: false)
                                 }
                                 .accessibilityAction {
                                     model.select(row)
-                                    model.submit()
+                                    model.submit(detachesPendingScan: false)
                                 }
                             // The menu attaches only to manageable entries —
                             // an empty `.contextMenu` still flashes a blank
@@ -333,6 +333,12 @@ struct PanelView: View {
         let manage = model.selectedRow.map(model.canManage) == true
             ? " · ⌘P pin · ⌘B block" : ""
         if model.fileSearchIsActive {
+            // Mid-scan, ⏎ doesn't pick a row — it detaches the session
+            // into its own window (see `PanelModel.submit`), so the hint
+            // can't promise open/reveal until the walk settles.
+            if model.fileScanIsPending {
+                return "Searching… ⏎ open in window" + manage + " · esc dismiss"
+            }
             return "⏎ open · ⌘⏎ reveal in Finder" + manage + " · esc dismiss"
         }
         return "↑↓ navigate · ⏎ open" + manage + " · esc dismiss"
@@ -417,90 +423,6 @@ private enum Metrics {
     static let cardInset: CGFloat = 12
     static let edgePadding: CGFloat = 10
     static let fieldPadding: CGFloat = 20
-}
-
-// MARK: -
-
-/// One result line: icon, title, subtitle, with the selected row highlighted.
-/// All colors arrive resolved from `PanelView` — the row owns layout, not
-/// theme decisions.
-private struct ResultRowView: View {
-
-    let row: ResultRow
-    /// The resolved bitmap for `.fileURL`/`.appIcon` rows — the
-    /// shared-store icon when Pict has one, else the workspace icon.
-    /// Unused (nil) on `.symbol` rows.
-    let iconImage: NSImage?
-    let isSelected: Bool
-    /// User-pinned entry — drawn as a small pin trailing the row.
-    let pinned: Bool
-    /// The selection fill — the theme highlight or, under adaptive accent,
-    /// the icon's dominant color.
-    let fill: NSColor
-    let fillOpacity: Double
-    let cornerRadius: Double
-    let titleColor: Color
-    let subtitleColor: Color
-    /// The chosen typeface — title at `.body`, subtitle at `.caption`.
-    let typeface: PanelTypeface
-    /// Whether the selection fill bleeds a soft glow past the row (the
-    /// adaptive-accent bloom).
-    let glows: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            icon
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.title)
-                    .font(typeface.font(.body))
-                    .foregroundStyle(titleColor)
-                    .lineLimit(1)
-                Text(row.subtitle)
-                    .font(typeface.font(.caption))
-                    .foregroundStyle(subtitleColor)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if pinned {
-                Image(systemName: "pin.fill")
-                    .font(typeface.font(.caption))
-                    .foregroundStyle(subtitleColor)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(isSelected ? Color(nsColor: fill).opacity(fillOpacity) : Color.clear)
-                .shadow(color: isSelected && glows
-                            ? Color(nsColor: fill).opacity(0.5)
-                            : .clear,
-                        radius: 10)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: cornerRadius,
-                                       style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
-    }
-
-    /// SF Symbols render as vectors; file/app icons arrive resolved as
-    /// bitmaps, so they need explicit sizing. An empty `iconImage` is the
-    /// unreachable fallback — the workspace always answers for a real path.
-    @ViewBuilder
-    private var icon: some View {
-        switch row.icon {
-        case .symbol(let name):
-            Image(systemName: name)
-                .font(.title3)
-                .foregroundStyle(isSelected ? titleColor : subtitleColor)
-        case .fileURL, .appIcon:
-            Image(nsImage: iconImage ?? NSImage())
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-        }
-    }
 }
 
 // MARK: -

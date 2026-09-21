@@ -19,9 +19,11 @@ import Foundation
 /// - `maxVisited` bounds the worst case on giant trees; `maxMatches` bounds
 ///   the sort input. Both are `var` so tests can shrink them.
 ///
-/// The scan is synchronous by design: `PanelModel` runs it inside the
-/// debounced mode task, where the `isCancelled` probe sees that task's
-/// cancellation. Tests call it directly.
+/// The scan is synchronous by design: `FileSearchSession` runs it inside
+/// the debounced mode task, where the `isCancelled` probe sees that
+/// task's cancellation. Tests call it directly. `stream` is the same walk
+/// with incremental emissions — the panel and the detached results
+/// window both render off it.
 enum FileSearch {
 
     /// A filesystem region the file search can walk — Settings → General
@@ -208,8 +210,8 @@ enum FileSearch {
              isBoosted: isBoosted)
     }
 
-    /// The walk proper — one shared visited/matches/seenPaths across
-    /// roots so the caps and dedupe are global, not per root.
+    /// The walk proper — one shared visited/seenPaths across roots so the
+    /// caps and dedupe are global, not per root.
     static func scan(query: String, roots: [Root],
                      isCancelled: () -> Bool = { false },
                      isExcluded: (String) -> Bool = { _ in false },
@@ -223,21 +225,14 @@ enum FileSearch {
         for root in roots {
             walk(root, query: trimmed, isCancelled: isCancelled,
                  isExcluded: isExcluded,
-                 visited: &visited, matches: &matches, seenPaths: &seenPaths)
-            if visited >= maxVisited || isCancelled() { break }
+                 visited: &visited, seenPaths: &seenPaths) { match in
+                matches.append(match)
+                return matches.count < maxMatches
+            }
+            if matches.count >= maxMatches || visited >= maxVisited
+                || isCancelled() { break }
         }
-        // Same ordering the launcher search uses: match tier first (prefix
-        // beats infix beats fuzzy), then the shorter filename, then the
-        // alignment score, then path — the total order keeps identical
-        // queries producing identical lists.
-        let ranked = matches.sorted { lhs, rhs in
-            if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
-            let lhsLength = lhs.url.lastPathComponent.count
-            let rhsLength = rhs.url.lastPathComponent.count
-            if lhsLength != rhsLength { return lhsLength < rhsLength }
-            if lhs.score != rhs.score { return lhs.score > rhs.score }
-            return lhs.url.path < rhs.url.path
-        }
+        let ranked = matches.sorted(by: ranksBefore)
         // Boosted ids lead the capped output — a pinned match has to
         // survive the cap or pinning it would silently do nothing. The
         // unpinned fill the rest in rank order.
@@ -251,6 +246,125 @@ enum FileSearch {
             }
         }
         return Array((boosted + rest).prefix(SearchModel.maxResults))
+    }
+
+    /// The ranked-match comparator — the same ordering the launcher
+    /// search uses: match tier first (prefix beats infix beats fuzzy),
+    /// then the shorter filename, then the alignment score, then path —
+    /// the total order keeps identical queries producing identical lists.
+    private static func ranksBefore(_ lhs: Match, _ rhs: Match) -> Bool {
+        if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
+        let lhsLength = lhs.url.lastPathComponent.count
+        let rhsLength = rhs.url.lastPathComponent.count
+        if lhsLength != rhsLength { return lhsLength < rhsLength }
+        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        return lhs.url.path < rhs.url.path
+    }
+
+    // MARK: Streaming
+
+    /// New matches accumulate this many before an emission flushes —
+    /// `emitInterval` is the other gate, so a sparse result set still
+    /// surfaces quickly in a slow walk. `var`s so tests can shrink them.
+    static var emitStride = 48
+    /// Seconds between emissions while matches are pending — bounds how
+    /// long a found file can sit unreported during a long walk.
+    static var emitInterval: TimeInterval = 0.12
+
+    /// Streaming scan: `onBatch` fires on the caller's thread as the walk
+    /// finds matches — each payload is the *accumulated* ranked prefix so
+    /// far (pins first, at most `SearchModel.maxResults`), never a delta,
+    /// so the consumer can render every emission wholesale. A scan that
+    /// finds nothing emits nothing — the session's pending flag is the
+    /// "no matches" signal. Exclusion, boosting, dedupe, and caps are
+    /// identical to `scan` — the only difference is when results arrive.
+    static func stream(query: String, scopes: Set<Scope>,
+                       isCancelled: () -> Bool = { false },
+                       isExcluded: (String) -> Bool = { _ in false },
+                       isBoosted: (String) -> Bool = { _ in false },
+                       onBatch: ([Item]) -> Void) {
+        stream(query: query, roots: resolvedRoots(for: scopes),
+               isCancelled: isCancelled, isExcluded: isExcluded,
+               isBoosted: isBoosted, onBatch: onBatch)
+    }
+
+    /// `stream(query:scopes:)` with explicit plain roots — the
+    /// test-facing overload; production passes scopes.
+    static func stream(query: String, roots: [URL],
+                       isCancelled: () -> Bool = { false },
+                       isExcluded: (String) -> Bool = { _ in false },
+                       isBoosted: (String) -> Bool = { _ in false },
+                       onBatch: ([Item]) -> Void) {
+        stream(query: query, roots: roots.map { Root(url: $0) },
+               isCancelled: isCancelled, isExcluded: isExcluded,
+               isBoosted: isBoosted, onBatch: onBatch)
+    }
+
+    /// The streaming walk. Boosted matches partition as they're found —
+    /// per-id pinning is deterministic, so partition-at-append agrees
+    /// with `scan`'s partition-at-end. Items build once per match and
+    /// memoize by path: an `.app` row's `Bundle` read must not repeat
+    /// per emission.
+    static func stream(query: String, roots: [Root],
+                       isCancelled: () -> Bool = { false },
+                       isExcluded: (String) -> Bool = { _ in false },
+                       isBoosted: (String) -> Bool = { _ in false },
+                       onBatch: ([Item]) -> Void) {
+        let trimmed = SearchModel.normalizedQuery(query)
+        guard !trimmed.isEmpty, !isCancelled() else { return }
+
+        var visited = 0
+        var matched = 0
+        var seenPaths = Set<String>()
+        var boosted: [Match] = []
+        var rest: [Match] = []
+        var pending: [Match] = []
+        var itemsByPath: [String: Item] = [:]
+        var lastEmit = CFAbsoluteTimeGetCurrent()
+
+        func flush() {
+            guard !pending.isEmpty else { return }
+            for match in pending {
+                if isBoosted(Self.fileID(for: match.url)) {
+                    boosted.append(match)
+                } else {
+                    rest.append(match)
+                }
+            }
+            pending.removeAll(keepingCapacity: true)
+            boosted.sort(by: ranksBefore)
+            rest.sort(by: ranksBefore)
+            let snapshot = (boosted + rest).prefix(SearchModel.maxResults)
+                .map { match -> Item in
+                    let path = match.url.standardizedFileURL.path
+                    if let item = itemsByPath[path] { return item }
+                    let item = item(for: match.url)
+                    itemsByPath[path] = item
+                    return item
+                }
+            onBatch(snapshot)
+            lastEmit = CFAbsoluteTimeGetCurrent()
+        }
+
+        for root in roots {
+            walk(root, query: trimmed, isCancelled: isCancelled,
+                 isExcluded: isExcluded,
+                 visited: &visited, seenPaths: &seenPaths) { match in
+                matched += 1
+                pending.append(match)
+                if pending.count >= emitStride
+                    || CFAbsoluteTimeGetCurrent() - lastEmit >= emitInterval {
+                    flush()
+                }
+                return matched < maxMatches
+            }
+            if matched >= maxMatches || visited >= maxVisited
+                || isCancelled() { break }
+        }
+        // The walk ending mid-buffer flushes what's left — the last
+        // emission is the complete list. A cancelled walk doesn't flush:
+        // a truncated partial batch is not a result.
+        if !isCancelled() { flush() }
     }
 
     /// Ranked matches mapped to items — filename, `~`-abbreviated parent
@@ -280,11 +394,16 @@ enum FileSearch {
     /// One root, deep. `isHidden` is prefetched so the per-entry check stays
     /// cheap; a hidden directory is pruned via `skipDescendants` rather than
     /// `.skipsHiddenFiles`, which would drop hidden files too.
+    ///
+    /// `onMatch` receives each surviving hit and answers whether the walk
+    /// should continue — `scan` stops it at `maxMatches`, `stream` at the
+    /// same cap after flushing the batch.
     private static func walk(_ root: Root, query: String,
                              isCancelled: () -> Bool,
                              isExcluded: (String) -> Bool,
-                             visited: inout Int, matches: inout [Match],
-                             seenPaths: inout Set<String>) {
+                             visited: inout Int,
+                             seenPaths: inout Set<String>,
+                             onMatch: (Match) -> Bool) {
         guard let enumerator = FileManager.default.enumerator(
             at: root.url,
             includingPropertiesForKeys: [.isHiddenKey, .isDirectoryKey],
@@ -321,10 +440,10 @@ enum FileSearch {
             if let match = FuzzyMatcher.match(query, candidate: url.lastPathComponent) {
                 let path = url.standardizedFileURL.path
                 if !isExcluded(Self.fileID(forPath: path)),
-                   seenPaths.insert(path).inserted {
-                    matches.append(Match(url: url, tier: match.tier,
-                                         score: match.score))
-                    if matches.count >= maxMatches { return }
+                   seenPaths.insert(path).inserted,
+                   !onMatch(Match(url: url, tier: match.tier,
+                                  score: match.score)) {
+                    return
                 }
             }
         }

@@ -166,12 +166,18 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   stays findable. Hidden files in visible dirs still match. Debounced
   ~150 ms, cancellable, capped on visited entries and matches, stale
   results discarded; the panel shows a "Searching files…" hint while a
-  scan is in flight rather than a premature "no matches". ⏎ opens the
-  file, ⌘⏎ reveals it in Finder (also on app rows). Caveat: TCC-guarded
-  folders (Desktop,
+  scan is in flight rather than a premature "no matches". Matches
+  stream into the list as the walk finds them — a `FileSearchSession`
+  owns the debounce and the accumulated ranked snapshots (throttled by
+  count and interval), so progress is visible instead of one batch at
+  the end. ⏎ while the scan is still streaming detaches the session
+  into its own titled results window — the same walk keeps streaming
+  there, and its rows stay openable/revealable/pinnable/blockable;
+  closing the window retires the scan. Once the scan settles, ⏎ opens
+  the file and ⌘⏎ reveals it in Finder (also on app rows). Caveat:
+  TCC-guarded folders (Desktop,
   Documents, Downloads) need the system consent prompt on first access —
-  the walk silently skips what it can't read. Follow-up: stream matches
-  into the list as they're found rather than delivering one batch.
+  the walk silently skips what it can't read.
 - Fuzzy matcher: small fzf-style scorer (subsequence bonus, word-boundary
   bonus, case bonus). Pure function — unit-test it. Zap's type-to-search
   matching is the local precedent.

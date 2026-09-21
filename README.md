@@ -14,10 +14,12 @@ refine new commands without leaving the panel.
 - **Calculate** inline (`2+2*3`, unit-free — the answer row pins first, behind only a typed path).
 - **Find files** without Spotlight: `find notes`, `f notes`, or
   `search notes` walks the disk directly — hidden dirs and dependency
-  trees pruned, dependency build folders too. What it walks is yours to
-  choose (Settings → General → File Search): your home folder by default,
-  plus the whole startup disk and external drives if you enable them.
-  ⏎ opens, ⌘⏎ reveals in Finder.
+  trees pruned, dependency build folders too. Matches stream in as the
+  walk finds them. What it walks is yours to choose (Settings → General
+  → File Search): your home folder by default, plus the whole startup
+  disk and external drives if you enable them. ⏎ opens, ⌘⏎ reveals in
+  Finder — and ⏎ *while it's still searching* hands the scan to its own
+  window, where it keeps streaming and the results stay actionable.
 - **Paste a path** — `/tmp/build.log` or `~/Documents` — and the row is the
   path itself: ⏎ opens folders, reveals files (⌘⏎ inverts it). A file is
   never executed on a paste.
