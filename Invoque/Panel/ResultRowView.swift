@@ -27,6 +27,9 @@ struct ResultRowView: View {
     /// Whether the selection fill bleeds a soft glow past the row (the
     /// adaptive-accent bloom).
     let glows: Bool
+    /// Whether to show the source type badge — off in the detached file
+    /// window, which is already contextually about files.
+    var showSourceBadge: Bool = false
 
     /// Mouse-over feedback — a faint fill at a fraction of the selection
     /// opacity, so a pointer pick has an affordance before the click.
@@ -35,6 +38,7 @@ struct ResultRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            sourceBadge
             icon
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
@@ -88,6 +92,32 @@ struct ResultRowView: View {
 
     /// Fraction of the selection fill used for the hover affordance.
     private static let hoverFillFraction: Double = 0.45
+
+    /// A small colored dot indicating the result's source category.
+    /// Only shown for durable source types (app, command, system, file);
+    /// ephemeral rows (filter, path, calc, web) are noise-free.
+    @ViewBuilder
+    private var sourceBadge: some View {
+        if showSourceBadge, let color = sourceBadgeColor {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+                .frame(width: 12)
+        } else {
+            Color.clear.frame(width: 0)
+        }
+    }
+
+    private var sourceBadgeColor: Color? {
+        switch row.sourceType {
+        case .app: return .blue
+        case .command: return .green
+        case .system: return .gray
+        case .file: return .orange
+        case .filter: return .yellow
+        case .path, .calculator, .web, .unknown: return nil
+        }
+    }
 
     /// SF Symbols render as vectors; file/app icons arrive resolved as
     /// bitmaps, so they need explicit sizing. An empty `iconImage` is the

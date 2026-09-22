@@ -285,7 +285,8 @@ struct PanelView: View {
                                               ? selectedForeground(fill: fill).opacity(0.75)
                                               : secondaryColor,
                                           typeface: preferences.panelTypeface,
-                                          glows: isSelected && preferences.adaptiveAccent)
+                                          glows: isSelected && preferences.adaptiveAccent,
+                                          showSourceBadge: true)
                                 .id(row.id)
                                 .onTapGesture {
                                     model.select(row)
