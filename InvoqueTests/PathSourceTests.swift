@@ -171,10 +171,59 @@ final class PathSourceTests: XCTestCase {
         XCTAssertTrue(source.items(matching: "file://share.example.com/tmp").isEmpty)
     }
 
+    /// A path-shaped string whose tail doesn't exist offers the deepest
+    /// ancestor that does — the directory the user is navigating toward.
+    /// The row is the ancestor's own, identical to typing its path.
+    func testMissingTailOffersNearestAncestor() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-ancestor-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir,
+                                                withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        XCTAssertEqual(source.items(matching: dir.path + "/missing.txt"),
+                       source.items(matching: dir.path))
+    }
+
+    /// The ancestor walk crosses multiple missing components.
+    func testMissingDeepTailOffersNearestAncestor() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-ancestor-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir,
+                                                withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        XCTAssertEqual(source.items(matching: dir.path + "/a/b/c"),
+                       source.items(matching: dir.path))
+    }
+
+    /// A file component mid-path is still the deepest existing component —
+    /// `file.txt/child` offers the file itself, with the same row a direct
+    /// `file.txt` query produces (no phantom directory slash on the URL).
+    func testFileAncestorOffersTheFile() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invoque-\(UUID().uuidString).txt")
+        FileManager.default.createFile(atPath: file.path, contents: Data())
+        defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertEqual(source.items(matching: file.path + "/child"),
+                       source.items(matching: file.path))
+    }
+
+    /// `/` and `~` typed directly still produce their rows — the catch-all
+    /// suppression applies only to the ancestor fallback, never to an
+    /// exact hit.
+    func testCatchAllQueriesStillRow() throws {
+        let root = try XCTUnwrap(source.items(matching: "/").first)
+        XCTAssertEqual(root.action, .openFile(URL(fileURLWithPath: "/")))
+        XCTAssertFalse(source.items(matching: "~").isEmpty)
+    }
+
     /// A path-shaped string that doesn't exist emits nothing — `/us` while
-    /// typing `/usr` must not flash a phantom row.
+    /// typing `/usr` must not flash a phantom row: its only ancestor is
+    /// the catch-all root. Same for a missing component straight under
+    /// home, and for a `~user` name that can't expand.
     func testMissingPathEmitsNothing() {
         XCTAssertTrue(source.items(matching: "/definitely-not-here-\(UUID().uuidString)").isEmpty)
+        XCTAssertTrue(source.items(matching: "~/definitely-not-here-\(UUID().uuidString)").isEmpty)
+        XCTAssertTrue(source.items(matching: "~definitely-not-a-user-\(UUID().uuidString)/x").isEmpty)
     }
 
     /// Non-path queries — the overwhelming majority — never reach the
