@@ -1,8 +1,8 @@
 import Foundation
 
-/// When the query *is* an existing filesystem path — pasted or typed — the
-/// top row is that path itself, not a search candidate. The default action
-/// follows the kind: a folder **opens** (in Finder), a file **reveals**,
+/// When the query *is* a filesystem path — pasted or typed — the top row is
+/// the deepest existing component of it, not a search candidate. The default
+/// action follows the kind: a folder **opens** (in Finder), a file **reveals**,
 /// and anything that could execute — `.app` bundles, +x scripts and
 /// binaries — reveals too. Running a pasted path is the one thing Return
 /// must never do.
@@ -12,35 +12,72 @@ final class PathSource: ItemSource {
 
     // MARK: ItemSource
 
-    /// One row for a resolvable, existing path; nothing otherwise — a
-    /// mid-typing prefix like `/us` simply isn't a path yet.
+    /// One row for a resolvable path; nothing otherwise. The row is the
+    /// deepest component that exists — usually the query itself, else its
+    /// nearest ancestor (see `existingTarget`).
     func items(matching query: String) -> [Item] {
-        guard let url = Self.resolve(query) else { return [] }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path,
-                                             isDirectory: &isDirectory) else {
-            return []
-        }
+        guard let url = Self.resolve(query),
+              let target = Self.existingTarget(for: url) else { return [] }
         // Reuse FileSearch's row shape — filename title, `~`-abbreviated
         // parent, the real file-type icon (app packages included) — then
         // swap the identity and the action. The subtitle leads with the
         // verb so ⏎'s behavior is visible before it's committed.
-        let base = FileSearch.item(for: url)
+        let base = FileSearch.item(for: target.url)
         // A directory opens — unless opening it runs code (`isSafeToOpen`
         // covers .app bundles and +x files). Document packages like
         // .xcodeproj or .rtfd open in their editors, so they open.
-        let opens = isDirectory.boolValue && Self.isSafeToOpen(url)
+        let opens = target.isDirectory && Self.isSafeToOpen(target.url)
         let subtitle = opens
             ? "Open — \(base.subtitle)"
             : "Reveal in Finder — \(base.subtitle)"
         return [Item(
-            id: Item.pathIDPrefix + url.standardizedFileURL.path,
+            id: Item.pathIDPrefix + target.url.standardizedFileURL.path,
             title: base.title,
             subtitle: subtitle,
             icon: base.icon,
-            action: opens ? .openFile(url) : .revealInFinder(url),
+            action: opens ? .openFile(target.url) : .revealInFinder(target.url),
             matchText: base.matchText
         )]
+    }
+
+    /// The URL to turn into a row: `url` itself when it exists, else the
+    /// deepest ancestor that does — a path-shaped query is direct intent
+    /// even when its tail doesn't exist yet (the user is usually
+    /// navigating toward it, or about to create it). Root-level folders
+    /// and home are never emitted as fallbacks: they're the ancestor of
+    /// every `/…` or `~/…` slip (`/Users/jo` → `/Users`), so they'd pin a
+    /// catch-all row over real matches on each mistyped prefix. Typing
+    /// `/`, `~`, or a root-level folder itself still produces its row —
+    /// the suppression only covers the fallback.
+    static func existingTarget(for url: URL) -> (url: URL, isDirectory: Bool)? {
+        var candidate = url
+        var fellBack = false
+        var isDirectory: ObjCBool = false
+        while !FileManager.default.fileExists(atPath: candidate.path,
+                                              isDirectory: &isDirectory) {
+            let parent = candidate.deletingLastPathComponent()
+            // `deletingLastPathComponent` bottoms out at the URL itself —
+            // stop there rather than looping on `/` forever.
+            guard parent.path != candidate.path else { return nil }
+            candidate = parent
+            fellBack = true
+        }
+        if fellBack && Self.isCatchAll(candidate) { return nil }
+        // A carved-off ancestor always carries the directory hint —
+        // re-canonicalize so a *file* ancestor (the `file.txt` in
+        // `…/file.txt/x`) doesn't keep a phantom trailing slash.
+        var path = candidate.path
+        while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+        return (URL(fileURLWithPath: path), isDirectory.boolValue)
+    }
+
+    /// Root-level folders and `~` — the ancestors every mistyped absolute
+    /// or tilde path converges on.
+    private static func isCatchAll(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        return path.split(separator: "/").count <= 1
+            || path == FileManager.default.homeDirectoryForCurrentUser
+                .standardizedFileURL.path
     }
 
     /// Whether `NSWorkspace.open` on `url` could execute code — the one
@@ -87,9 +124,11 @@ final class PathSource: ItemSource {
     // MARK: Resolution
 
     /// The query as a file URL, or nil when it isn't a path at all:
-    /// `/absolute`, `~/…` (and `~user/…`), or a `file://` URL. Bare `~`
-    /// resolves to home — still a real path. A `file://` URL's host must be
-    /// empty/`localhost`; anything else isn't a local path.
+    /// `/absolute`, `~/…` (and `~user/…` for a real user — an
+    /// unexpandable name comes back unchanged and fails the absolute
+    /// check), or a `file://` URL. Bare `~` resolves to home — still a
+    /// real path. A `file://` URL's host must be empty/`localhost`;
+    /// anything else isn't a local path.
     static func resolve(_ query: String) -> URL? {
         if query.hasPrefix("file://") {
             // A parsed `?`/`#` would silently truncate the path — those
@@ -122,7 +161,9 @@ final class PathSource: ItemSource {
         }
         guard query.hasPrefix("/") || query.hasPrefix("~") else { return nil }
         let path = (query as NSString).expandingTildeInPath
-        guard !path.isEmpty else { return nil }
+        // An unexpandable `~user` comes back unchanged — non-absolute,
+        // which `fileURLWithPath` would read as cwd-relative.
+        guard path.hasPrefix("/") else { return nil }
         return URL(fileURLWithPath: path)
     }
 }

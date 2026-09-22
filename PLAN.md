@@ -151,7 +151,10 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   exact-keyword only, never on partials, values fresh per query, ⏎
   copies), `SystemSource`
   (lock/sleep/restart/empty trash…), `PathSource` (a pasted/typed
-  filesystem path that exists pins first — ⏎ opens folders, reveals
+  filesystem path pins first — the row is the deepest component that
+  exists, falling back to the nearest ancestor when the tail doesn't
+  yet, except root-level folders and `~` itself which are never offered
+  as fallbacks — ⏎ opens folders, reveals
   files in Finder; ⌘⏎ is the inverse), `URLSource` (a pasted/typed
   http(s) URL pins first alongside paths — ⏎ opens it in the browser,
   so the web fallback can't turn an address into a search), `WebSource`
