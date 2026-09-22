@@ -162,9 +162,29 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         permissionRequest = nil
     }
 
+    /// A restart, shutdown, or trash action waiting for a trusted in-panel
+    /// confirmation. The original row is retained so frecency records only
+    /// the action that eventually runs.
+    @Published private(set) var systemActionConfirmation: SystemActionConfirmation?
+
+    func confirmSystemAction() {
+        guard let confirmation = systemActionConfirmation else { return }
+        systemActionConfirmation = nil
+        onSubmit?(confirmation.row)
+    }
+
+    func dismissSystemActionConfirmation() {
+        systemActionConfirmation = nil
+    }
+
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
+            // Editing means the user moved on from the action being reviewed.
+            // A pending consent prompt is just as stale as an action card —
+            // go through the same dismissal path as Esc and Decline.
+            dismissPermissionRequest()
+            dismissSystemActionConfirmation()
             refreshResults()
         }
     }
@@ -821,8 +841,9 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// don't re-list directly, so there's exactly one refresh per write.
     @discardableResult
     func togglePin(on row: ResultRow? = nil) -> String? {
-        guard permissionRequest == nil, !makerIsActive,
-              let row = row ?? selectedRow, canManage(row) else { return nil }
+        guard permissionRequest == nil, systemActionConfirmation == nil,
+              !makerIsActive, let row = row ?? selectedRow,
+              canManage(row) else { return nil }
         let pinned = entryRules.togglePin(row.id, row.title)
         return pinned ? "Pinned \(row.title)" : "Unpinned \(row.title)"
     }
@@ -830,8 +851,9 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// The `togglePin` twin for blocking — the row vanishes on the spot.
     @discardableResult
     func toggleBlock(on row: ResultRow? = nil) -> String? {
-        guard permissionRequest == nil, !makerIsActive,
-              let row = row ?? selectedRow, canManage(row) else { return nil }
+        guard permissionRequest == nil, systemActionConfirmation == nil,
+              !makerIsActive, let row = row ?? selectedRow,
+              canManage(row) else { return nil }
         let blocked = entryRules.toggleBlock(row.id, row.title)
         return blocked ? "Blocked \(row.title)" : "Unblocked \(row.title)"
     }
@@ -916,9 +938,10 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     func reset(clearQuery: Bool) {
         if clearQuery { query = "" }
         selection = 0
-        // A pending consent prompt belongs to the last summon — it must
-        // not greet the next one.
+        // Pending confirmations belong to the last summon — they must not
+        // greet the next one.
         permissionRequest = nil
+        systemActionConfirmation = nil
     }
 
     /// The panel dismissed — stop work still burning for a list nobody can
@@ -936,7 +959,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
 
     /// Moves the selection by `delta` rows, wrapping at both ends.
     func moveSelection(by delta: Int) {
-        guard !results.isEmpty else { return }
+        guard permissionRequest == nil, systemActionConfirmation == nil,
+              !results.isEmpty else { return }
         let count = results.count
         // Double modulo: plain `%` would go out of range for negative deltas.
         selection = ((selection + delta) % count + count) % count
@@ -955,9 +979,9 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// mode instead of dismissing.
     ///
     /// `commandModifier` distinguishes plain ⏎ from ⌘⏎ — ⌘⏎ grants a
-    /// pending consent request (so a habitual double-⏎ can't silently
-    /// record a permanent `shell` grant) and reveals a file/app row in
-    /// Finder instead of opening it.
+    /// pending consent request or confirms a consequential system action
+    /// (so a habitual double-⏎ stays harmless), and reveals a file/app row
+    /// in Finder instead of opening it.
     ///
     /// `detachesPendingScan` is the ⏎-mid-scan handoff. A tap on a row
     /// passes `false`: the tap is an explicit pick of *that* row, so it
@@ -969,6 +993,14 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         // row is selected underneath the card"; ⌘⏎ means Allow.
         if permissionRequest != nil {
             if commandModifier { confirmPermissionRequest() }
+            return
+        }
+        // Like capability consent, a second plain Return is neutral. Only
+        // the explicit chord or the card button can release the action —
+        // deliberately, a repeated ⌘⏎ (arm, then confirm) still executes,
+        // mirroring the consent chord.
+        if systemActionConfirmation != nil {
+            if commandModifier { confirmSystemAction() }
             return
         }
         // While the maker owns the panel ⏎ means "advance the maker flow"
@@ -1002,9 +1034,14 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             query = keyword + " "
             return
         }
+        if let row = selectedRow,
+           let confirmation = SystemActionConfirmation(row: row) {
+            systemActionConfirmation = confirmation
+            return
+        }
         // ⌘⏎ on a file or app reveals it in Finder instead of opening —
-        // Alfred's `find` gesture. The consent check above already claimed
-        // ⌘⏎, so a pending prompt can't be bypassed by a file row.
+        // Alfred's `find` gesture. Confirmation checks above already claimed
+        // ⌘⏎, so a pending card can't be bypassed by a file row.
         if commandModifier, let row = selectedRow {
             switch row.action {
             case .openFile(let url), .openApp(let url):

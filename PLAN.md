@@ -153,6 +153,9 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   for X" against the configured `SearchEngine` — Settings → General).
 - `CommandStore` performs its initial disk scan and watcher setup off-main;
   the panel can render immediately and `CommandSource` republishes on arrival.
+- Consequential system actions (restart, shutdown, empty Trash) replace the
+  list with a trusted confirmation card. Only its button or ⌘⏎ dispatches;
+  plain Return remains neutral. Lock and sleep stay immediate.
 - File search: `find <query>` / `f <query>` / `search <query>` routes to a
   built-in file mode — a direct `FileManager` walk, **not**
   Spotlight/NSMetadataQuery (metadata misses excluded locations). What it

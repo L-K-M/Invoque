@@ -18,28 +18,28 @@ final class SystemSource: ItemSource {
         switch action {
         case .lockScreen:
             return make(action: action, title: "Lock Screen", subtitle: "Lock your Mac (Ctrl-Cmd-Q)",
-                        symbol: "lock.fill", keywords: "lock display secure screen saver")
+                        keywords: "lock display secure screen saver")
         case .sleep:
             return make(action: action, title: "Sleep", subtitle: "Put your Mac to sleep",
-                        symbol: "moon.fill", keywords: "sleep rest nap power save")
+                        keywords: "sleep rest nap power save")
         case .restart:
             return make(action: action, title: "Restart", subtitle: "Restart your Mac",
-                        symbol: "arrow.counterclockwise", keywords: "restart reboot boot")
+                        keywords: "restart reboot boot")
         case .shutDown:
             return make(action: action, title: "Shut Down", subtitle: "Shut down your Mac",
-                        symbol: "power", keywords: "shut down shutdown power off halt")
+                        keywords: "shut down shutdown power off halt")
         case .emptyTrash:
-            return make(action: action, title: "Empty Trash", subtitle: "Permanently delete everything in the Trash",
-                        symbol: "trash.fill", keywords: "empty trash delete clear bin remove")
+            return make(action: action, title: "Empty Trash", subtitle: "Permanently delete items in your home Trash",
+                        keywords: "empty trash delete clear bin remove")
         }
     }
 
-    private static func make(action: Item.SystemAction, title: String, subtitle: String, symbol: String, keywords: String) -> Item {
+    private static func make(action: Item.SystemAction, title: String, subtitle: String, keywords: String) -> Item {
         Item(
             id: Item.systemIDPrefix + action.rawValue,
             title: title,
             subtitle: subtitle,
-            icon: .symbol(symbol),
+            icon: .symbol(action.symbolName),
             action: .system(action),
             matchText: "\(title) \(keywords)"
         )

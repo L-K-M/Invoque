@@ -115,5 +115,27 @@ struct Item: Identifiable, Equatable {
         case restart
         case shutDown
         case emptyTrash
+
+        /// Actions that can destroy data or interrupt the user's session.
+        var requiresConfirmation: Bool {
+            switch self {
+            case .restart, .shutDown, .emptyTrash:
+                return true
+            case .lockScreen, .sleep:
+                return false
+            }
+        }
+
+        /// Canonical SF Symbol — the source row and the confirmation card
+        /// both derive from this so their glyphs can never drift.
+        var symbolName: String {
+            switch self {
+            case .restart: return "arrow.counterclockwise"
+            case .shutDown: return "power"
+            case .emptyTrash: return "trash.fill"
+            case .lockScreen: return "lock.fill"
+            case .sleep: return "moon.fill"
+            }
+        }
     }
 }

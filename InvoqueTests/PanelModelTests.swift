@@ -1324,6 +1324,214 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(submitted?.action, .openFile(url))
     }
 
+    func testConsequentialSystemActionsRequireCommandReturnConfirmation() {
+        for action in [Item.SystemAction.restart, .shutDown, .emptyTrash] {
+            let model = makeModel(items: [])
+            var submitted: ResultRow?
+            model.onSubmit = { submitted = $0 }
+            model.showCommandResults([ResultRow(
+                id: Item.systemIDPrefix + action.rawValue,
+                title: action.rawValue,
+                subtitle: "",
+                icon: .symbol("exclamationmark.triangle"),
+                action: .system(action))])
+
+            model.submit()
+            XCTAssertNil(submitted, "\(action) ran without confirmation")
+            XCTAssertEqual(model.systemActionConfirmation?.action, action)
+
+            // A habitual double-Return remains neutral.
+            model.submit()
+            XCTAssertNil(submitted, "\(action) ran on a second plain Return")
+
+            model.submit(commandModifier: true)
+            XCTAssertEqual(submitted?.action, .system(action),
+                           "\(action) did not run after explicit confirmation")
+        }
+    }
+
+    func testCommandReturnAloneCannotBypassSystemActionConfirmation() {
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: Item.systemIDPrefix + Item.SystemAction.emptyTrash.rawValue,
+            title: "Empty Trash",
+            subtitle: "",
+            icon: .symbol("trash"),
+            action: .system(.emptyTrash))])
+
+        model.submit(commandModifier: true)
+
+        XCTAssertNil(submitted)
+        XCTAssertEqual(model.systemActionConfirmation?.action, .emptyTrash)
+    }
+
+    func testSafeSystemActionsRemainImmediate() {
+        for action in [Item.SystemAction.lockScreen, .sleep] {
+            let model = makeModel(items: [])
+            var submitted: ResultRow?
+            model.onSubmit = { submitted = $0 }
+            model.showCommandResults([ResultRow(
+                id: Item.systemIDPrefix + action.rawValue,
+                title: action.rawValue,
+                subtitle: "",
+                icon: .symbol("lock"),
+                action: .system(action))])
+
+            model.submit()
+
+            XCTAssertNotNil(submitted, "\(action) did not run immediately")
+            XCTAssertEqual(submitted?.action, .system(action),
+                           "\(action) submitted the wrong action")
+        }
+    }
+
+    func testSystemActionConfirmationClassificationIsExhaustive() {
+        let consequential: [Item.SystemAction] = [.restart, .shutDown, .emptyTrash]
+
+        for action in Item.SystemAction.allCases {
+            let expected = consequential.contains(action)
+            XCTAssertEqual(action.requiresConfirmation, expected,
+                           "\(action) confirmation classification drifted")
+            let row = ResultRow(
+                id: Item.systemIDPrefix + action.rawValue,
+                title: action.rawValue,
+                subtitle: "",
+                icon: .symbol("gear"),
+                action: .system(action))
+            let confirmation = SystemActionConfirmation(row: row)
+            XCTAssertEqual(confirmation != nil, expected)
+            if let confirmation {
+                XCTAssertFalse(confirmation.title.isEmpty)
+                XCTAssertFalse(confirmation.detail.isEmpty)
+                XCTAssertFalse(confirmation.confirmLabel.isEmpty)
+            }
+        }
+    }
+
+    func testConfirmationCardsFreezeSelection() throws {
+        let model = makeModel(items: [])
+        model.showCommandResults([
+            ResultRow(id: "one", title: "One", subtitle: "",
+                      icon: .symbol("1.circle"), action: .copyText("one")),
+            ResultRow(id: "two", title: "Two", subtitle: "",
+                      icon: .symbol("2.circle"), action: .copyText("two")),
+        ])
+        let grants = makeFreshGrants()
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.selection, 0)
+
+        model.dismissPermissionRequest()
+        model.showCommandResults([
+            ResultRow(id: Item.systemIDPrefix + "restart", title: "Restart",
+                      subtitle: "", icon: .symbol("arrow.clockwise"),
+                      action: .system(.restart)),
+            ResultRow(id: Item.systemIDPrefix + "sleep", title: "Sleep",
+                      subtitle: "", icon: .symbol("moon"),
+                      action: .system(.sleep)),
+        ])
+        model.submit()
+        XCTAssertEqual(model.systemActionConfirmation?.action, .restart)
+
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.selection, 0)
+    }
+
+    func testEditingQueryDismissesSystemActionConfirmation() {
+        let model = makeModel(items: [])
+        model.showCommandResults([ResultRow(
+            id: Item.systemIDPrefix + "restart",
+            title: "Restart",
+            subtitle: "",
+            icon: .symbol("arrow.clockwise"),
+            action: .system(.restart))])
+        model.submit()
+        XCTAssertNotNil(model.systemActionConfirmation)
+
+        model.query = "something else"
+
+        XCTAssertNil(model.systemActionConfirmation)
+    }
+
+    /// A query edit dismisses a pending consent prompt the same way it
+    /// dismisses a system-action card — the prompt belongs to what was typed.
+    func testEditingQueryDismissesPermissionRequest() throws {
+        let grants = makeFreshGrants()
+        let model = makeModel(items: [])
+        model.permissionRequest = try makePermissionRequest(grants: grants)
+
+        model.query = "something else"
+
+        XCTAssertNil(model.permissionRequest)
+    }
+
+    /// A pending confirmation belongs to the summon that produced it —
+    /// the next summon starts clean.
+    func testResetClearsPendingSystemActionConfirmationBetweenSummons() {
+        let model = makeModel(items: [])
+        model.showCommandResults([ResultRow(
+            id: Item.systemIDPrefix + "restart",
+            title: "Restart", subtitle: "",
+            icon: .symbol("arrow.clockwise"),
+            action: .system(.restart))])
+        model.submit()
+        XCTAssertNotNil(model.systemActionConfirmation)
+
+        model.reset(clearQuery: true)
+
+        XCTAssertNil(model.systemActionConfirmation,
+                     "a pending confirmation must not greet the next summon")
+    }
+
+    /// The card's glyph must mirror the row the user picked — drift (filled
+    /// vs outline, a flipped arrow) undermines "this is the action you chose".
+    func testConfirmationCardSymbolMirrorsSourceRow() {
+        var checked = 0
+        for item in SystemSource().items(matching: "") {
+            guard case .system(let action) = item.action else { continue }
+            let confirmation = SystemActionConfirmation(row: ResultRow(item: item))
+            guard action.requiresConfirmation else {
+                XCTAssertNil(confirmation,
+                             "\(action) must run without a confirmation card")
+                continue
+            }
+            guard case .symbol(let rowSymbol) = item.icon else {
+                XCTFail("\(action) row has no symbol for the card to mirror")
+                continue
+            }
+            checked += 1
+            XCTAssertEqual(confirmation?.symbolName, rowSymbol,
+                           "card glyph drifted from the \(action) row")
+        }
+        XCTAssertGreaterThan(checked, 0,
+                             "empty query returned no confirmation rows — test ran vacuously")
+    }
+
+    func testCancellingSystemActionConfirmationRearmsInsteadOfRunning() {
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: Item.systemIDPrefix + "restart",
+            title: "Restart",
+            subtitle: "",
+            icon: .symbol("arrow.clockwise"),
+            action: .system(.restart))])
+        model.submit()
+        XCTAssertNotNil(model.systemActionConfirmation)
+
+        model.dismissSystemActionConfirmation()
+        XCTAssertNil(model.systemActionConfirmation)
+
+        model.submit(commandModifier: true)
+
+        XCTAssertNotNil(model.systemActionConfirmation)
+        XCTAssertNil(submitted)
+    }
+
     // MARK: Maker routing
 
     /// A MakerModel whose LLM is a stub — generation resolves to a clean
