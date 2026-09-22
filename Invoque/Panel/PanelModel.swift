@@ -84,6 +84,10 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// can't reroute the query into a different command's list.
     var commandLookup: ((String) -> Command?)?
 
+    /// The command store — needed by `edit <name>` to look up existing commands.
+    /// Wired from `PanelController` after init.
+    weak var commandStore: CommandStore?
+
     /// Runs filter-mode commands. Injected for the same reason as
     /// `filterLookup`; a real `CommandRunner` works in tests too.
     var commandRunner: CommandRunner? {
@@ -237,6 +241,10 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// search, same convention as filter-mode commands.
     static let makerKeywords = ["make", "mk"]
 
+    /// Keywords that route the query into the Maker's edit mode —
+    /// `edit <command name>` loads an existing command's files for modification.
+    static let editKeywords = ["edit"]
+
     /// The make-request text when `query` is `make <prompt>`/`mk <prompt>`,
     /// else nil. Checked before filter routing — the built-in wins if a
     /// command ever claims "make" as its keyword.
@@ -250,10 +258,25 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         return nil
     }
 
+    /// The command name when `query` is `edit <command name>`, else nil —
+    /// trimmed, so `edit  ` stays a normal search rather than looking up
+    /// an empty name. Checked before filter routing.
+    var editPrompt: String? {
+        for keyword in Self.editKeywords {
+            let prefix = keyword + " "
+            if query.hasPrefix(prefix) {
+                let name = String(query.dropFirst(prefix.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return name.isEmpty ? nil : name
+            }
+        }
+        return nil
+    }
+
     /// Whether the Maker view owns the panel right now — the prefix is
     /// typed AND a maker is wired (unwired, "make x" stays a normal search).
     var makerIsActive: Bool {
-        makerPrompt != nil && maker != nil
+        (makerPrompt != nil || editPrompt != nil) && maker != nil
     }
 
     // MARK: File-search routing
@@ -1094,8 +1117,13 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         }
         // While the maker owns the panel ⏎ means "advance the maker flow"
         // (generate when idle, save when clean) — `MakerModel` decides.
-        if makerIsActive, let maker, let prompt = makerPrompt {
-            Task { await maker.primarySubmit(prompt: prompt) }
+        if makerIsActive, let maker {
+            if let prompt = makerPrompt {
+                Task { await maker.primarySubmit(prompt: prompt) }
+            } else if let commandName = editPrompt {
+                Task { await maker.primaryEditSubmit(commandName: commandName,
+                                                     store: commandStore) }
+            }
             return
         }
         // While a file scan is streaming, its rows are provisional — ⏎

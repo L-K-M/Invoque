@@ -651,4 +651,100 @@ final class MakerModelTests: XCTestCase {
         let phase = await model.phase
         XCTAssertEqual(phase, .saved)
     }
+
+    // MARK: Edit mode
+
+    /// Writes a command directory (manifest + entry + extras) into the
+    /// store's root and rescans so `command(named:)` resolves it.
+    private func writeInstalledCommand(_ name: String,
+                                       entry: String? = nil,
+                                       extraFiles: [String: String] = [:]) throws {
+        let directory = root.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory,
+                                                withIntermediateDirectories: true)
+        try """
+        {"schemaVersion": 1, "name": "\(name)", "title": "\(name)",
+         "runtime": "js", "entry": "main.js", "mode": "action"}
+        """.write(to: directory.appendingPathComponent("command.json"),
+                  atomically: true, encoding: .utf8)
+        try (entry ?? "export default async function run() { return { title: \"ok\" }; }")
+            .write(to: directory.appendingPathComponent("main.js"),
+                   atomically: true, encoding: .utf8)
+        for (fileName, contents) in extraFiles {
+            let url = directory.appendingPathComponent(fileName)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+        }
+        store.scan()
+    }
+
+    /// `edit` loads the command's files as the session draft — no LLM
+    /// call fires on load (the model hasn't heard what to change), and a
+    /// clean draft is immediately saveable.
+    func testStartEditingLoadsDraftWithoutGenerating() async throws {
+        try writeInstalledCommand("fmt", extraFiles: ["notes.txt": "hello"])
+        let client = StubClient()
+        let model = makeModel(client)
+
+        await model.startEditing(commandName: "fmt", store: store)
+
+        let phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+        let draft = await model.draft
+        XCTAssertEqual(draft?.manifest?.name, "fmt")
+        XCTAssertEqual(draft?.generation.extraFiles["notes.txt"], "hello")
+        XCTAssertTrue(client.calls.isEmpty,
+                      "Loading a draft must not spend an LLM call")
+    }
+
+    /// The first feedback turn is the one that regenerates — the seeded
+    /// transcript already carries the loaded files.
+    func testStartEditingFeedbackRegenerates() async throws {
+        try writeInstalledCommand("fmt")
+        let client = StubClient()
+        client.responses = [.success(generationOutput())]
+        let model = makeModel(client)
+
+        await model.startEditing(commandName: "fmt", store: store)
+        await model.sendFeedback("also uppercase the result")
+
+        XCTAssertEqual(client.calls.count, 1)
+        let transcript = client.calls[0]
+        XCTAssertEqual(transcript.count, 3)
+        XCTAssertEqual(transcript[0].role, .system)
+        XCTAssertTrue(transcript[1].content.contains("main.js"),
+                      "the seed turn must carry the loaded files")
+        XCTAssertEqual(transcript[2].content, "also uppercase the result")
+        let phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+    }
+
+    /// A name that doesn't match any installed command fails visibly —
+    /// no generation, no silent draft.
+    func testStartEditingUnknownCommandFails() async {
+        let client = StubClient()
+        let model = makeModel(client)
+        await model.startEditing(commandName: "nope", store: store)
+        let phase = await model.phase
+        XCTAssertEqual(phase, .failed)
+        let lastError = await model.lastError
+        XCTAssertNotNil(lastError)
+        XCTAssertTrue(client.calls.isEmpty)
+    }
+
+    /// ⏎ while an `edit` query owns the panel: load when idle, save when
+    /// the draft is clean.
+    func testPrimaryEditSubmitLoadsThenSaves() async throws {
+        try writeInstalledCommand("fmt")
+        let model = makeModel(StubClient())
+
+        await model.primaryEditSubmit(commandName: "fmt", store: store)
+        var phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
+        await model.primaryEditSubmit(commandName: "fmt", store: store)
+        phase = await model.phase
+        XCTAssertEqual(phase, .saved)
+        XCTAssertNotNil(store.command(named: "fmt"))
+    }
 }

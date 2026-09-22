@@ -93,6 +93,7 @@ final class PanelController: NSObject, @unchecked Sendable {
             self?.detachedSearchWindow.entryRulesDidChange()
         }
         model.searchModel = searchModel
+        model.commandStore = commandStore
     }
 
     deinit {

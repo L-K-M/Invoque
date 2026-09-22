@@ -142,6 +142,124 @@ final class MakerModel: ObservableObject {
         await generate()
     }
 
+    /// What ⏎ in the search field means while an `edit` query owns the
+    /// panel: load the command when no session is live, save when the
+    /// draft is clean — the `primarySubmit` twin for edit mode.
+    func primaryEditSubmit(commandName: String, store: CommandStore?) async {
+        switch phase {
+        case .idle, .saved, .failed:
+            await startEditing(commandName: commandName, store: store)
+        case .readyToSave:
+            save()
+        case .generating, .testing, .draft:
+            break
+        }
+    }
+
+    /// Loads an existing command's files as the session's draft — the
+    /// `edit <name>` entry point. No generation fires on load: the model
+    /// would rewrite the command before hearing what the user wants, so
+    /// the draft presents the current files and the first feedback
+    /// message describes the change (the transcript is seeded so that
+    /// regeneration has the files in context).
+    func startEditing(commandName: String, store: CommandStore?) async {
+        guard phase != .generating else { return }
+        guard let store else {
+            lastError = "Command store unavailable"
+            phase = .failed
+            return
+        }
+        guard let command = store.command(named: commandName) else {
+            lastError = "Command '\(commandName)' not found"
+            phase = .failed
+            return
+        }
+        reset()
+        self.prompt = "edit \(commandName)"
+
+        let generation: GeneratedCommand
+        do {
+            generation = try Self.loadGeneration(for: command)
+        } catch {
+            lastError = "Failed to load command files: \(error.localizedDescription)"
+            phase = .failed
+            return
+        }
+        let outcome = GeneratedCommandValidator.validate(generation)
+        draft = Draft(generation: generation, manifest: outcome.manifest,
+                      issues: outcome.issues)
+        phase = draft?.isValid == true ? .readyToSave : .draft
+
+        // The first feedback turn regenerates against this transcript —
+        // the seed carries the current files in the delimiter format the
+        // model itself emits, so it answers with the full edited set.
+        transcript = [
+            LLMMessage(.system, SystemPrompt.text),
+            LLMMessage(.user, Self.editingSeed(for: command, generation: generation)),
+        ]
+    }
+
+    /// The command's files as a `GeneratedCommand`: `command.json` plus
+    /// the declared entry plus every other regular file — so an edit
+    /// round-trip can't silently drop a helper the generation didn't
+    /// carry (the writer prunes dropped files into `history/`).
+    /// Runtime state (`data/`, `history/`) and anything that isn't
+    /// UTF-8 text stays out — a `GeneratedCommand` can't represent it.
+    private static func loadGeneration(for command: Command) throws -> GeneratedCommand {
+        let directory = command.directory.standardizedFileURL
+        let manifestJSON = try String(
+            contentsOf: directory.appendingPathComponent("command.json"),
+            encoding: .utf8)
+        let entrySource = try String(contentsOf: command.entryURL, encoding: .utf8)
+
+        var extraFiles: [String: String] = [:]
+        // `subpathsOfDirectory` returns paths relative to the command
+        // directory — unlike enumerator URLs, no symlink resolution in
+        // the base path can skew the comparison.
+        let subpaths = (try? FileManager.default
+            .subpathsOfDirectory(atPath: directory.path)) ?? []
+        for relative in subpaths {
+            let first = relative.split(separator: "/").first.map(String.init) ?? ""
+            // Runtime state stays out of the draft.
+            if first == "data" || first == "history" { continue }
+            let url = directory.appendingPathComponent(relative)
+            let values = try? url.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            // A symlink is skipped, not followed — the writer never
+            // reproduces links, and mirroring target contents into the
+            // draft would save them as plain files.
+            guard values?.isSymbolicLink != true,
+                  values?.isRegularFile == true else { continue }
+            guard relative != "command.json",
+                  relative != command.manifest.entry,
+                  let contents = try? String(contentsOf: url, encoding: .utf8)
+            else { continue }
+            extraFiles[relative] = contents
+        }
+        return GeneratedCommand(manifestJSON: manifestJSON,
+                                entryName: command.manifest.entry,
+                                entrySource: entrySource,
+                                extraFiles: extraFiles)
+    }
+
+    /// The seed turn for an edit session: the current files plus the
+    /// framing the next (feedback) message needs — "apply this change".
+    private static func editingSeed(for command: Command,
+                                    generation: GeneratedCommand) -> String {
+        let files = generation.files.sorted { $0.key < $1.key }
+            .map { "--- \($0.key) ---\n\($0.value)" }
+            .joined(separator: "\n\n")
+        return """
+            The user is editing the existing command "\(command.manifest.title)" \
+            (name: \(command.manifest.name)). Its current files:
+
+            \(files)
+
+            Apply the changes the user describes next. Keep the name and \
+            structure unless the user asks otherwise.
+            """
+    }
+
     /// Regenerates with the existing transcript — the right retry for a
     /// transport failure, where the conversation is still the correct one
     /// and starting over would just lose it.

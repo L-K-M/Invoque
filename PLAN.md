@@ -428,8 +428,10 @@ make command to format clipboard json
                                         history/; store.scan() makes it live
 ```
 
-- `edit command <name>` enters the same flow seeded with existing files —
-  **not yet implemented** (the writer's history/ snapshotting supports it).
+- `edit <name>` enters the same flow seeded with the command's existing
+  files: they load as the session's draft (inspect, test, save as-is) —
+  no generation fires until the user's first feedback message says what
+  to change (the writer's history/ snapshotting covers rollback).
 - System prompt (`Maker/SystemPrompt.swift`): compact `invoque.d.ts` of the
   API, manifest schema, one worked example, and rules (no sync loops, declare
   permissions honestly, prefer `action` unless listing). Kept in sync with
