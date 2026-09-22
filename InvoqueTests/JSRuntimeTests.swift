@@ -330,6 +330,28 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertEqual(second.title, "value")
     }
 
+    func testStorageSetRepairsMalformedJSON() async throws {
+        let command = try makeCommand(source: """
+            async function run() {
+                invoque.storage.set("key", "value");
+                return { title: "stored" };
+            }
+            """)
+        let dataDirectory = directory.appendingPathComponent("data")
+        try FileManager.default.createDirectory(
+            at: dataDirectory,
+            withIntermediateDirectories: true)
+        let storageFile = dataDirectory.appendingPathComponent("storage.json")
+        try Data("not json".utf8).write(to: storageFile)
+
+        let result = await runtime.run(command: command)
+
+        XCTAssertNil(result.error)
+        let stored = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: storageFile)) as? [String: String])
+        XCTAssertEqual(stored, ["key": "value"])
+    }
+
     func testConcurrentStorageWritesKeepBothKeys() async throws {
         // Two invocations writing different keys at once: whichever commits
         // second must merge, not overwrite the other's key.

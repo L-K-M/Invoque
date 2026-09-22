@@ -30,6 +30,9 @@ struct CommandWriter {
         /// The manifest's `entry` isn't among the generated files — checked
         /// pre-flight so nothing is written at all in this state.
         case entryNotPresent(String)
+        /// Existing symlinks or unexpected command-owned items make the
+        /// destination unsafe to update.
+        case unsafeCommandDirectory(String)
 
         var errorDescription: String? {
             switch self {
@@ -41,6 +44,8 @@ struct CommandWriter {
                 return "generated command.json isn't a valid manifest: \(detail)"
             case .entryNotPresent(let entry):
                 return "manifest entry '\(entry)' isn't among the generated files"
+            case .unsafeCommandDirectory(let detail):
+                return "refusing to update an unsafe command directory: \(detail)"
             }
         }
     }
@@ -121,6 +126,21 @@ struct CommandWriter {
             throw SaveError.entryNotPresent(persisted.entry)
         }
 
+        // Existing command-owned paths must not redirect the snapshot or
+        // generated writes through symlinks. This runs before any mutation.
+        do {
+            _ = try CommandDirectoryPolicy.validatedStorageURL(in: directory)
+            var destinations = Array(generation.files.keys)
+            destinations.append(contentsOf: [
+                "command.json", "data", "data/storage.json", "history",
+            ])
+            try CommandDirectoryPolicy.validateWriteDestinations(
+                in: directory,
+                relativePaths: destinations)
+        } catch {
+            throw SaveError.unsafeCommandDirectory(error.localizedDescription)
+        }
+
         let snapshot = try snapshotExisting(in: directory,
                                             fileManager: fileManager)
         let manifestData = try normalizedManifest(generation.manifestJSON,
@@ -196,6 +216,20 @@ struct CommandWriter {
             .flatMap { try? JSONDecoder().decode(CommandManifest.self, from: $0) }
         snapshot.revision = oldManifest?.generated?.revision ?? 0
         snapshot.wasGenerated = oldManifest?.generated != nil
+
+        if let oldEntry = oldManifest?.entry {
+            guard Self.isSafeRelativePath(oldEntry) else {
+                throw SaveError.unsafeCommandDirectory(
+                    "manifest entry '\(oldEntry)' is not a safe relative path")
+            }
+            do {
+                try CommandDirectoryPolicy.validateWriteDestinations(
+                    in: directory,
+                    relativePaths: [oldEntry])
+            } catch {
+                throw SaveError.unsafeCommandDirectory(error.localizedDescription)
+            }
+        }
 
         let snapshotURL = uniqueSnapshotDirectory(in: directory, fileManager: fileManager)
         try fileManager.createDirectory(at: snapshotURL, withIntermediateDirectories: true)

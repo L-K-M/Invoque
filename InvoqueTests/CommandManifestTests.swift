@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import Invoque
 
@@ -131,6 +132,73 @@ final class CommandManifestTests: XCTestCase {
         }
     }
 
+    func testRejectsSymlinkedDataDirectory() throws {
+        let directory = try makeLoadableCommandDirectory()
+        let outside = try makeTemporaryDirectory(prefix: "invoque-outside")
+        try FileManager.default.createSymbolicLink(
+            at: directory.appendingPathComponent("data"),
+            withDestinationURL: outside)
+
+        XCTAssertThrowsError(try Command(directory: directory)) { error in
+            XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
+                           .symbolicLink("data"))
+        }
+    }
+
+    func testRejectsSymlinkedCommandDirectory() throws {
+        // A symlinked root would let canonicalization pass while data paths
+        // are reached through a location outside the commands root.
+        let realDirectory = try makeLoadableCommandDirectory()
+        let linkParent = try makeTemporaryDirectory(prefix: "invoque-link-parent")
+        let link = linkParent.appendingPathComponent("linked-command")
+        try FileManager.default.createSymbolicLink(
+            at: link,
+            withDestinationURL: realDirectory)
+
+        XCTAssertThrowsError(try Command(directory: link)) { error in
+            XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
+                           .symbolicLink("."))
+        }
+    }
+
+    func testRejectsSymlinkedStorageFile() throws {
+        let directory = try makeLoadableCommandDirectory()
+        let dataDirectory = directory.appendingPathComponent("data")
+        try FileManager.default.createDirectory(
+            at: dataDirectory,
+            withIntermediateDirectories: false)
+
+        let outside = try makeTemporaryDirectory(prefix: "invoque-outside")
+        let target = outside.appendingPathComponent("secret.json")
+        try Data("{}".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(
+            at: dataDirectory.appendingPathComponent("storage.json"),
+            withDestinationURL: target)
+
+        XCTAssertThrowsError(try Command(directory: directory)) { error in
+            XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
+                           .symbolicLink("data/storage.json"))
+        }
+    }
+
+    func testRejectsFIFOStorageFile() throws {
+        let directory = try makeLoadableCommandDirectory()
+        let dataDirectory = directory.appendingPathComponent("data")
+        try FileManager.default.createDirectory(
+            at: dataDirectory,
+            withIntermediateDirectories: false)
+        let storageURL = dataDirectory.appendingPathComponent("storage.json")
+        let result = storageURL.path.withCString { mkfifo($0, 0o600) }
+        guard result == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+
+        XCTAssertThrowsError(try Command(directory: directory)) { error in
+            XCTAssertEqual(error as? CommandDirectoryPolicy.Violation,
+                           .unexpectedItemType("data/storage.json"))
+        }
+    }
+
     // MARK: Helpers
 
     /// Decodes the example manifest with selected top-level keys replaced.
@@ -145,16 +213,32 @@ final class CommandManifestTests: XCTestCase {
 
     /// A temp directory containing a main.js so entry validation can pass.
     private func makeCommandDirectory(writeEntry: Bool = true) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("invoque-manifest-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        tempDirectories.append(directory)
+        let directory = try makeTemporaryDirectory(prefix: "invoque-manifest")
         if writeEntry {
             try "async function run() {}".write(
                 to: directory.appendingPathComponent("main.js"),
                 atomically: true,
                 encoding: .utf8)
         }
+        return directory
+    }
+
+    private func makeLoadableCommandDirectory() throws -> URL {
+        let directory = try makeCommandDirectory()
+        try exampleJSON.write(
+            to: directory.appendingPathComponent("command.json"),
+            atomically: true,
+            encoding: .utf8)
+        return directory
+    }
+
+    private func makeTemporaryDirectory(prefix: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        tempDirectories.append(directory)
         return directory
     }
 }
