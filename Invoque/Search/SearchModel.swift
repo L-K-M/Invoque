@@ -2,7 +2,7 @@ import Foundation
 
 /// Gathers items from every source, ranks them, and returns the top rows.
 ///
-/// Source priority: `path:`/`calc:` pins first, then the user's pinned
+/// Source priority: `path:`/`url:`/`calc:` pins first, then the user's pinned
 /// entries, then ranked matches, then the web fallback last. Ranked
 /// ordering is class-first — an exact prefix beats an infix beats a fuzzy
 /// subsequence — then a match that lands in the displayed title beats a
@@ -116,6 +116,7 @@ final class SearchModel {
         guard !trimmed.isEmpty else { return topHits() }
 
         var pathHits: [Item] = []
+        var urlHits: [Item] = []
         var calculatorHits: [Item] = []
         var webHits: [Item] = []
         // Pinned rows never pass through `bestByID`, so they get their own
@@ -134,6 +135,9 @@ final class SearchModel {
                 if item.id.hasPrefix(Item.pathIDPrefix) {
                     guard pinnedIDs.insert(item.id).inserted else { continue }
                     pathHits.append(item)
+                } else if item.id.hasPrefix(Item.urlIDPrefix) {
+                    guard pinnedIDs.insert(item.id).inserted else { continue }
+                    urlHits.append(item)
                 } else if item.id.hasPrefix(Item.calculatorIDPrefix) {
                     guard pinnedIDs.insert(item.id).inserted else { continue }
                     calculatorHits.append(item)
@@ -171,7 +175,7 @@ final class SearchModel {
         // web fallback and every ranked match — pins past the cap rejoin
         // the ranked pool in their natural order instead.
         let bandCap = max(0, Self.maxResults - pathHits.count
-            - calculatorHits.count - webHits.count - 1)
+            - urlHits.count - calculatorHits.count - webHits.count - 1)
         let pinnedBand = Array(ranked.filter { rules.isPinned($0.id) }
             .prefix(bandCap))
         let bandIDs = Set(pinnedBand.map(\.id))
@@ -181,11 +185,12 @@ final class SearchModel {
         // ranked list must not push the web fallback past the cap. The outer
         // clamp keeps the `maxResults` contract even if the pinned sources
         // alone would overflow it (trailing web rows go first). `path:` rows
-        // lead — a typed address is a direct intent, ahead of the calculator.
-        let pinnedCount = pathHits.count + calculatorHits.count
+        // lead — a typed address is a direct intent, ahead of the URL row
+        // and the calculator.
+        let pinnedCount = pathHits.count + urlHits.count + calculatorHits.count
             + pinnedBand.count + webHits.count
         let rankedSlots = max(0, Self.maxResults - pinnedCount)
-        return Array((pathHits + calculatorHits + pinnedBand
+        return Array((pathHits + urlHits + calculatorHits + pinnedBand
             + Array(unpinned.prefix(rankedSlots)) + webHits)
             .prefix(Self.maxResults))
     }
