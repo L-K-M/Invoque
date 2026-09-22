@@ -189,6 +189,13 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   then title/id for a total order. Pinned rows keep their slots:
   `PathSource` rows first (a typed address is a direct intent),
   calculator answers next, web fallback last.
+- Empty query — top hits: the freshly summoned panel lists what the user
+  actually launches — frecency-recorded apps, commands, and system
+  actions, best score first, capped at nine (blocked ids honored, and
+  only the same durable namespaces `recordSelection` trains are
+  eligible). With no history yet the panel shows its input hint instead.
+  A top-hit pick records through the normal selection path — the rail
+  reinforces itself exactly like any other launch.
 - Entry rules: the user can **pin** a durable entry (⌘P or right-click →
   Pin — ranks above unpinned matches when it matches, beneath the `path:`
   and `calc:` head rows; a pin boosts, it doesn't conjure, and pins past

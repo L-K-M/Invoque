@@ -70,11 +70,139 @@ final class SearchModelTests: XCTestCase {
 
     // MARK: Aggregation
 
-    func testEmptyQueryYieldsNoResults() {
+    func testEmptyQueryWithNoFrecencyHistoryYieldsNoResults() {
         let source = StubSource()
         source.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
+        // No recorded picks → no top hits: a zero-state user sees the
+        // panel's input hint, not an arbitrary app list.
         XCTAssertTrue(makeModel(sources: [source]).results(for: "").isEmpty)
         XCTAssertTrue(makeModel(sources: [source]).results(for: "   ").isEmpty)
+    }
+
+    // MARK: Empty-query top hits
+
+    func testEmptyQueryReturnsFrecencyTopHits() {
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:safari", title: "Safari"),
+            Self.appItem(id: "app:terminal", title: "Terminal"),
+        ]
+        let frecency = Frecency(defaults: defaults)
+        frecency.record("app:terminal")
+        frecency.record("app:terminal")
+        frecency.record("app:safari")
+        let model = SearchModel(sources: [source], frecency: frecency)
+        // Higher visit count leads — the rail is "most used", not alphabet.
+        XCTAssertEqual(model.results(for: "").map(\.id),
+                       ["app:terminal", "app:safari"])
+    }
+
+    func testBlankQueryBehavesLikeEmpty() {
+        let source = StubSource()
+        source.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
+        let frecency = Frecency(defaults: defaults)
+        frecency.record("app:safari")
+        let model = SearchModel(sources: [source], frecency: frecency)
+        XCTAssertEqual(model.results(for: "  ").map(\.id), ["app:safari"])
+    }
+
+    func testTopHitsExcludeUnrecordedItems() {
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:recorded", title: "Recorded"),
+            Self.appItem(id: "app:never-launched", title: "Never Launched"),
+        ]
+        let frecency = Frecency(defaults: defaults)
+        frecency.record("app:recorded")
+        let model = SearchModel(sources: [source], frecency: frecency)
+        XCTAssertEqual(model.results(for: "").map(\.id), ["app:recorded"])
+    }
+
+    func testTopHitsCapAtNineInScoreOrder() {
+        let source = StubSource()
+        source.stubbedItems = (0..<12).map { index in
+            Self.appItem(id: String(format: "app:%02d", index),
+                         title: String(format: "App %02d", index))
+        }
+        let frecency = Frecency(defaults: defaults)
+        for index in 0..<12 {
+            frecency.record(String(format: "app:%02d", index))
+        }
+        // One extra pick breaks the tie at the top: item 11 leads.
+        frecency.record("app:11")
+        let model = SearchModel(sources: [source], frecency: frecency)
+        let results = model.results(for: "")
+        XCTAssertEqual(results.count, SearchModel.maxTopHits)
+        XCTAssertEqual(results.first?.id, "app:11")
+        // The single-visit tail: the decay multiplier reads wall-clock time,
+        // so within equal visit counts the more recently recorded scores
+        // marginally higher — the tail is reverse recording order (the
+        // title/id tie-break only fires on exactly equal scores, e.g.
+        // decay-floored entries a month old). Items 00–02 fall past the cap.
+        // Compared as a set: membership is the cap's contract, and the
+        // within-tail order is covered separately below without depending
+        // on sub-millisecond timestamps landing in recording order.
+        XCTAssertEqual(Set(results.dropFirst().map(\.id)),
+                       Set((3...10).map { String(format: "app:%02d", $0) }))
+    }
+
+    /// Within equal visit counts, the more recently recorded entry leads —
+    /// the decay multiplier makes "same number of uses" order by last use.
+    /// A millisecond between the records keeps the ordering assertion
+    /// clear of any clock-resolution coincidence.
+    func testTopHitsOrderSingleVisitsByRecency() {
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:first-recorded", title: "Aaa"),
+            Self.appItem(id: "app:last-recorded", title: "Zzz"),
+        ]
+        let frecency = Frecency(defaults: defaults)
+        frecency.record("app:first-recorded")
+        Thread.sleep(forTimeInterval: 0.001)
+        frecency.record("app:last-recorded")
+        let model = SearchModel(sources: [source], frecency: frecency)
+        XCTAssertEqual(model.results(for: "").map(\.id),
+                       ["app:last-recorded", "app:first-recorded"])
+    }
+
+    /// A transient id recorded straight into frecency (a hand-edited
+    /// defaults file, say) must not surface — the rail serves durable,
+    /// user-meaningful entries only.
+    func testTopHitsExcludeTransientIDs() {
+        let source = StubSource()
+        source.stubbedItems = [Self.appItem(id: "web:safari", title: "Row")]
+        let frecency = Frecency(defaults: defaults)
+        frecency.record("web:safari")
+        let model = SearchModel(sources: [source], frecency: frecency)
+        XCTAssertTrue(model.results(for: "").isEmpty)
+    }
+
+    func testTopHitsHonorBlocks() {
+        let rules = StubRules()
+        rules.blocked = ["app:terminal"]
+        let source = StubSource()
+        source.stubbedItems = [
+            Self.appItem(id: "app:safari", title: "Safari"),
+            Self.appItem(id: "app:terminal", title: "Terminal"),
+        ]
+        let frecency = Frecency(defaults: defaults)
+        frecency.record("app:safari")
+        frecency.record("app:terminal")
+        frecency.record("app:terminal")
+        let model = SearchModel(sources: [source], frecency: frecency,
+                                entryRules: rules.entryRules)
+        XCTAssertEqual(model.results(for: "").map(\.id), ["app:safari"])
+    }
+
+    func testTopHitsDeduplicateIdsAcrossSources() {
+        let first = StubSource()
+        first.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
+        let second = StubSource()
+        second.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
+        let frecency = Frecency(defaults: defaults)
+        frecency.record("app:safari")
+        let model = SearchModel(sources: [first, second], frecency: frecency)
+        XCTAssertEqual(model.results(for: "").count, 1)
     }
 
     func testAggregatesAcrossSources() {

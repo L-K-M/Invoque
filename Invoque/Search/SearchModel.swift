@@ -19,8 +19,11 @@ import Foundation
 /// still match — a pin boosts, it doesn't conjure), and blocked ids are
 /// dropped before matching, absolutely.
 ///
-/// Empty or blank queries yield no results; what an empty panel shows is a
-/// UI concern for the later panel PR, not the model's.
+/// An empty or blank query yields the user's **top hits** — entries
+/// frecency has actually recorded, best score first, capped at
+/// `maxTopHits` — so a fresh summon starts on the apps and commands the
+/// user launches anyway. No history yet → no rows; the panel shows its
+/// input hint instead.
 final class SearchModel {
 
     // MARK: Configuration
@@ -28,6 +31,11 @@ final class SearchModel {
     /// Hard cap on returned rows. Sources can emit hundreds of apps; the
     /// panel cannot show them, and scoring already ordered the best first.
     static let maxResults = 50
+
+    /// Cap on the empty query's top hits — the "most used" rail on a fresh
+    /// summon. Small by design: it is a shortcut strip, not a result list,
+    /// and the panel must still read as an input surface first.
+    static let maxTopHits = 9
 
     /// The normalization `results(for:)` applies before matching. Kept as
     /// the single implementation because `PanelModel`'s stability merge
@@ -101,10 +109,11 @@ final class SearchModel {
 
     /// Ranked items for `query`, best first, at most `maxResults`. Sources
     /// receive the trimmed query. Duplicate ids (e.g. the same app found in
-    /// two folders) keep only the better-ranked copy.
+    /// two folders) keep only the better-ranked copy. An empty or blank
+    /// query returns the frecency top hits (see the class comment).
     func results(for query: String) -> [Item] {
         let trimmed = Self.normalizedQuery(query)
-        guard !trimmed.isEmpty else { return [] }
+        guard !trimmed.isEmpty else { return topHits() }
 
         var pathHits: [Item] = []
         var calculatorHits: [Item] = []
@@ -181,6 +190,37 @@ final class SearchModel {
             .prefix(Self.maxResults))
     }
 
+    // MARK: Top hits
+
+    /// The empty query's "most used" rail: entries frecency has recorded,
+    /// best score first, at most `maxTopHits`. Only durable namespaces are
+    /// eligible (the same set `recordSelection` trains), blocked ids drop,
+    /// and items with no history never appear — a zero-state user sees the
+    /// panel's input hint, not an arbitrary app list. Equal scores order by
+    /// title then id so identical states always produce identical lists.
+    private func topHits() -> [Item] {
+        var hits: [(item: Item, score: Double)] = []
+        var seenIDs = Set<String>()
+        for source in sources {
+            for item in source.items(matching: "") {
+                guard Self.isFrecencyEligibleID(item.id),
+                      !entryRules.isBlocked(item.id),
+                      seenIDs.insert(item.id).inserted else { continue }
+                let score = frecency.score(item.id)
+                guard score > 0 else { continue }
+                hits.append((item, score))
+            }
+        }
+        hits.sort { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            if lhs.item.title != rhs.item.title {
+                return lhs.item.title < rhs.item.title
+            }
+            return lhs.item.id < rhs.item.id
+        }
+        return hits.prefix(Self.maxTopHits).map(\.item)
+    }
+
     // MARK: Selection
 
     /// Records that the user picked `item`, so future ties break in its
@@ -198,8 +238,15 @@ final class SearchModel {
         // Opt-in: only durable, user-meaningful namespaces train frecency.
         // Transient ids (web/calc query rows, per-keystroke filter rows)
         // would persist meaningless keys and slowly evict real history.
-        let eligible = [Item.appIDPrefix, Item.commandIDPrefix, Item.systemIDPrefix]
-        guard eligible.contains(where: { itemID.hasPrefix($0) }) else { return }
+        guard Self.isFrecencyEligibleID(itemID) else { return }
         frecency.record(itemID)
+    }
+
+    /// Whether an id belongs to a namespace that trains and reads frecency
+    /// — the single eligibility list for recording picks and for the empty
+    /// query's top-hit rail, so the two can never drift apart.
+    static func isFrecencyEligibleID(_ itemID: String) -> Bool {
+        [Item.appIDPrefix, Item.commandIDPrefix, Item.systemIDPrefix]
+            .contains { itemID.hasPrefix($0) }
     }
 }
