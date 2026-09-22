@@ -2003,6 +2003,49 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.results.map(\.id), ["app:notes"])
     }
 
+    // MARK: Copy chord (⌘C)
+
+    /// The ⌘C payload follows the action class: paths for file/app rows,
+    /// the address for URL rows, the row's own payload for copy rows,
+    /// the title for everything else.
+    func testCopyPayloadByActionClass() {
+        let fileURL = URL(fileURLWithPath: "/tmp/notes.txt")
+        let webURL = URL(string: "https://example.com")!
+        func row(_ action: Item.Action, title: String = "Row") -> ResultRow {
+            ResultRow(id: "x", title: title, subtitle: "", icon: .symbol("s"),
+                      action: action)
+        }
+        XCTAssertEqual(PanelModel.copyPayload(for: row(.openApp(URL(fileURLWithPath: "/Applications/Safari.app")))),
+                       "/Applications/Safari.app")
+        XCTAssertEqual(PanelModel.copyPayload(for: row(.openFile(fileURL))),
+                       "/tmp/notes.txt")
+        XCTAssertEqual(PanelModel.copyPayload(for: row(.revealInFinder(fileURL))),
+                       "/tmp/notes.txt")
+        XCTAssertEqual(PanelModel.copyPayload(for: row(.openURL(webURL))),
+                       "https://example.com")
+        XCTAssertEqual(PanelModel.copyPayload(for: row(.copyText("4"), title: "= 4")),
+                       "4")
+        XCTAssertEqual(PanelModel.copyPayload(for: row(.system(.sleep), title: "Sleep")),
+                       "Sleep")
+        XCTAssertEqual(PanelModel.copyPayload(for: row(.runCommand("fmt", []), title: "Format")),
+                       "Format")
+        XCTAssertEqual(PanelModel.copyPayload(
+            for: row(.enterFilter(keyword: "jf", commandName: "jf"), title: "JF")),
+                       "JF")
+    }
+
+    /// ⌘C copies the selected row — and nothing when no row is selected.
+    func testCopySelectedRowPayloadFollowsSelection() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:safari", title: "Safari"),
+        ])
+        model.query = "safari"
+        XCTAssertEqual(model.copySelectedRowPayload(), "/Applications/Safari.app")
+
+        model.query = "zzz"
+        XCTAssertNil(model.copySelectedRowPayload())
+    }
+
     // MARK: Helpers
 
     /// Lock-guarded one-way flag for cross-thread signals observed from

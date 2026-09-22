@@ -100,7 +100,10 @@ Targets macOS 13+ (revisit if Zap has since raised its floor).
   query cleared (or optionally remembered — setting).
 - Layout: search field on top, results list below, footer with
   action hints. ⌘K-style action panel per result is a later refinement; v1 has
-  ⏎ = default action, ⇧⏎ = secondary.
+  ⏎ = default action, ⇧⏎ = secondary. ⌘C copies the selected row's
+  target — the filesystem path for file/app rows, the address for URL
+  rows, the result for calculator/copy rows, the title for the rest (a
+  text selection in the field keeps the normal copy).
 
 ### Theming
 

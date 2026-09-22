@@ -233,6 +233,16 @@ final class PanelController: NSObject, @unchecked Sendable {
             HUD.show(toast, typeface: self.preferences.panelTypeface)
         }
 
+        // ⌘C copies the selected row's target — the path, the URL, the
+        // answer, or the title — and confirms with a toast.
+        panel.onCopyChord = { [weak self] in
+            guard let self, let payload = self.model.copySelectedRowPayload() else { return }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(payload, forType: .string)
+            HUD.show("Copied \(payload)", typeface: self.preferences.panelTypeface)
+        }
+
         // Hide on losing key status (click elsewhere, another window summoned).
         // Observed here rather than overridden on the window: the controller
         // owns dismissal (see LauncherPanel's class comment).

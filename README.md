@@ -33,6 +33,8 @@ refine new commands without leaving the panel.
 - **Search the web** as the always-last fallback, against your configured
   engine — DuckDuckGo, Google, Bing, Kagi, Brave, Startpage, Qwant,
   Ecosia, or Mojeek (Settings → General).
+- **Copy any row** with ⌘C — the path for files and apps, the address
+  for URLs, the answer for calculations, the title for the rest.
 - **Pin and block** entries: ⌘P (or right-click → Pin) keeps an app,
   command, action or file hit above other matches whenever it matches;
   ⌘B blocks it outright. Manage the lists in Settings → General.
