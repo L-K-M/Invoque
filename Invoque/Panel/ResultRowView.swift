@@ -36,14 +36,20 @@ struct ResultRowView: View {
     /// State only; nothing animates.
     @State private var isHovered = false
 
+    /// The query text to highlight inside the title — the matched
+    /// characters render semibold so the eye finds the hit per row
+    /// (Spotlight/Alfred/Raycast all do). nil disables highlighting.
+    /// Highlighting only ever marks a *contiguous* occurrence: a fuzzy
+    /// scatter highlights nothing rather than approximating.
+    var highlight: String? = nil
+
     var body: some View {
         HStack(spacing: 12) {
             sourceBadge
             icon
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title)
-                    .font(typeface.font(.body))
+                titleText
                     .foregroundStyle(titleColor)
                     .lineLimit(1)
                 // A row with no subtitle doesn't pay for the empty line —
@@ -117,6 +123,34 @@ struct ResultRowView: View {
         case .filter: return .yellow
         case .path, .calculator, .web, .unknown: return nil
         }
+    }
+
+    /// The title with its matched segment emphasized — three `Text`s
+    /// concatenated so the semibold span rides the same line limit and
+    /// color as the rest.
+    private var titleText: Text {
+        let body = typeface.font(.body)
+        if let segments = Self.highlightSegments(of: highlight, in: row.title) {
+            return Text(segments.before).font(body)
+                + Text(segments.matched).font(typeface.font(.body, weight: .semibold))
+                + Text(segments.after).font(body)
+        }
+        return Text(row.title).font(body)
+    }
+
+    /// Splits `title` around the first contiguous case-insensitive
+    /// occurrence of `query` — the segments the highlighted title renders.
+    /// nil when there is nothing to highlight: no query, a blank one, or no
+    /// whole occurrence (a fuzzy-tier match marks nothing rather than
+    /// guessing at scattered spans).
+    static func highlightSegments(of query: String?, in title: String)
+        -> (before: String, matched: String, after: String)? {
+        guard let query, !query.isEmpty,
+              let range = title.range(of: query, options: .caseInsensitive)
+        else { return nil }
+        return (String(title[..<range.lowerBound]),
+                String(title[range]),
+                String(title[range.upperBound...]))
     }
 
     /// SF Symbols render as vectors; file/app icons arrive resolved as

@@ -125,7 +125,8 @@ struct DetachedSearchView: View {
                                               ? selectedForeground(fill: fill).opacity(0.75)
                                               : .secondary,
                                           typeface: preferences.panelTypeface,
-                                          glows: isSelected && preferences.adaptiveAccent)
+                                          glows: isSelected && preferences.adaptiveAccent,
+                                          highlight: model.scanText)
                                 .id(row.id)
                                 .onTapGesture {
                                     model.select(row)

@@ -198,6 +198,12 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - Fuzzy matcher: small fzf-style scorer (subsequence bonus, word-boundary
   bonus, case bonus). Pure function — unit-test it. Zap's type-to-search
   matching is the local precedent.
+- Matched-text highlighting: the contiguous query occurrence in a
+  displayed title renders semibold — prefix and infix tiers have one by
+  definition; a fuzzy-tier row highlights nothing rather than
+  approximating scattered spans. The panel highlights the live query
+  (the scan text in `find` mode), the detached results window the scan
+  text.
 - Ranking: match tier first — exact prefix > exact infix > fuzzy
   subsequence — then a match that lands in the displayed title beats a
   hidden-surface hit (matchText carries extra matchable words invisible
