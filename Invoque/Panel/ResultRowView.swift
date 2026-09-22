@@ -121,6 +121,7 @@ struct ResultRowView: View {
         case .system: return .gray
         case .file: return .orange
         case .filter: return .yellow
+        case .clipboard: return .purple
         case .path, .calculator, .web, .unknown: return nil
         }
     }

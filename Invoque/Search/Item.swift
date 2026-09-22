@@ -36,6 +36,9 @@ struct Item: Identifiable, Equatable {
     /// Pinned alongside `path:` for the same reason — and so the web
     /// fallback can't own ⏎ on a pasted address.
     static let urlIDPrefix = "url:"
+    /// Rows produced by `ClipboardSource` — recent clipboard entries.
+    /// Not frecency-eligible: clipboard history is transient by nature.
+    static let clipboardIDPrefix = "clip:"
 
     /// Whether an id belongs to a pinned row — one that bypasses ranking
     /// entirely. One place so `SearchModel` and `PanelModel` can't drift.
@@ -84,12 +87,13 @@ struct Item: Identifiable, Equatable {
         if id.hasPrefix(Self.calculatorIDPrefix) { return .calculator }
         if id.hasPrefix(Self.webIDPrefix) { return .web }
         if id.hasPrefix(Self.filterRowIDPrefix) { return .filter }
+        if id.hasPrefix(Self.clipboardIDPrefix) { return .clipboard }
         return .unknown
     }
 
     /// Source categories for the colored badge.
     enum SourceType: String {
-        case app, command, system, file, path, calculator, web, filter, unknown
+        case app, command, system, file, path, calculator, web, filter, clipboard, unknown
     }
 
     // MARK: Icon
