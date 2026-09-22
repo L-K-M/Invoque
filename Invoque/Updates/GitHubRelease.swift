@@ -8,8 +8,16 @@ import Foundation
 /// written.
 struct GitHubRelease: Decodable {
     /// Shared and thread-safe — a 30-release page shouldn't allocate 30
-    /// ICU-backed formatters.
+    /// ICU-backed formatters. The fractional variant is tried first when
+    /// parsing: GitHub sometimes emits milliseconds, and a formatter built
+    /// with `.withFractionalSeconds` rejects plain timestamps (and vice
+    /// versa), so one formatter alone drops half the inputs.
     private static let iso8601Formatter = ISO8601DateFormatter()
+    private static let iso8601FractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     let tagName: String
     let name: String?
@@ -57,7 +65,7 @@ struct GitHubRelease: Decodable {
         prerelease = try c.decode(Bool.self, forKey: .prerelease)
         draft = try c.decode(Bool.self, forKey: .draft)
         publishedAt = try c.decodeIfPresent(String.self, forKey: .publishedAt)
-            .flatMap { Self.iso8601Formatter.date(from: $0) }
+            .flatMap(Self.parseDate)
         assets = try c.decode([Asset].self, forKey: .assets)
     }
 
@@ -92,13 +100,13 @@ struct GitHubRelease: Decodable {
         func rank(_ asset: Asset) -> Int {
             let ext = (asset.name as NSString).pathExtension.lowercased()
             let extRank = preference.firstIndex(of: ext) ?? preference.count
-            let name = asset.name.lowercased()
+            let tokens = Self.tokens(in: asset.name)
             // Three tiers: explicit native match, no hint (often the universal
             // default), explicit foreign — an un-suffixed build beats one the
             // machine cannot run natively.
             let archRank: Int
-            if nativeHints.contains(where: { name.contains($0) }) { archRank = 0 }
-            else if foreignHints.contains(where: { name.contains($0) }) { archRank = 2 }
+            if nativeHints.contains(where: { Self.tokensContain(tokens, hint: $0) }) { archRank = 0 }
+            else if foreignHints.contains(where: { Self.tokensContain(tokens, hint: $0) }) { archRank = 2 }
             else { archRank = 1 }
             return extRank * 3 + archRank   // extension dominates the tie-break
         }
@@ -107,8 +115,8 @@ struct GitHubRelease: Decodable {
         // foreign-arch dmg beats a universal zip on rank but is useless
         // (there is no Rosetta for arm64 on Intel).
         let runnable = assets.filter { asset in
-            let name = asset.name.lowercased()
-            return !foreignHints.contains { name.contains($0) }
+            let tokens = Self.tokens(in: asset.name)
+            return !foreignHints.contains { Self.tokensContain(tokens, hint: $0) }
         }
         // The Rosetta fallback pick is identical in both slices; the #if
         // only decides whether it applies, so it is computed once here.
@@ -125,6 +133,33 @@ struct GitHubRelease: Decodable {
         // the release page) rather than an unusable download.
         return runnable.min { rank($0) < rank($1) }
         #endif
+    }
+
+    /// Parses `published_at`: fractional seconds first, plain second.
+    private static func parseDate(_ string: String) -> Date? {
+        iso8601FractionalFormatter.date(from: string)
+            ?? iso8601Formatter.date(from: string)
+    }
+
+    /// Lowercase alphanumeric tokens of an asset name — "App-x64.dmg" →
+    /// ["app", "x64", "dmg"] — so hints match whole words: "intel" fires on
+    /// "App-intel.dmg" but not "IntelligentApp.dmg", and "x64" not on "x6400".
+    private static func tokens(in name: String) -> [String] {
+        name.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+    }
+
+    /// Whether the tokenized hint appears as a contiguous run in the
+    /// tokenized name — "x86_64" (tokens "x86", "64") matches "App-x86_64.dmg"
+    /// but neither "x86" nor "64" alone promotes a build.
+    private static func tokensContain(_ tokens: [String], hint: String) -> Bool {
+        let parts = Self.tokens(in: hint)
+        guard !parts.isEmpty else { return false }
+        return tokens.indices.contains { start in
+            start + parts.count <= tokens.count
+                && tokens[start..<(start + parts.count)].elementsEqual(parts)
+        }
     }
 
     /// A trimmed, length-capped form of the release body, suitable for an alert's
