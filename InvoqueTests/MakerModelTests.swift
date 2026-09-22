@@ -689,7 +689,8 @@ final class MakerModelTests: XCTestCase {
 
         await model.startEditing(commandName: "fmt", store: store)
 
-        XCTAssertEqual(await model.phase, .readyToSave)
+        let phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
         let draft = await model.draft
         XCTAssertEqual(draft?.manifest?.name, "fmt")
         XCTAssertEqual(draft?.generation.extraFiles["notes.txt"], "hello")
@@ -715,7 +716,8 @@ final class MakerModelTests: XCTestCase {
         XCTAssertTrue(transcript[1].content.contains("main.js"),
                       "the seed turn must carry the loaded files")
         XCTAssertEqual(transcript[2].content, "also uppercase the result")
-        XCTAssertEqual(await model.phase, .readyToSave)
+        let phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
     }
 
     /// A name that doesn't match any installed command fails visibly —
@@ -724,8 +726,10 @@ final class MakerModelTests: XCTestCase {
         let client = StubClient()
         let model = makeModel(client)
         await model.startEditing(commandName: "nope", store: store)
-        XCTAssertEqual(await model.phase, .failed)
-        XCTAssertNotNil(await model.lastError)
+        let phase = await model.phase
+        XCTAssertEqual(phase, .failed)
+        let lastError = await model.lastError
+        XCTAssertNotNil(lastError)
         XCTAssertTrue(client.calls.isEmpty)
     }
 
@@ -736,9 +740,11 @@ final class MakerModelTests: XCTestCase {
         let model = makeModel(StubClient())
 
         await model.primaryEditSubmit(commandName: "fmt", store: store)
-        XCTAssertEqual(await model.phase, .readyToSave)
+        var phase = await model.phase
+        XCTAssertEqual(phase, .readyToSave)
         await model.primaryEditSubmit(commandName: "fmt", store: store)
-        XCTAssertEqual(await model.phase, .saved)
+        phase = await model.phase
+        XCTAssertEqual(phase, .saved)
         XCTAssertNotNil(store.command(named: "fmt"))
     }
 }
