@@ -23,22 +23,29 @@ struct Command: Equatable, Identifiable, Sendable {
         directory.appendingPathComponent("data", isDirectory: true)
     }
 
-    init(manifest: CommandManifest, directory: URL) {
+    /// Creates a command rooted at `directory`.
+    /// - Throws: `CommandManifest.ValidationError.entryEscapesDirectory`
+    ///   when `manifest.entry` resolves (symlinks included) outside
+    ///   `directory`.
+    init(manifest: CommandManifest, directory: URL) throws {
         self.manifest = manifest
         self.directory = directory.standardizedFileURL
         let resolvedEntry = self.directory
             .appendingPathComponent(manifest.entry)
             .standardizedFileURL
-        // `validate(in:)` already enforces this; the precondition is the
-        // backstop for a future call site that skips validation — an entry
-        // is fed to the JS bridge and executed, so it must never escape.
+        // `validate(in:)` already enforces this; the throw is the backstop
+        // for a future call site that skips validation — an entry is fed to
+        // the JS bridge and executed, so it must never escape. A trap here
+        // would kill the process on untrusted input (and re-trap on every
+        // rescan); a throw surfaces as a per-directory ScanError instead.
         // Symlinks are resolved on both sides (as validate does) so an
         // entry symlinked out of the directory can't slip the prefix check;
         // a "/" container compares against "/", not "//".
         let container = self.directory.resolvingSymlinksInPath().standardizedFileURL.path
-        precondition(resolvedEntry.resolvingSymlinksInPath().standardizedFileURL.path
-                        .hasPrefix(container == "/" ? "/" : container + "/"),
-                     "command entry escapes its directory: \(resolvedEntry.path)")
+        let escaped = resolvedEntry.resolvingSymlinksInPath().standardizedFileURL.path
+        guard escaped.hasPrefix(container == "/" ? "/" : container + "/") else {
+            throw CommandManifest.ValidationError.entryEscapesDirectory(manifest.entry)
+        }
         entryURL = resolvedEntry
     }
 
@@ -81,6 +88,6 @@ struct Command: Equatable, Identifiable, Sendable {
         let manifest = try JSONDecoder().decode(CommandManifest.self, from: data)
         try manifest.validate(in: directory)
         _ = try CommandDirectoryPolicy.validatedStorageURL(in: directory)
-        self.init(manifest: manifest, directory: directory)
+        try self.init(manifest: manifest, directory: directory)
     }
 }
