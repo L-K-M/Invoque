@@ -14,9 +14,14 @@ final class CalculatorSource: ItemSource {
 
     // MARK: ItemSource
 
-    /// Zero or one item: the evaluated result, or nothing when the query is
-    /// not well-formed arithmetic.
+    /// Zero or one item: the evaluated result, or — when the query is a
+    /// bare integer in some base — the base-conversion row. A bare number
+    /// alone is not arithmetic, but it is the classic launcher question:
+    /// "what is 0xFF?" / "what is 255 in hex?".
     func items(matching query: String) -> [Item] {
+        if let conversion = Self.baseConversion(query) {
+            return [conversion]
+        }
         guard let evaluation = Self.evaluate(query) else { return [] }
         return [Item(
             // Whitespace is stripped from the id so `2 + 2` and `2+2` share
@@ -28,6 +33,80 @@ final class CalculatorSource: ItemSource {
             action: .copyText(evaluation.result),
             matchText: "\(evaluation.expression) = \(evaluation.result)"
         )]
+    }
+
+    // MARK: Base conversion
+
+    /// The bases a conversion row offers — radix, literal prefix, name.
+    private static let conversionBases: [(radix: Int, prefix: String, name: String)] = [
+        (16, "0x", "Hex"), (2, "0b", "Bin"), (8, "0o", "Oct"),
+    ]
+
+    /// One parsed query for conversion: the value plus which base the
+    /// user typed (decimal queries carry nil — every base is news).
+    private struct BaseQuery {
+        let value: UInt64
+        /// The radix the query itself spelled, nil for decimal input.
+        let inputRadix: Int?
+    }
+
+    /// Parses a bare integer in any base: `255`, `0xFF`, `0b1010`, `0o17`.
+    /// Decimal input needs at least two digits — a bare `7` is likelier an
+    /// app search fragment than a conversion request, and the calc row is
+    /// a head pin that would outrank real matches. No signs, no
+    /// separators: a leading `-` or `_` disqualifies rather than guessing.
+    private static func parseBaseQuery(_ trimmed: String) -> BaseQuery? {
+        // Case-insensitive prefixes — `0X1A` is as natural as `0x1a`.
+        let lowered = trimmed.lowercased()
+        for (radix, prefix, _) in conversionBases where lowered.hasPrefix(prefix) {
+            let digits = lowered.dropFirst(prefix.count)
+            guard !digits.isEmpty,
+                  let value = UInt64(digits, radix: radix) else { return nil }
+            return BaseQuery(value: value, inputRadix: radix)
+        }
+        // ASCII digits only: `Character.isNumber` alone admits Unicode
+        // digits that `UInt64` then declines — explicit beats relying on
+        // the fallthrough.
+        guard trimmed.count >= 2,
+              trimmed.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let value = UInt64(trimmed) else { return nil }
+        return BaseQuery(value: value, inputRadix: nil)
+    }
+
+    /// The conversion row for a bare-integer query: the title names the
+    /// query's value in the most-wanted other base (hex for decimal
+    /// input, decimal for a prefixed literal), the subtitle lists all
+    /// three, and ⏎ copies the title's converted form. The id rides the
+    /// `calc:` namespace — a head pin like every calculator answer, and
+    /// frecency-ineligible for the same reason — keyed by value, so
+    /// `0xFF` and `255` name the same row.
+    private static func baseConversion(_ query: String) -> Item? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let base = parseBaseQuery(trimmed) else { return nil }
+
+        // The headline target: hex from decimal, decimal from a literal.
+        let headline: (radix: Int, prefix: String, name: String)
+        if base.inputRadix == nil {
+            headline = conversionBases[0]
+        } else {
+            headline = (10, "", "Dec")
+        }
+        let headlineText = headline.prefix
+            + String(base.value, radix: headline.radix,
+                     uppercase: headline.radix == 16)
+        let title = "\(trimmed) = \(headlineText)"
+        let subtitle = conversionBases
+            .map { "\($0.name) \($0.prefix)\(String(base.value, radix: $0.radix, uppercase: $0.radix == 16))" }
+            .joined(separator: " · ")
+            + " — ⏎ copies \(headlineText)"
+        return Item(
+            id: Item.calculatorIDPrefix + "base:\(base.value)",
+            title: title,
+            subtitle: subtitle,
+            icon: .symbol("number.square"),
+            action: .copyText(headlineText),
+            matchText: "\(trimmed) \(headlineText) \(subtitle)"
+        )
     }
 
     // MARK: Evaluation
