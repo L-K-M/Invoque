@@ -47,8 +47,8 @@ final class PathSource: ItemSource {
     /// and home are never emitted as fallbacks: they're the ancestor of
     /// every `/…` or `~/…` slip (`/Users/jo` → `/Users`), so they'd pin a
     /// catch-all row over real matches on each mistyped prefix. Typing
-    /// `/` or `~` itself still produces their rows — the suppression only
-    /// covers the fallback.
+    /// `/`, `~`, or a root-level folder itself still produces its row —
+    /// the suppression only covers the fallback.
     static func existingTarget(for url: URL) -> (url: URL, isDirectory: Bool)? {
         var candidate = url
         var fellBack = false
