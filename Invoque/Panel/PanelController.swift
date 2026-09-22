@@ -39,13 +39,17 @@ final class PanelController: NSObject, @unchecked Sendable {
     private var resignKeyObserver: NSObjectProtocol?
     /// Bumped on every show/hide. A hide animation's completion only
     /// orders the panel out while its generation is still current —
-    /// a show() mid-fade turns the pending completion into a no-op
-    /// that just restores alpha.
+    /// a show() mid-fade turns the pending completion into a no-op.
     private var animationGeneration = 0
     /// True while a hide animation is fading the panel out — the panel
     /// still reports `isVisible` during the fade, so `toggle()` needs
     /// this to know a hotkey press should bring it back, not hide again.
     private var hideInFlight = false
+    /// The panel's origin when the in-flight hide began. A mid-fade
+    /// show() reverses toward this — `panel.frame` is only partway to
+    /// the hide's offset target then (window frame animations
+    /// interpolate the real frame), so it can't be derived in place.
+    private var hideRestingOrigin: CGPoint?
     /// Hosts the results window a pending file scan detaches into.
     private lazy var detachedSearchWindow = DetachedSearchWindowController(
         preferences: preferences)
@@ -141,13 +145,13 @@ final class PanelController: NSObject, @unchecked Sendable {
         hideInFlight = false
 
         // The resting origin the intro lands on. A mid-fade re-show
-        // reverses toward the origin the hide started from (the pending
-        // animation already applied the offset to the model value);
+        // reverses toward the origin captured when the hide began;
         // a fresh show re-derives geometry under the mouse.
-        var restingOrigin = panel.frame.origin
-        if wasHiding {
-            restingOrigin.y -= Animation.slideOffset
-        } else if let screen = screenUnderMouse() {
+        var restingOrigin = wasHiding
+            ? hideRestingOrigin ?? panel.frame.origin
+            : panel.frame.origin
+        hideRestingOrigin = nil
+        if !wasHiding, let screen = screenUnderMouse() {
             let size = NSSize(width: Size.width, height: Size.height)
             restingOrigin = PanelGeometry.panelOrigin(
                 inVisibleFrame: screen.visibleFrame, panelSize: size)
@@ -156,9 +160,11 @@ final class PanelController: NSObject, @unchecked Sendable {
 
         // Already on screen and not fading out (a show() meant just to
         // re-focus)? Replaying the intro would blink the panel and stack
-        // another slide offset — take the no-animation path.
+        // another slide offset — take the no-animation path. A mid-fade
+        // re-show under Reduce Motion still snaps the frame back.
         let alreadyVisible = panel.isVisible && !wasHiding
         if alreadyVisible || AccessibilityDisplaySettings.shared.reduceMotion {
+            if wasHiding { panel.setFrameOrigin(restingOrigin) }
             panel.alphaValue = 1
             panel.orderFrontRegardless()
         } else {
@@ -216,6 +222,10 @@ final class PanelController: NSObject, @unchecked Sendable {
         if hideInFlight { return }
         animationGeneration += 1
         guard let panel, panel.isVisible else { return }
+        // Capture the pre-fade origin so a mid-fade show() can reverse
+        // toward it; `panel.frame` only reaches the offset target when
+        // the animation completes.
+        hideRestingOrigin = panel.frame.origin
 
         let reduceMotion = AccessibilityDisplaySettings.shared.reduceMotion
         if reduceMotion {
@@ -242,12 +252,13 @@ final class PanelController: NSObject, @unchecked Sendable {
             guard self.animationGeneration == generation else { return }
             self.hideInFlight = false
             panel.orderOut(nil)
-            // Restore alpha and the resting frame for the next show —
-            // the fade left the model frame offset upward.
+            // Restore alpha and the pre-fade origin for the next show —
+            // the completed fade left the frame at the offset target.
             panel.alphaValue = 1
-            var restingFrame = panel.frame
-            restingFrame.origin.y -= Animation.slideOffset
-            panel.setFrameOrigin(restingFrame.origin)
+            if let resting = self.hideRestingOrigin {
+                panel.setFrameOrigin(resting)
+            }
+            self.hideRestingOrigin = nil
         })
     }
 
