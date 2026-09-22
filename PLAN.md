@@ -226,6 +226,12 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   place to undo a block, since a blocked row can't be selected. A change
   re-lists the open panel on the spot; in `find`/`f` mode the cached scan
   reshapes without re-walking the disk.
+- Query recall: ↑ at the top row (or on an empty list) steps back
+  through recently submitted queries — Alfred's ↑ history; ↓ at the last
+  row steps forward while a recall is active, and stepping forward past
+  the newest entry restores the query as typed. Any edit leaves recall
+  mode. Only submitted queries record (a real pick, never a keystroke),
+  persisted capped at 50 in UserDefaults (`QueryHistory`).
 - Stability: extending the query preserves the displayed order of rows
   that still match — a row the user is reaching for never moves under
   them — *among equal-ranked peers*. The merge sorts by (pinned, match

@@ -32,6 +32,8 @@ refine new commands without leaving the panel.
 - **Paste a path** — `/tmp/build.log` or `~/Documents` — and the row is the
   path itself: ⏎ opens folders, reveals files (⌘⏎ inverts it). A file is
   never executed on a paste.
+- **Recall queries** with ↑ — the panel remembers the last 50 queries
+  you submitted; ↓ walks forward again, and typing exits the history.
 - **Search the web** as the always-last fallback, against your configured
   engine — DuckDuckGo, Google, Bing, Kagi, Brave, Startpage, Qwant,
   Ecosia, or Mojeek (Settings → General). A query that *is* an http(s)
