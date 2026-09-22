@@ -173,14 +173,14 @@ struct PanelView: View {
     }
 
     /// The bitmap to draw for an icon: the shared-store resolution when the
-    /// store (or the bundle's un-jailed artwork) has one, else the
+    /// store (or the bundle's un-jailed artwork) has one, else the cached
     /// workspace icon — `nil` is the resolver's "use the system icon"
     /// contract. `nil` only for `.symbol` rows, which draw vectors. A miss
     /// still warms the resolver, so a later redraw picks the artwork up.
     private func iconImage(for icon: Item.Icon) -> NSImage? {
         guard let path = icon.backingPath else { return nil }
         return icon.pictTarget.flatMap { model.iconResolver?($0) }
-            ?? NSWorkspace.shared.icon(forFile: path)
+            ?? WorkspaceIcons.icon(forPath: path)
     }
 
     /// Text for the selected row, picked by the *composited* fill's luminance:

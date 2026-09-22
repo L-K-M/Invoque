@@ -63,12 +63,12 @@ struct DetachedSearchView: View {
     }
 
     /// The bitmap to draw for an icon — `PanelView.iconImage`'s twin:
-    /// the shared-store resolution when Pict has one, else the workspace
-    /// icon. `nil` only for `.symbol` rows, which draw vectors.
+    /// the shared-store resolution when Pict has one, else the cached
+    /// workspace icon. `nil` only for `.symbol` rows, which draw vectors.
     private func iconImage(for icon: Item.Icon) -> NSImage? {
         guard let path = icon.backingPath else { return nil }
         return icon.pictTarget.flatMap { model.iconResolver?($0) }
-            ?? NSWorkspace.shared.icon(forFile: path)
+            ?? WorkspaceIcons.icon(forPath: path)
     }
 
     // MARK: Sections
