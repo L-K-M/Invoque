@@ -245,13 +245,16 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         return nil
     }
 
-    /// The edit-request text when `query` is `edit <command name>`,
-    /// else nil. Checked before filter routing.
+    /// The command name when `query` is `edit <command name>`, else nil —
+    /// trimmed, so `edit  ` stays a normal search rather than looking up
+    /// an empty name. Checked before filter routing.
     var editPrompt: String? {
         for keyword in Self.editKeywords {
             let prefix = keyword + " "
             if query.hasPrefix(prefix) {
-                return String(query.dropFirst(prefix.count))
+                let name = String(query.dropFirst(prefix.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return name.isEmpty ? nil : name
             }
         }
         return nil
@@ -1029,7 +1032,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             if let prompt = makerPrompt {
                 Task { await maker.primarySubmit(prompt: prompt) }
             } else if let commandName = editPrompt {
-                Task { await maker.startEditing(commandName: commandName, store: commandStore) }
+                Task { await maker.primaryEditSubmit(commandName: commandName,
+                                                     store: commandStore) }
             }
             return
         }
