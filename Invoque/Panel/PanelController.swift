@@ -132,28 +132,47 @@ final class PanelController: NSObject, @unchecked Sendable {
 
         model.reset(clearQuery: !preferences.keepQueryOnReshow)
 
-        if let screen = screenUnderMouse() {
-            let size = NSSize(width: Size.width, height: Size.height)
-            panel.setFrameOrigin(
-                PanelGeometry.panelOrigin(inVisibleFrame: screen.visibleFrame, panelSize: size))
-        }
-
         // Stale out any in-flight hide — its completion will see a
-        // superseded generation and skip the orderOut.
+        // superseded generation and skip the orderOut. `wasHiding` is
+        // captured first: a mid-fade re-show should reverse the slide,
+        // not restart it from a doubled offset.
+        let wasHiding = hideInFlight
         animationGeneration += 1
         hideInFlight = false
 
-        let reduceMotion = AccessibilityDisplaySettings.shared.reduceMotion
-        if reduceMotion {
-            // No animation — show immediately.
+        // The resting origin the intro lands on. A mid-fade re-show
+        // reverses toward the origin the hide started from (the pending
+        // animation already applied the offset to the model value);
+        // a fresh show re-derives geometry under the mouse.
+        var restingOrigin = panel.frame.origin
+        if wasHiding {
+            restingOrigin.y -= Animation.slideOffset
+        } else if let screen = screenUnderMouse() {
+            let size = NSSize(width: Size.width, height: Size.height)
+            restingOrigin = PanelGeometry.panelOrigin(
+                inVisibleFrame: screen.visibleFrame, panelSize: size)
+            panel.setFrameOrigin(restingOrigin)
+        }
+
+        // Already on screen and not fading out (a show() meant just to
+        // re-focus)? Replaying the intro would blink the panel and stack
+        // another slide offset — take the no-animation path.
+        let alreadyVisible = panel.isVisible && !wasHiding
+        if alreadyVisible || AccessibilityDisplaySettings.shared.reduceMotion {
             panel.alphaValue = 1
             panel.orderFrontRegardless()
         } else {
-            // Slide-in from above with fade.
-            panel.alphaValue = 0
-            var frame = panel.frame
-            frame.origin.y += Animation.slideOffset
-            panel.setFrameOrigin(frame.origin)
+            // Slide-in from above with fade. A fresh show starts at
+            // alpha 0 one offset above the resting origin; a mid-fade
+            // re-show keeps the pending hide's model values so the
+            // animation targets below simply reverse it.
+            if !wasHiding {
+                panel.alphaValue = 0
+                var startFrame = panel.frame
+                startFrame.origin = restingOrigin
+                startFrame.origin.y += Animation.slideOffset
+                panel.setFrameOrigin(startFrame.origin)
+            }
             panel.orderFrontRegardless()
 
             NSAnimationContext.runAnimationGroup { ctx in
@@ -162,8 +181,8 @@ final class PanelController: NSObject, @unchecked Sendable {
                 ctx.allowsImplicitAnimation = true
                 panel.animator().alphaValue = 1
                 var targetFrame = panel.frame
-                targetFrame.origin.y -= Animation.slideOffset
-                panel.setFrame(targetFrame, display: true)
+                targetFrame.origin = restingOrigin
+                panel.animator().setFrame(targetFrame, display: true)
             }
         }
 
@@ -192,6 +211,9 @@ final class PanelController: NSObject, @unchecked Sendable {
         // spending API budget for a result nobody sees. Dismiss is when
         // the user asked — cancel now, not when the fade completes.
         model.panelDidHide()
+        // A fade-out is already running toward orderOut — a second one
+        // would stack another slideOffset onto the already-offset frame.
+        if hideInFlight { return }
         animationGeneration += 1
         guard let panel, panel.isVisible else { return }
 
@@ -210,7 +232,7 @@ final class PanelController: NSObject, @unchecked Sendable {
             panel.animator().alphaValue = 0
             var frame = panel.frame
             frame.origin.y += Animation.slideOffset
-            panel.setFrame(frame, display: true)
+            panel.animator().setFrame(frame, display: true)
         }, completionHandler: { [weak self] in
             guard let self else { return }
             // A show() or hide() since this animation started owns the
@@ -220,8 +242,12 @@ final class PanelController: NSObject, @unchecked Sendable {
             guard self.animationGeneration == generation else { return }
             self.hideInFlight = false
             panel.orderOut(nil)
-            // Restore alpha for the next show.
+            // Restore alpha and the resting frame for the next show —
+            // the fade left the model frame offset upward.
             panel.alphaValue = 1
+            var restingFrame = panel.frame
+            restingFrame.origin.y -= Animation.slideOffset
+            panel.setFrameOrigin(restingFrame.origin)
         })
     }
 
