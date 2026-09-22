@@ -538,6 +538,14 @@ private struct SearchField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
+        // One line, scrolling horizontally: the header row is fixed height,
+        // so a pasted paragraph wrapping to extra lines clips at the card's
+        // edge. Newline flattening is enforced in the coordinator's
+        // controlTextDidChange — the cell's own sanitizing is implicit and
+        // can be bypassed by drops or future delegate methods.
+        field.cell?.usesSingleLineMode = true
+        field.maximumNumberOfLines = 1
+        field.lineBreakMode = .byTruncatingTail
         field.delegate = context.coordinator
         return field
     }
@@ -569,6 +577,16 @@ private struct SearchField: NSViewRepresentable {
 
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }
+            // The cell's single-line mode flattens pasted newlines via an
+            // implicit field-editor hook — a drop, a Services insert, or a
+            // future NSTextViewDelegate method on SearchTextField bypasses
+            // it. Flatten here too so a line break can never reach the
+            // field or `model.query` regardless of how it arrived.
+            let flat = field.stringValue.components(separatedBy: .newlines)
+                .filter { !$0.isEmpty }.joined(separator: " ")
+            if flat != field.stringValue {
+                field.stringValue = flat
+            }
             parent.text = field.stringValue
         }
 
