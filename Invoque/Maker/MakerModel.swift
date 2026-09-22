@@ -213,33 +213,28 @@ final class MakerModel: ObservableObject {
         let entrySource = try String(contentsOf: command.entryURL, encoding: .utf8)
 
         var extraFiles: [String: String] = [:]
-        if let enumerator = FileManager.default.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) {
-            let root = directory.path + "/"
-            for case let url as URL in enumerator {
-                guard url.path.hasPrefix(root) else { continue }
-                let relative = String(url.path.dropFirst(root.count))
-                let first = relative.split(separator: "/").first.map(String.init) ?? ""
-                if first == "data" || first == "history" {
-                    // Runtime state stays out of the draft — and out of
-                    // the walk.
-                    enumerator.skipDescendants()
-                    continue
-                }
-                let values = try? url.resourceValues(
-                    forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                // A symlink is skipped, not followed — the writer never
-                // reproduces links, and mirroring target contents into the
-                // draft would save them as plain files.
-                guard values?.isSymbolicLink != true,
-                      values?.isRegularFile == true else { continue }
-                guard relative != "command.json",
-                      relative != command.manifest.entry,
-                      let contents = try? String(contentsOf: url, encoding: .utf8)
-                else { continue }
-                extraFiles[relative] = contents
-            }
+        // `subpathsOfDirectory` returns paths relative to the command
+        // directory — unlike enumerator URLs, no symlink resolution in
+        // the base path can skew the comparison.
+        let subpaths = (try? FileManager.default
+            .subpathsOfDirectory(atPath: directory.path)) ?? []
+        for relative in subpaths {
+            let first = relative.split(separator: "/").first.map(String.init) ?? ""
+            // Runtime state stays out of the draft.
+            if first == "data" || first == "history" { continue }
+            let url = directory.appendingPathComponent(relative)
+            let values = try? url.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            // A symlink is skipped, not followed — the writer never
+            // reproduces links, and mirroring target contents into the
+            // draft would save them as plain files.
+            guard values?.isSymbolicLink != true,
+                  values?.isRegularFile == true else { continue }
+            guard relative != "command.json",
+                  relative != command.manifest.entry,
+                  let contents = try? String(contentsOf: url, encoding: .utf8)
+            else { continue }
+            extraFiles[relative] = contents
         }
         return GeneratedCommand(manifestJSON: manifestJSON,
                                 entryName: command.manifest.entry,
