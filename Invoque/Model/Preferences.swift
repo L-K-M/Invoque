@@ -505,6 +505,7 @@ final class Preferences: ObservableObject, @unchecked Sendable {
         highlightHex = Default.highlightHex
         highlightOpacity = Default.highlightOpacity
         labelHex = Default.labelHex
+        panelTypeface = Default.panelTypeface
         panelCornerRadius = Default.panelCornerRadius
         highlightCornerRadius = Default.highlightCornerRadius
         adaptiveAccent = Default.adaptiveAccent
