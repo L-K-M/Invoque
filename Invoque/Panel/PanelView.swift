@@ -540,10 +540,13 @@ private struct SearchField: NSViewRepresentable {
         field.focusRingType = .none
         // One line, scrolling horizontally: the header row is fixed height,
         // so a pasted paragraph wrapping to extra lines clips at the card's
-        // edge. Newline flattening is enforced in the coordinator's
+        // edge. Scrollable, not usesSingleLineMode — single-line mode puts
+        // the cell on a fixed baseline layout calibrated to the system font,
+        // which draws the placeholder and query off-center for custom panel
+        // typefaces. Newline flattening is enforced in the coordinator's
         // controlTextDidChange — the cell's own sanitizing is implicit and
         // can be bypassed by drops or future delegate methods.
-        field.cell?.usesSingleLineMode = true
+        field.cell?.isScrollable = true
         field.maximumNumberOfLines = 1
         field.lineBreakMode = .byTruncatingTail
         field.delegate = context.coordinator
