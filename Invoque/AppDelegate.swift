@@ -169,8 +169,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                             commandStore: CommandStore,
                                             permissionGrants: CommandPermissionGrants) -> PanelController {
         let model = PanelModel()
-        // autoReload off: the initial scan must not fire onChange before
-        // onReload is wired — wire first, then kick the scan explicitly.
+        // autoReload off: the app-scoped store's initial pass runs off-main
+        // and already drives onChange; a second walk here would duplicate
+        // the same disk scan during first panel construction.
         let commandSource = CommandSource(store: commandStore, autoReload: false)
         commandSource.onReload = { [weak model] in model?.refreshResults() }
         let commandRunner = CommandRunner()
@@ -235,11 +236,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         InvoqueIcons.shared.onIconsInvalidated = { [weak model] in
             model?.noteIconsChanged()
         }
-        // Kick the initial scan only after the model is fully wired — an
-        // unstructured Task starts immediately and can outrun the lines
-        // above. (The store's onChange→onReload subscription is init-time,
-        // so commands installed later still refresh the open panel.)
-        Task { await commandSource.reload() }
+        // The store's initial result publishes on main after this synchronous
+        // wiring returns, so the source can refresh the open panel safely.
         // A pin/block made in Settings must repaint the open panel; the
         // panel's own toggles reach it through this path too.
         preferences.entryRulesChanged = { [weak model] in
@@ -275,6 +273,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // a fully assembled model (searchModel is attached inside init) —
         // one refresh, not one per wiring step.
         model.webSearchItem = { webSource.item(for: $0) }
+        // The controller is built lazily on first summon, so the store's
+        // initial publish has usually already fired — no onChange is
+        // pending to refresh the list, and reset() won't re-query an
+        // unchanged "" query. Seed once here so the first summon shows
+        // the committed snapshot; a still-pending publish re-refreshes
+        // through onReload either way.
+        model.refreshResults()
         return controller
     }
 

@@ -41,6 +41,50 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.scanErrors.first?.directory.lastPathComponent, "broken")
     }
 
+    func testStartWatchingPublishesInitialScan() throws {
+        try writeCommand("alpha", title: "Alpha")
+        let store = CommandStore(rootPaths: [root.path])
+        let published = expectation(description: "initial command snapshot")
+        // The panel wires its model after startWatching returns; a
+        // synchronous first publish would run against a half-wired model.
+        var publishedEarly = false
+        store.onChange = { commands in
+            publishedEarly = true
+            XCTAssertTrue(Thread.isMainThread)
+            guard commands.map(\.name) == ["alpha"] else { return }
+            published.fulfill()
+        }
+
+        store.startWatching()
+        XCTAssertFalse(publishedEarly,
+                       "startWatching must return before the first snapshot publishes")
+        wait(for: [published], timeout: 2)
+
+        XCTAssertEqual(store.commands.map(\.name), ["alpha"])
+        store.stopWatching()
+    }
+
+    /// A stop/start cycle mid-flight must not let the first pass's commit
+    /// land after `stopWatching()` — the restarted initial pass republishes.
+    func testRestartWatchingPublishesFreshSnapshot() throws {
+        try writeCommand("alpha", title: "Alpha")
+        let store = CommandStore(rootPaths: [root.path])
+        let published = expectation(description: "snapshot after restart")
+        store.onChange = { commands in
+            guard commands.map(\.name) == ["alpha", "beta"] else { return }
+            published.fulfill()
+        }
+        store.startWatching()
+        store.stopWatching()
+        // Written while the watcher is down: only a restarted pass that
+        // re-walks disk can publish this — a stale first-pass snapshot can't.
+        try writeCommand("beta", title: "Beta")
+        store.startWatching()
+        wait(for: [published], timeout: 2)
+        XCTAssertEqual(store.commands.map(\.name), ["alpha", "beta"])
+        store.stopWatching()
+    }
+
     func testWatchBudgetIsStoreWideAndFairlySplit() throws {
         // Six commands, two nested files each; budget of 4 must give the
         // first four commands one nested target apiece rather than zero
