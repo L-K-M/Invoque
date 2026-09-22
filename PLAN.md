@@ -153,8 +153,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   (lock/sleep/restart/empty trash…), `PathSource` (a pasted/typed
   filesystem path pins first — the row is the deepest component that
   exists, falling back to the nearest ancestor when the tail doesn't
-  yet, except `/` and `~` themselves which are never offered as
-  fallbacks — ⏎ opens folders, reveals
+  yet, except root-level folders and `~` itself which are never offered
+  as fallbacks — ⏎ opens folders, reveals
   files in Finder; ⌘⏎ is the inverse), `URLSource` (a pasted/typed
   http(s) URL pins first alongside paths — ⏎ opens it in the browser,
   so the web fallback can't turn an address into a search), `WebSource`

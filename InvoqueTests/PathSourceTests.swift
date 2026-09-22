@@ -217,11 +217,13 @@ final class PathSourceTests: XCTestCase {
     }
 
     /// A path-shaped string that doesn't exist emits nothing — `/us` while
-    /// typing `/usr` must not flash a phantom row: its only ancestor is
-    /// the catch-all root. Same for a missing component straight under
-    /// home, and for a `~user` name that can't expand.
+    /// typing `/usr` must not flash a phantom row: its only ancestors are
+    /// catch-all root-level folders. Same for a missing component straight
+    /// under home, and for a `~user` name that can't expand.
     func testMissingPathEmitsNothing() {
         XCTAssertTrue(source.items(matching: "/definitely-not-here-\(UUID().uuidString)").isEmpty)
+        XCTAssertTrue(source.items(matching: "/Users/definitely-not-here-\(UUID().uuidString)").isEmpty)
+        XCTAssertTrue(source.items(matching: "/Applications/definitely-not-here-\(UUID().uuidString)").isEmpty)
         XCTAssertTrue(source.items(matching: "~/definitely-not-here-\(UUID().uuidString)").isEmpty)
         XCTAssertTrue(source.items(matching: "~definitely-not-a-user-\(UUID().uuidString)/x").isEmpty)
     }

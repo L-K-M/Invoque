@@ -43,11 +43,12 @@ final class PathSource: ItemSource {
     /// The URL to turn into a row: `url` itself when it exists, else the
     /// deepest ancestor that does — a path-shaped query is direct intent
     /// even when its tail doesn't exist yet (the user is usually
-    /// navigating toward it, or about to create it). Root and home are
-    /// never emitted as fallbacks: they're the ancestor of every `/…` or
-    /// `~/…` slip, so they'd pin a catch-all row over real matches on
-    /// each mistyped prefix. Typing `/` or `~` itself still produces
-    /// their rows — the suppression only covers the fallback.
+    /// navigating toward it, or about to create it). Root-level folders
+    /// and home are never emitted as fallbacks: they're the ancestor of
+    /// every `/…` or `~/…` slip (`/Users/jo` → `/Users`), so they'd pin a
+    /// catch-all row over real matches on each mistyped prefix. Typing
+    /// `/` or `~` itself still produces their rows — the suppression only
+    /// covers the fallback.
     static func existingTarget(for url: URL) -> (url: URL, isDirectory: Bool)? {
         var candidate = url
         var fellBack = false
@@ -70,11 +71,11 @@ final class PathSource: ItemSource {
         return (URL(fileURLWithPath: path), isDirectory.boolValue)
     }
 
-    /// `/` and `~` — the ancestors every mistyped absolute or tilde path
-    /// converges on.
+    /// Root-level folders and `~` — the ancestors every mistyped absolute
+    /// or tilde path converges on.
     private static func isCatchAll(_ url: URL) -> Bool {
         let path = url.standardizedFileURL.path
-        return path == "/"
+        return path.split(separator: "/").count <= 1
             || path == FileManager.default.homeDirectoryForCurrentUser
                 .standardizedFileURL.path
     }
