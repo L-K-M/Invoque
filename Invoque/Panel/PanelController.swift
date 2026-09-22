@@ -234,14 +234,23 @@ final class PanelController: NSObject, @unchecked Sendable {
 
         // ⌘P pins, ⌘B blocks the selected entry. The model returns nil
         // when the chord doesn't apply (no manageable row selected, a
-        // consent/maker card up) — no toast for a no-op.
+        // consent/maker card up) — show brief feedback so the user knows
+        // why nothing happened.
         panel.onPinChord = { [weak self] in
-            guard let self, let toast = self.model.togglePin() else { return }
-            HUD.show(toast, typeface: self.preferences.panelTypeface)
+            guard let self else { return }
+            if let toast = self.model.togglePin() {
+                HUD.show(toast, typeface: self.preferences.panelTypeface)
+            } else if self.model.selectedRow != nil {
+                HUD.show("Can't pin this row", typeface: self.preferences.panelTypeface)
+            }
         }
         panel.onBlockChord = { [weak self] in
-            guard let self, let toast = self.model.toggleBlock() else { return }
-            HUD.show(toast, typeface: self.preferences.panelTypeface)
+            guard let self else { return }
+            if let toast = self.model.toggleBlock() {
+                HUD.show(toast, typeface: self.preferences.panelTypeface)
+            } else if self.model.selectedRow != nil {
+                HUD.show("Can't block this row", typeface: self.preferences.panelTypeface)
+            }
         }
 
         // ⌘C copies the selected row's target — the path, the URL, the
