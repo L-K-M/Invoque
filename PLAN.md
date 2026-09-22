@@ -140,7 +140,10 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - `ItemSource` protocol: `func items(for query: String) -> [Item]` (sync,
   cached sources) and async `reload()` for dynamic ones.
 - Sources v1: `AppSource` (NSWorkspace scan, LaunchServices apps), 
-  `CommandSource` (from CommandStore), `CalculatorSource`, `SystemSource`
+  `CommandSource` (from CommandStore), `CalculatorSource`,
+  `GeneratorSource` (instant answers: `uuid`, `now`, `flip`, `roll`/`dN` —
+  exact-keyword only, never on partials, values fresh per query, ⏎
+  copies), `SystemSource`
   (lock/sleep/restart/empty trash…), `PathSource` (a pasted/typed
   filesystem path that exists pins first — ⏎ opens folders, reveals
   files in Finder; ⌘⏎ is the inverse), `WebSource` (fallback "Search

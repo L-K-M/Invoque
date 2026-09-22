@@ -257,6 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sources: [ItemSource] = [
             PathSource(),
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
+            GeneratorSource(),
             commandSource,
             CalculatorSource(),
             SystemSource(),
