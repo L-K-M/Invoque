@@ -164,7 +164,16 @@ final class PanelController: NSObject, @unchecked Sendable {
         // re-show under Reduce Motion still snaps the frame back.
         let alreadyVisible = panel.isVisible && !wasHiding
         if alreadyVisible || AccessibilityDisplaySettings.shared.reduceMotion {
-            if wasHiding { panel.setFrameOrigin(restingOrigin) }
+            if wasHiding {
+                // A zero-duration animation replaces the still-running
+                // hide fade/slide instead of racing it — direct property
+                // sets don't reliably detach an in-flight animation.
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0
+                    panel.animator().setFrameOrigin(restingOrigin)
+                    panel.animator().alphaValue = 1
+                }
+            }
             panel.alphaValue = 1
             panel.orderFrontRegardless()
         } else {
