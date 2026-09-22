@@ -538,6 +538,15 @@ private struct SearchField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
+        // One line, scrolling horizontally: the header row is fixed height,
+        // so a pasted paragraph wrapping to extra lines clips at the card's
+        // edge. The cell's single-line mode also flattens pasted newlines
+        // via its implicit field-editor hook — SearchTextField must not
+        // implement NSTextViewDelegate methods itself or that sanitizing
+        // is bypassed.
+        field.cell?.usesSingleLineMode = true
+        field.maximumNumberOfLines = 1
+        field.lineBreakMode = .byTruncatingTail
         field.delegate = context.coordinator
         return field
     }
