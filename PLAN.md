@@ -392,8 +392,10 @@ make command to format clipboard json
                                         invoque.*↔permissions cross-check on
                                         comment/string/template-masked source
   → Maker view                          draft summary (title, mode,
-                                        permissions, files) + issues; Test
-                                        button runs the draft in a temp
+                                        permissions, files) + issues; an
+                                        expanded, selectable source viewer
+                                        exposes every generated file before
+                                        Save; Test runs the draft in a temp
                                         staging dir via CommandRunner —
                                         explicit, never automatic
   → feedback loop                       "broke on empty clipboard" → appended
