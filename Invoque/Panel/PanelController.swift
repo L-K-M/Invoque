@@ -37,9 +37,15 @@ final class PanelController: NSObject, @unchecked Sendable {
     private var panelSession = 0
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
-    /// Tracks whether a show/hide animation is in flight — rapid toggles
-    /// cancel the in-progress animation and start a new one.
-    private var isAnimating = false
+    /// Bumped on every show/hide. A hide animation's completion only
+    /// orders the panel out while its generation is still current —
+    /// a show() mid-fade turns the pending completion into a no-op
+    /// that just restores alpha.
+    private var animationGeneration = 0
+    /// True while a hide animation is fading the panel out — the panel
+    /// still reports `isVisible` during the fade, so `toggle()` needs
+    /// this to know a hotkey press should bring it back, not hide again.
+    private var hideInFlight = false
     /// Hosts the results window a pending file scan detaches into.
     private lazy var detachedSearchWindow = DetachedSearchWindowController(
         preferences: preferences)
@@ -113,7 +119,7 @@ final class PanelController: NSObject, @unchecked Sendable {
     // MARK: Show / hide
 
     func toggle() {
-        if panel?.isVisible == true {
+        if panel?.isVisible == true, !hideInFlight {
             hide()
         } else {
             show()
@@ -132,12 +138,10 @@ final class PanelController: NSObject, @unchecked Sendable {
                 PanelGeometry.panelOrigin(inVisibleFrame: screen.visibleFrame, panelSize: size))
         }
 
-        // Cancel any in-flight hide animation — a rapid toggle must not
-        // leave the panel fading out while we try to show it.
-        if isAnimating {
-            NSAnimationContext.current_completionBlock = nil
-            isAnimating = false
-        }
+        // Stale out any in-flight hide — its completion will see a
+        // superseded generation and skip the orderOut.
+        animationGeneration += 1
+        hideInFlight = false
 
         let reduceMotion = AccessibilityDisplaySettings.shared.reduceMotion
         if reduceMotion {
@@ -188,6 +192,7 @@ final class PanelController: NSObject, @unchecked Sendable {
         // spending API budget for a result nobody sees. Dismiss is when
         // the user asked — cancel now, not when the fade completes.
         model.panelDidHide()
+        animationGeneration += 1
         guard let panel, panel.isVisible else { return }
 
         let reduceMotion = AccessibilityDisplaySettings.shared.reduceMotion
@@ -196,7 +201,8 @@ final class PanelController: NSObject, @unchecked Sendable {
             return
         }
 
-        isAnimating = true
+        let generation = animationGeneration
+        hideInFlight = true
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = Animation.duration
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
@@ -206,7 +212,13 @@ final class PanelController: NSObject, @unchecked Sendable {
             frame.origin.y += Animation.slideOffset
             panel.setFrame(frame, display: true)
         }, completionHandler: { [weak self] in
-            self?.isAnimating = false
+            guard let self else { return }
+            // A show() or hide() since this animation started owns the
+            // panel now — a superseding show resets alpha itself, and a
+            // superseding hide keeps fading, so this completion does
+            // nothing at all.
+            guard self.animationGeneration == generation else { return }
+            self.hideInFlight = false
             panel.orderOut(nil)
             // Restore alpha for the next show.
             panel.alphaValue = 1
