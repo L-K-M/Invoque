@@ -1162,10 +1162,11 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             return
         }
         // ⌘⏎ on a file, app, or command reveals it in Finder instead of
-        // opening — Alfred's `find` gesture. Confirmation checks above
-        // already claimed ⌘⏎, so a pending card can't be bypassed by a
-        // file row. Commands reveal their directory — the folder holding
-        // the manifest and script the user can edit by hand.
+        // opening — Alfred's `find` gesture. A pending card is claimed by
+        // the ⌘⏎ handler above, and revealing executes nothing, so the
+        // row-level confirmation check below can safely follow it.
+        // Commands reveal their directory — the folder holding the
+        // manifest and script the user can edit by hand.
         if commandModifier, let row = selectedRow {
             switch row.action {
             case .openFile(let url), .openApp(let url):
@@ -1184,15 +1185,17 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
                                     action: opens ? .openFile(url) : .revealInFinder(url)))
                 return
             case .runCommand(let name, _), .enterFilter(_, let name):
-                // A lookup miss (unwired, or the command vanished since
-                // the row listed) leaves the row its normal ⌘⏎ submit —
-                // run, or enter filter mode below.
                 if let command = commandLookup?(name) {
                     onSubmit?(ResultRow(id: row.id, title: row.title,
                                         subtitle: row.subtitle, icon: row.icon,
                                         action: .revealInFinder(command.directory)))
                     return
                 }
+                // A lookup miss on a filter row keeps its plain submit
+                // below — entering filter mode is harmless. On an action
+                // row the chord is a no-op: ⌘⏎ must never run the command
+                // it was asked to reveal.
+                if case .runCommand = row.action { return }
             default:
                 break
             }

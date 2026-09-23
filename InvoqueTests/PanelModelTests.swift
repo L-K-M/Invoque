@@ -194,10 +194,11 @@ final class PanelModelTests: XCTestCase {
 
     /// A manifest-level command fixture — no files need to exist; tests
     /// that wire `commandLookup` only need the directory URL it resolves.
-    private func makeCommand(name: String) throws -> Command {
+    private func makeCommand(name: String,
+                             mode: String = "action") throws -> Command {
         let payload: [String: Any] = ["schemaVersion": 1, "name": name,
                                       "title": name, "runtime": "js",
-                                      "entry": "main.js", "mode": "action"]
+                                      "entry": "main.js", "mode": mode]
         let manifest = try JSONDecoder().decode(
             CommandManifest.self,
             from: try JSONSerialization.data(withJSONObject: payload))
@@ -1343,7 +1344,7 @@ final class PanelModelTests: XCTestCase {
     /// ⌘⏎ on a filter-mode command row reveals its directory instead of
     /// entering filter mode — the same reveal every command row gets.
     func testCommandModifierRevealsFilterCommandRow() throws {
-        let command = try makeCommand(name: "demo-filter")
+        let command = try makeCommand(name: "demo-filter", mode: "filter")
         let model = makeModel(items: [])
         model.commandLookup = { $0 == "demo-filter" ? command : nil }
         var submitted: ResultRow?
@@ -1358,9 +1359,9 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(model.query, "")
     }
 
-    /// A command row the lookup can't resolve keeps its normal submit —
-    /// ⌘⏎ reveals only when there is a directory to show.
-    func testCommandModifierRunsCommandWhenLookupMisses() {
+    /// ⌘⏎ on an action-command row the lookup can't resolve is a no-op —
+    /// the reveal chord must never run what it was asked to inspect.
+    func testCommandModifierMissOnActionRowDoesNotRun() {
         let model = makeModel(items: [])
         var submitted: ResultRow?
         model.onSubmit = { submitted = $0 }
@@ -1368,7 +1369,7 @@ final class PanelModelTests: XCTestCase {
             id: "cmd:ghost", title: "Ghost", subtitle: "",
             icon: .symbol("terminal"), action: .runCommand("ghost", []))])
         model.submit(commandModifier: true)
-        XCTAssertEqual(submitted?.action, .runCommand("ghost", []))
+        XCTAssertNil(submitted)
     }
 
     /// The same miss on a filter row still enters filter mode — the
