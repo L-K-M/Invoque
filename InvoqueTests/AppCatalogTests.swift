@@ -215,9 +215,10 @@ final class AppCatalogTests: XCTestCase {
     /// The fix itself: the catalog must walk the App cryptex — Safari
     /// lives there since Ventura and is invisible to `/Applications`
     /// enumeration. It must also scan last: first-directory-wins dedup
-    /// means a real install shadows the grafted stub only while the
-    /// cryptex root trails. Static data, so it runs on every macOS
-    /// version without skips.
+    /// means any bundle found in an earlier directory — a user-installed
+    /// copy, say — shadows the cryptex original only while the cryptex
+    /// root trails. Static data, so it runs on every macOS version
+    /// without skips.
     func testSearchDirectoriesEndsWithAppCryptex() {
         XCTAssertEqual(
             AppCatalog.searchDirectories.last?.path,

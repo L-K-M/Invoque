@@ -27,8 +27,8 @@ enum AppCatalog {
     /// explicit entry would just re-scan them into `seenIDs`. Order matters:
     /// `scan` is first-directory-wins on duplicate bundle ids, so the
     /// per-user folder leads — a user-installed copy shadows the system-wide
-    /// one, and the cryptex root trails so a real install always shadows a
-    /// grafted stub.
+    /// one, and the cryptex root trails so anything found in an earlier
+    /// directory shadows the cryptex original.
     static var searchDirectories: [URL] {
         [
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
