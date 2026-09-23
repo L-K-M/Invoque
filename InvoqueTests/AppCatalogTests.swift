@@ -204,12 +204,23 @@ final class AppCatalogTests: XCTestCase {
         let graftedPath = "/Applications/Safari.app"
         let cryptexPath =
             "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app"
-        try XCTSkipUnless(FileManager.default.fileExists(atPath: graftedPath),
-                          "requires the Safari graft")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: cryptexPath),
+                          "requires the Safari cryptex")
         let safari = entry(name: "Safari", path: cryptexPath,
                            bundleID: "com.apple.Safari", fileName: "Safari")
         XCTAssertEqual(AppCatalog.resolve(graftedPath, in: [safari])?.path,
                        cryptexPath)
+    }
+
+    /// The fix itself: the catalog must walk the App cryptex — Safari
+    /// lives there since Ventura and is invisible to `/Applications`
+    /// enumeration. Static data, so it runs on every macOS version
+    /// without skips.
+    func testSearchDirectoriesIncludesAppCryptex() {
+        XCTAssertTrue(AppCatalog.searchDirectories.contains {
+            $0.path
+                == "/System/Volumes/Preboot/Cryptexes/App/System/Applications"
+        })
     }
 
     // MARK: Precedence
