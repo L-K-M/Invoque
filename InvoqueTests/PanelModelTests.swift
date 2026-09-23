@@ -192,6 +192,20 @@ final class PanelModelTests: XCTestCase {
         return CommandPermissionGrants(defaults: defaults)
     }
 
+    /// A manifest-level command fixture — no files need to exist; tests
+    /// that wire `commandLookup` only need the directory URL it resolves.
+    private func makeCommand(name: String) throws -> Command {
+        let payload: [String: Any] = ["schemaVersion": 1, "name": name,
+                                      "title": name, "runtime": "js",
+                                      "entry": "main.js", "mode": "action"]
+        let manifest = try JSONDecoder().decode(
+            CommandManifest.self,
+            from: try JSONSerialization.data(withJSONObject: payload))
+        return try Command(manifest: manifest,
+                           directory: commandDirectory
+                               .appendingPathComponent(name))
+    }
+
     /// Plain ⏎ is neutral while the consent card is up — a permanent grant
     /// must take ⌘⏎ or a click, never a habitual double-⏎.
     func testPlainSubmitIsNeutralOnPendingPermissionRequest() throws {
@@ -1309,6 +1323,67 @@ final class PanelModelTests: XCTestCase {
             action: .revealInFinder(script))])
         model.submit(commandModifier: true)
         XCTAssertEqual(submitted?.action, .revealInFinder(script))
+    }
+
+    /// ⌘⏎ on a command row reveals the command's directory — the folder
+    /// holding its manifest and script — rather than running it.
+    func testCommandModifierRevealsCommandRow() throws {
+        let command = try makeCommand(name: "demo-cmd")
+        let model = makeModel(items: [])
+        model.commandLookup = { $0 == "demo-cmd" ? command : nil }
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "cmd:demo-cmd", title: "Demo", subtitle: "",
+            icon: .symbol("terminal"), action: .runCommand("demo-cmd", []))])
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .revealInFinder(command.directory))
+    }
+
+    /// ⌘⏎ on a filter-mode command row reveals its directory instead of
+    /// entering filter mode — the same reveal every command row gets.
+    func testCommandModifierRevealsFilterCommandRow() throws {
+        let command = try makeCommand(name: "demo-filter")
+        let model = makeModel(items: [])
+        model.commandLookup = { $0 == "demo-filter" ? command : nil }
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "cmd:demo-filter", title: "Demo Filter", subtitle: "",
+            icon: .symbol("terminal"),
+            action: .enterFilter(keyword: "jf", commandName: "demo-filter"))])
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .revealInFinder(command.directory))
+        // Filter mode was not entered — the query did not expand.
+        XCTAssertEqual(model.query, "")
+    }
+
+    /// A command row the lookup can't resolve keeps its normal submit —
+    /// ⌘⏎ reveals only when there is a directory to show.
+    func testCommandModifierRunsCommandWhenLookupMisses() {
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "cmd:ghost", title: "Ghost", subtitle: "",
+            icon: .symbol("terminal"), action: .runCommand("ghost", []))])
+        model.submit(commandModifier: true)
+        XCTAssertEqual(submitted?.action, .runCommand("ghost", []))
+    }
+
+    /// The same miss on a filter row still enters filter mode — the
+    /// row's plain action is the fallback, not a dead chord.
+    func testCommandModifierEntersFilterWhenLookupMisses() {
+        let model = makeModel(items: [])
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.showCommandResults([ResultRow(
+            id: "cmd:ghost", title: "Ghost", subtitle: "",
+            icon: .symbol("terminal"),
+            action: .enterFilter(keyword: "jf", commandName: "ghost"))])
+        model.submit(commandModifier: true)
+        XCTAssertNil(submitted)
+        XCTAssertEqual(model.query, "jf ")
     }
 
     /// Plain ⏎ still opens — the reveal swap must not leak into it.

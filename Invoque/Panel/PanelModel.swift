@@ -81,7 +81,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
 
     /// Resolves a command by manifest name — used when a picked `.enterFilter`
     /// row pins the session to that exact command, so a shared trigger word
-    /// can't reroute the query into a different command's list.
+    /// can't reroute the query into a different command's list, and by ⌘⏎
+    /// to reveal the command's directory in Finder.
     var commandLookup: ((String) -> Command?)?
 
     /// The command store — needed by `edit <name>` to look up existing commands.
@@ -1114,8 +1115,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     ///
     /// `commandModifier` distinguishes plain ⏎ from ⌘⏎ — ⌘⏎ grants a
     /// pending consent request or confirms a consequential system action
-    /// (so a habitual double-⏎ stays harmless), and reveals a file/app row
-    /// in Finder instead of opening it.
+    /// (so a habitual double-⏎ stays harmless), and reveals a file, app,
+    /// or command row in Finder instead of opening it.
     ///
     /// `detachesPendingScan` is the ⏎-mid-scan handoff. A tap on a row
     /// passes `false`: the tap is an explicit pick of *that* row, so it
@@ -1160,27 +1161,11 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             detach(session)
             return
         }
-        if let row = selectedRow,
-           case .enterFilter(let keyword, let commandName) = row.action {
-            // The pick is consumed here — onSubmit never runs — so the
-            // model must train frecency itself, or a heavily used filter
-            // command never rises in the ranked list.
-            searchModel?.recordSelection(itemID: row.id)
-            // Pin the session to the picked command — its trigger word may
-            // collide with another command's, and the row the user chose
-            // must be the one that owns the expanded query.
-            pinnedFilter = (keyword, commandName)
-            query = keyword + " "
-            return
-        }
-        if let row = selectedRow,
-           let confirmation = SystemActionConfirmation(row: row) {
-            systemActionConfirmation = confirmation
-            return
-        }
-        // ⌘⏎ on a file or app reveals it in Finder instead of opening —
-        // Alfred's `find` gesture. Confirmation checks above already claimed
-        // ⌘⏎, so a pending card can't be bypassed by a file row.
+        // ⌘⏎ on a file, app, or command reveals it in Finder instead of
+        // opening — Alfred's `find` gesture. Confirmation checks above
+        // already claimed ⌘⏎, so a pending card can't be bypassed by a
+        // file row. Commands reveal their directory — the folder holding
+        // the manifest and script the user can edit by hand.
         if commandModifier, let row = selectedRow {
             switch row.action {
             case .openFile(let url), .openApp(let url):
@@ -1198,9 +1183,37 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
                                     subtitle: row.subtitle, icon: row.icon,
                                     action: opens ? .openFile(url) : .revealInFinder(url)))
                 return
+            case .runCommand(let name, _), .enterFilter(_, let name):
+                // A lookup miss (unwired, or the command vanished since
+                // the row listed) leaves the row its normal ⌘⏎ submit —
+                // run, or enter filter mode below.
+                if let command = commandLookup?(name) {
+                    onSubmit?(ResultRow(id: row.id, title: row.title,
+                                        subtitle: row.subtitle, icon: row.icon,
+                                        action: .revealInFinder(command.directory)))
+                    return
+                }
             default:
                 break
             }
+        }
+        if let row = selectedRow,
+           case .enterFilter(let keyword, let commandName) = row.action {
+            // The pick is consumed here — onSubmit never runs — so the
+            // model must train frecency itself, or a heavily used filter
+            // command never rises in the ranked list.
+            searchModel?.recordSelection(itemID: row.id)
+            // Pin the session to the picked command — its trigger word may
+            // collide with another command's, and the row the user chose
+            // must be the one that owns the expanded query.
+            pinnedFilter = (keyword, commandName)
+            query = keyword + " "
+            return
+        }
+        if let row = selectedRow,
+           let confirmation = SystemActionConfirmation(row: row) {
+            systemActionConfirmation = confirmation
+            return
         }
         onSubmit?(selectedRow)
     }
