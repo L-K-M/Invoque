@@ -192,6 +192,39 @@ final class AppCatalogTests: XCTestCase {
         XCTAssertNil(AppCatalog.resolve("com.test.app", in: [entry(bundleID: "")]))
     }
 
+    // MARK: Cryptex graft
+
+    /// End-to-end pin for the cryptex fix: Safari's catalog entry records
+    /// its real (cryptex) path, and a literal `/Applications/Safari.app`
+    /// target — the spelling scripts pass to `apps.launch` — must still
+    /// resolve to it. Works because `resolve` standardizes targets with
+    /// `resolvingSymlinksInPath`, which crosses the graft to the same
+    /// canonical path the scan recorded.
+    func testResolveMatchesGraftedApplicationsSpelling() throws {
+        let graftedPath = "/Applications/Safari.app"
+        let cryptexPath =
+            "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app"
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: cryptexPath),
+                          "requires the Safari cryptex")
+        let safari = entry(name: "Safari", path: cryptexPath,
+                           bundleID: "com.apple.Safari", fileName: "Safari")
+        XCTAssertEqual(AppCatalog.resolve(graftedPath, in: [safari])?.path,
+                       cryptexPath)
+    }
+
+    /// The fix itself: the catalog must walk the App cryptex — Safari
+    /// lives there since Ventura and is invisible to `/Applications`
+    /// enumeration. It must also scan last: first-directory-wins dedup
+    /// means any bundle found in an earlier directory — a user-installed
+    /// copy, say — shadows the cryptex original only while the cryptex
+    /// root trails. Static data, so it runs on every macOS version
+    /// without skips.
+    func testSearchDirectoriesEndsWithAppCryptex() {
+        XCTAssertEqual(
+            AppCatalog.searchDirectories.last?.path,
+            "/System/Volumes/Preboot/Cryptexes/App/System/Applications")
+    }
+
     // MARK: Precedence
 
     func testResolvePrefersPathOverName() throws {

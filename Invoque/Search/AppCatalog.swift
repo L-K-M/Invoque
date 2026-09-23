@@ -27,15 +27,27 @@ enum AppCatalog {
     /// explicit entry would just re-scan them into `seenIDs`. Order matters:
     /// `scan` is first-directory-wins on duplicate bundle ids, so the
     /// per-user folder leads — a user-installed copy shadows the system-wide
-    /// one.
+    /// one, and the cryptex root trails so anything found in an earlier
+    /// directory shadows the cryptex original.
     static var searchDirectories: [URL] {
         [
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
             URL(fileURLWithPath: "/Applications", isDirectory: true),
             URL(fileURLWithPath: "/System/Applications", isDirectory: true),
             URL(fileURLWithPath: "/System/Library/CoreServices/Applications", isDirectory: true),
+            Self.cryptexAppDirectory,
         ]
     }
+
+    /// The mounted App cryptex's Applications directory. Since Ventura,
+    /// Safari is delivered in the cryptex and *grafted* into
+    /// `/Applications` — the graft answers by-name lookup (`open`, stat)
+    /// but never appears in `getdirentries`, so enumerating `/Applications`
+    /// alone can never find it. Scanning the cryptex at its real path is
+    /// the only way a directory walk sees it.
+    private static let cryptexAppDirectory = URL(
+        fileURLWithPath: "/System/Volumes/Preboot/Cryptexes/App/System/Applications",
+        isDirectory: true)
 
     /// Every installed app, deduplicated and sorted by name. Live-scans the
     /// disk — callers that can't tolerate the scan cost cache it (as
@@ -159,7 +171,11 @@ enum AppCatalog {
         let bundleID = (bundle?.bundleIdentifier).flatMap { $0.isEmpty ? nil : $0 }
         // The real path, not the possibly-symlinked enumerator spelling —
         // `resolve` standardizes its path targets the same way, so the
-        // confinement check compares like with like.
+        // confinement check compares like with like. That normalization
+        // is what makes cryptex apps transparent: `resolvingSymlinksInPath`
+        // crosses the graft, so a literal `/Applications/Safari.app`
+        // launch target and this entry both canonicalize to the Preboot
+        // path.
         return AppEntry(name: name, path: bundleURL.resolvingSymlinksInPath().path,
                         bundleID: bundleID, fileName: fileName)
     }
