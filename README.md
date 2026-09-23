@@ -64,7 +64,8 @@ refine new commands without leaving the panel.
 
 Commands live under `~/.config/invoque/commands/<name>/` as readable files
 — `command.json` (manifest: title, keyword, mode, permissions) plus
-`main.js`. Edit by hand, version with git, share by copying the folder.
+`main.js`. Edit by hand, version with git, share by copying the folder —
+⌘⏎ on a command row reveals its folder in Finder.
 Filter-mode commands take over the result list; action-mode commands run
 and hand back items, a title, or nothing.
 

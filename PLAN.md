@@ -194,7 +194,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   into its own titled results window — the same walk keeps streaming
   there, and its rows stay openable/revealable/pinnable/blockable;
   closing the window retires the scan. Once the scan settles, ⏎ opens
-  the file and ⌘⏎ reveals it in Finder (also on app rows). Caveat:
+  the file and ⌘⏎ reveals it in Finder (also on app rows; command rows
+  reveal their directory). Caveat:
   TCC-guarded folders (Desktop,
   Documents, Downloads) need the system consent prompt on first access —
   the walk silently skips what it can't read.
