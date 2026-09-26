@@ -30,9 +30,8 @@ struct PanelBackground: View {
     var tint: Color
     var gradientColor: Color
     var gradientAngle: Double
-    /// The user's configured opacity — Reduce Transparency is applied by the
-    /// caller (`AccessibilityDisplaySettings.effectiveBackgroundOpacity`), so
-    /// solid fills go fully opaque when the user asked for it.
+    /// The user's configured opacity. Reduce Transparency overrides both this
+    /// multiplier and any alpha embedded in an imported fill color.
     var opacity: Double
     var cornerRadius: CGFloat
     /// The user's Reduce Transparency setting, supplied by the caller (the
@@ -48,17 +47,24 @@ struct PanelBackground: View {
             case .liquidGlass, .glassClear, .glassTinted:
                 glass(in: shape)
             case .solid:
-                shape.fill(tint.opacity(opacity))
+                shape.fill(fillColor(tint))
             case .gradient:
                 shape.fill(
                     LinearGradient(
-                        colors: [tint.opacity(opacity), gradientColor.opacity(opacity)],
+                        colors: [fillColor(tint), fillColor(gradientColor)],
                         startPoint: gradientStart,
                         endPoint: gradientEnd
                     )
                 )
             }
         }
+    }
+
+    /// Imported hex colors may carry alpha even though the color picker does
+    /// not offer it. Increasing the opacity multiplier alone cannot remove it.
+    private func fillColor(_ color: Color) -> Color {
+        guard reduceTransparency else { return color.opacity(opacity) }
+        return Color(nsColor: NSColor(color).withAlphaComponent(1))
     }
 
     @ViewBuilder

@@ -30,7 +30,7 @@ extension NSColor {
                      alpha: Double(c.alphaComponent)).hexString
     }
 
-    /// `self` at `alpha` composited over `base`, as an opaque sRGB color.
+    /// `self` at the additional `alpha` composited over an opaque `base` estimate.
     ///
     /// The selected row's text is chosen against the color it actually sits on:
     /// the translucent highlight fill *blended over the card background*, not the
@@ -39,7 +39,9 @@ extension NSColor {
     func composited(alpha: CGFloat, over base: NSColor) -> NSColor {
         guard let top = usingColorSpace(.sRGB),
               let bottom = base.usingColorSpace(.sRGB) else { return self }
-        let a = min(max(alpha, 0), 1)
+        // SwiftUI's opacity multiplies the imported color's own alpha. Ignoring
+        // that alpha can choose dark text for a clear highlight on a dark card.
+        let a = min(max(alpha, 0), 1) * top.alphaComponent
         return NSColor(srgbRed: top.redComponent * a + bottom.redComponent * (1 - a),
                        green: top.greenComponent * a + bottom.greenComponent * (1 - a),
                        blue: top.blueComponent * a + bottom.blueComponent * (1 - a),
@@ -61,12 +63,20 @@ extension Color {
         NSColor(self).hexString
     }
 
-    /// A legible foreground (near-black or near-white) for text drawn on top of
-    /// `color`, chosen from its perceived luminance. Same rule as TopDrawer's
-    /// `Color.readableForeground` so the family's tabs, tiles and rows agree.
+    /// Whichever opaque foreground has greater contrast against the estimated
+    /// background. Linearized sRGB luminance keeps saturated colors such as
+    /// green from incorrectly choosing white text. Formula: WCAG 2.2, SC 1.4.3.
     static func readableForeground(on color: NSColor) -> Color {
         let c = color.usingColorSpace(.sRGB) ?? .white
-        let luma = 0.299 * c.redComponent + 0.587 * c.greenComponent + 0.114 * c.blueComponent
-        return luma > 0.62 ? Color.black.opacity(0.82) : .white
+        func linearized(_ channel: CGFloat) -> CGFloat {
+            let value = min(max(channel, 0), 1)
+            return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linearized(c.redComponent)
+            + 0.7152 * linearized(c.greenComponent)
+            + 0.0722 * linearized(c.blueComponent)
+        let contrastWithBlack = (luminance + 0.05) / 0.05
+        let contrastWithWhite = 1.05 / (luminance + 0.05)
+        return contrastWithBlack >= contrastWithWhite ? .black : .white
     }
 }
