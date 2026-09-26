@@ -1282,6 +1282,35 @@ final class PanelModelTests: XCTestCase {
         XCTAssertTrue(sawCancel.raised, "walk never observed cancellation")
     }
 
+    @MainActor
+    func testHideDuringFileDebounceCancelsAndResumesOnce() async throws {
+        let model = makeModel(items: [])
+        let searcherCalls = IntLog()
+        model.fileSearcher = { _, _, emit in
+            searcherCalls.append(1)
+            emit([Self.fileItem("resumed.txt")])
+        }
+        model.query = "find x"
+        XCTAssertTrue(model.fileScanIsPending)
+        XCTAssertEqual(model.fileRunsStarted, 0)
+
+        model.panelDidHide()
+
+        XCTAssertFalse(model.fileScanIsPending)
+        try await Task.sleep(nanoseconds: PanelModel.fileSearchDebounceNanoseconds * 2)
+        XCTAssertEqual(model.fileRunsStarted, 0)
+        XCTAssertTrue(searcherCalls.snapshot.isEmpty, "the canceled walk must not execute")
+
+        model.reset(clearQuery: false)
+
+        // Cancellation settles the first session; the resumed scan adds
+        // the second completion without duplicating the backend call.
+        await awaitFileCompletions(model, atLeast: 2)
+        XCTAssertEqual(model.fileRunsStarted, 1)
+        XCTAssertEqual(searcherCalls.snapshot, [1])
+        XCTAssertEqual(model.results.map(\.title), ["resumed.txt"])
+    }
+
     /// A debounced filter run is work for the visible list — dismissal
     /// cancels it before it ever reaches the runner.
     func testPanelDidHideCancelsPendingFilterRun() async throws {
