@@ -50,6 +50,9 @@ computer-use connection timed out, and no screenshot/VoiceOver proof is claimed.
 - [Theme legibility, PR #79](https://github.com/L-K-M/Invoque/pull/79):
   `codex/astra-theme-legibility`. 42 local color/background/preset tests passed;
   contrast, intrinsic alpha and opaque Reduce Transparency fills.
+- [Maker title color, PR #80](https://github.com/L-K-M/Invoque/pull/80):
+  `codex/astra-maker-title`. Local Xcode build passed; draft titles use the
+  supplied theme foreground. Light-system/dark-theme GUI verification remains.
 
 ## Evidence corrections
 
@@ -599,7 +602,8 @@ Test saturated colors and transparent highlights/endpoints. Glass/wallpaper and
 varying gradients remain estimates, not guaranteed contrast.
 
 Maker draft title omits its supplied theme foreground, causing dark-on-dark text
-in a dark solid theme with system Light appearance. Apply the supplied color.
+in a dark solid theme with system Light appearance. The one-line correction is
+pending in PR #80; visual verification remains.
 Permission chips in Maker/Commands sit in one nonwrapping HStack: separate long
 titles and use wrapping chips or a summary/disclosure. Verify all permissions,
 long names and wide custom fonts in both system appearances.
