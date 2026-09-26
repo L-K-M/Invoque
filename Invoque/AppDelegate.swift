@@ -249,7 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // newly enabled root were never walked — so it forces a full
         // re-query, which schedules a fresh scan in file mode.
         preferences.fileSearchScopesChanged = { [weak model] in
-            model?.refreshResults()
+            model?.fileSearchScopesDidChange()
         }
         // One WebSource feeds both the always-last fallback row and the
         // `web <q>` forced-search keyword — same item either way.
