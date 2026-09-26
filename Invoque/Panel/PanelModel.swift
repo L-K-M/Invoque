@@ -424,7 +424,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             // A blank rest owns an empty list — same convention as `find `.
             let rows = resolved.text.isEmpty ? []
                 : (webSearchItem?(resolved.text)).map { [ResultRow(item: $0)] } ?? []
-            if rows != results { results = rows }
+            applyResults(rows)
             return
         }
         if let resolved = activeFilter() {
@@ -560,6 +560,15 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         activeFileText = nil
         fileResultText = nil
         rawFileRows = []
+    }
+
+    /// Scope changes invalidate the walk itself, not just its ranking.
+    /// An ordinary source refresh keeps an identical file query running;
+    /// this path retires its old rows and session before rescanning.
+    func fileSearchScopesDidChange() {
+        guard fileSearchIsActive else { return }
+        cancelFileSearch()
+        refreshResults()
     }
 
     // MARK: Filter mode
@@ -1050,7 +1059,14 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// Prepares a fresh summon: selection back to the first row, query cleared
     /// unless the caller keeps it (the "keep query on re-show" setting).
     func reset(clearQuery: Bool) {
-        if clearQuery { query = "" }
+        if clearQuery, !query.isEmpty {
+            query = ""
+        } else {
+            // An unchanged query skips didSet's refresh. Reopening still
+            // needs to resume work canceled by hide and refresh top hits
+            // after a pick made from an already-empty query.
+            refreshResults()
+        }
         // A kept query still exits recall mode — the next ↑ must recall the
         // newest entry, not resume a stale depth.
         recallDepth = 0

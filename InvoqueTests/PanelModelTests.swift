@@ -571,6 +571,42 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(url.absoluteString, "https://duckduckgo.com/?q=elephant")
     }
 
+    func testWebSearchSelectsItsRowAfterNonzeroSelection() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:one", title: "Alpha"),
+            Self.appItem(id: "app:two", title: "Amber"),
+        ])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.query = "a"
+        model.moveSelection(by: 1)
+        XCTAssertEqual(model.selection, 1)
+
+        model.query = "web elephant"
+
+        XCTAssertEqual(model.selection, 0)
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.submit()
+        XCTAssertEqual(submitted?.id, "web:elephant")
+    }
+
+    func testBlankWebSearchResetsNonzeroSelection() {
+        let model = makeModel(items: [
+            Self.appItem(id: "app:one", title: "Alpha"),
+            Self.appItem(id: "app:two", title: "Amber"),
+        ])
+        model.webSearchItem = { WebSource(engine: { .duckDuckGo }).item(for: $0) }
+        model.query = "a"
+        model.moveSelection(by: 1)
+
+        model.query = "web "
+
+        XCTAssertTrue(model.results.isEmpty)
+        XCTAssertEqual(model.selection, 0)
+        model.query = "web elephant"
+        XCTAssertEqual(model.selectedRow?.id, "web:elephant")
+    }
+
     /// Bare `web` (no space) stays a normal search — the same convention
     /// the other keyword modes follow.
     func testBareWebKeywordStaysNormalSearch() {
@@ -835,6 +871,69 @@ final class PanelModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000) // past the debounce
         XCTAssertEqual(model.fileRunsStarted, 1)
         XCTAssertEqual(model.results.map(\.title), ["notes.txt"])
+    }
+
+    @MainActor
+    func testScopeChangeRestartsCompletedFileSearch() async throws {
+        withShortFileDebounce()
+        let preferences = Preferences(defaults: defaults)
+        preferences.fileSearchScopes = [.home]
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _, emit in
+            let name = preferences.fileSearchScopeSnapshot == [.home]
+                ? "home.txt" : "system.txt"
+            emit([Self.fileItem(name)])
+        }
+        preferences.fileSearchScopesChanged = { [weak model] in
+            model?.fileSearchScopesDidChange()
+        }
+        model.query = "find notes"
+        await awaitFileCompletions(model, atLeast: 1)
+        XCTAssertEqual(model.results.map(\.title), ["home.txt"])
+
+        preferences.fileSearchScopes = [.system]
+
+        XCTAssertTrue(model.results.isEmpty, "old-scope rows must retire immediately")
+        await awaitFileCompletions(model, atLeast: 2)
+        XCTAssertEqual(model.query, "find notes")
+        XCTAssertEqual(model.results.map(\.title), ["system.txt"])
+    }
+
+    @MainActor
+    func testScopeChangeDropsLateBatchFromPreviousScope() async throws {
+        withShortFileDebounce()
+        let preferences = Preferences(defaults: defaults)
+        preferences.fileSearchScopes = [.home]
+        let model = makeModel(items: [])
+        let releaseOldScan = DispatchSemaphore(value: 0)
+        defer { releaseOldScan.signal() }
+        let staleBatchDrained = DrainFlag()
+        model.fileSearcher = { _, _, emit in
+            if preferences.fileSearchScopeSnapshot == [.home] {
+                emit([Self.fileItem("home.txt")])
+                guard releaseOldScan.wait(timeout: .now() + 10) == .success else {
+                    return XCTFail("old-scope scan was never released")
+                }
+                emit([Self.fileItem("stale.txt")])
+                DispatchQueue.main.async { staleBatchDrained.raise() }
+            } else {
+                emit([Self.fileItem("system.txt")])
+            }
+        }
+        preferences.fileSearchScopesChanged = { [weak model] in
+            model?.fileSearchScopesDidChange()
+        }
+        model.query = "find notes"
+        await awaitResults(model) { $0.first?.title == "home.txt" }
+        XCTAssertTrue(model.fileScanIsPending)
+
+        preferences.fileSearchScopes = [.system]
+
+        XCTAssertTrue(model.results.isEmpty)
+        await awaitResults(model) { $0.first?.title == "system.txt" }
+        releaseOldScan.signal()
+        await awaitCondition { staleBatchDrained.raised }
+        XCTAssertEqual(model.results.map(\.title), ["system.txt"])
     }
 
     /// A slow earlier scan must not stamp rows over a newer keystroke's
@@ -1204,6 +1303,76 @@ final class PanelModelTests: XCTestCase {
         // silently shrink this back inside the window.
         try await Task.sleep(nanoseconds: PanelModel.filterDebounceNanoseconds * 2)
         XCTAssertEqual(model.filterRunsStarted, 0)
+    }
+
+    @MainActor
+    func testReshowWithKeptQueryRestartsCanceledFilter() async throws {
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run() { return { items: [{ title: "resumed" }] }; }
+            """)
+        let model = makeModel(items: [])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.commandRunner = CommandRunner()
+        model.query = "jf x"
+        model.panelDidHide()
+        XCTAssertEqual(model.filterRunsStarted, 0)
+
+        model.reset(clearQuery: false)
+
+        await awaitResults(model) { $0.first?.title == "resumed" }
+        XCTAssertEqual(model.query, "jf x")
+        XCTAssertEqual(model.filterRunsStarted, 1)
+    }
+
+    @MainActor
+    func testReshowWithKeptQueryRestartsFileScanAndDropsOldBatch() async throws {
+        withShortFileDebounce()
+        let model = makeModel(items: [])
+        let firstStarted = DrainFlag()
+        let staleBatchDrained = DrainFlag()
+        let releaseOldScan = DispatchSemaphore(value: 0)
+        defer { releaseOldScan.signal() }
+        model.fileSearcher = { _, _, emit in
+            if !firstStarted.raised {
+                firstStarted.raise()
+                emit([Self.fileItem("partial.txt")])
+                guard releaseOldScan.wait(timeout: .now() + 10) == .success else {
+                    return XCTFail("hidden scan was never released")
+                }
+                emit([Self.fileItem("stale.txt")])
+                DispatchQueue.main.async { staleBatchDrained.raise() }
+            } else {
+                emit([Self.fileItem("resumed.txt")])
+            }
+        }
+        model.query = "find notes"
+        await awaitResults(model) { $0.first?.title == "partial.txt" }
+        model.panelDidHide()
+
+        model.reset(clearQuery: false)
+
+        await awaitResults(model) { $0.first?.title == "resumed.txt" }
+        XCTAssertEqual(model.query, "find notes")
+        XCTAssertEqual(model.fileRunsStarted, 2)
+        releaseOldScan.signal()
+        await awaitCondition { staleBatchDrained.raised }
+        XCTAssertEqual(model.results.map(\.title), ["resumed.txt"])
+    }
+
+    func testReshowRefreshesTopHitsWhenQueryIsAlreadyEmpty() {
+        let alpha = Self.appItem(id: "app:alpha", title: "Alpha")
+        let amber = Self.appItem(id: "app:amber", title: "Amber")
+        let model = makeModel(items: [alpha, amber])
+        XCTAssertTrue(model.results.isEmpty)
+        model.searchModel?.recordSelection(alpha)
+
+        model.reset(clearQuery: true)
+
+        XCTAssertEqual(model.results.map(\.id), [alpha.id])
+        model.searchModel?.recordSelection(amber)
+        model.searchModel?.recordSelection(amber)
+        model.reset(clearQuery: false)
+        XCTAssertEqual(model.results.map(\.id), [amber.id, alpha.id])
     }
 
     /// A run already inside the runner when the panel hides is past the

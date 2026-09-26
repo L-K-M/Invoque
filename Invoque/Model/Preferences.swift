@@ -387,10 +387,10 @@ final class Preferences: ObservableObject, @unchecked Sendable {
         rulesLock.withLock { scopeSnapshot }
     }
 
-    /// Fires after the scope set changes — the AppDelegate wires it to a
-    /// full `refreshResults`, not `entryRulesDidChange`: unlike a
-    /// pin/block, a scope change can't reshape the cached scan, since the
-    /// files it would reveal were never walked.
+    /// Fires after the scope set changes. The AppDelegate invalidates
+    /// the active file-search session: unlike a pin/block, a scope
+    /// change can't reshape the cached scan, since the files it would
+    /// reveal were never walked.
     var fileSearchScopesChanged: (() -> Void)?
 
     // MARK: Init
