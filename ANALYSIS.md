@@ -1,19 +1,21 @@
 # Invoque: analysis and future work
 
-Consolidated 2026-09-26 against main `f9b9c9d`. This is the active backlog,
+Consolidated 2026-09-26. This is the active backlog,
 combining the existing muse/glm/sol/swe-derived analysis with the independent
 [Astra review](https://github.com/L-K-M/Invoque/blob/3be839d06ddf8d4844e4adbf3367a09c17fee7da/astra.md).
 Other models' PRs were not inspected during this consolidation. References
 without a revision are source pointers, not permanent line numbers.
 
-Completed baseline work is removed from this backlog. Its full implementation
-and review history remains in the [previous ANALYSIS.md](https://github.com/L-K-M/Invoque/blob/f9b9c9d/ANALYSIS.md).
-Open implementation PRs are **pending**, not shipped. After merging one, remove
-only its completed scope and retain its follow-ups and manual validation gaps.
+Completed work is removed from this backlog. Baseline implementation and review
+history remains in the [previous ANALYSIS.md](https://github.com/L-K-M/Invoque/blob/f9b9c9d/ANALYSIS.md);
+the Astra implementation scope and original findings remain in the
+[pre-cleanup backlog](https://github.com/L-K-M/Invoque/blob/c632dd051f299d104cfcbe533abe657300c39a19/ANALYSIS.md).
+When completing future work, remove only its implemented scope and retain its
+follow-ups and manual validation gaps.
 
 ## Recommended next work
 
-1. Finish reviewing the pending panel/search/runtime/theme changes below.
+1. Complete the launcher-visibility and theme-rendering GUI checks below.
 2. Own command invocation cancellation, shell lifetime and byte budgets end to
    end. These are more consequential than new decoration or extra sources.
 3. Make command identity, edit destinations, complete revision snapshots and
@@ -24,35 +26,10 @@ only its completed scope and retain its follow-ups and manual validation gaps.
 6. Add a contextual actions menu and local keyboard guide; simplify hints and
    make theme contrast, permission cards and focus behavior verifiable.
 
-CI and reviewer status for these pending changes is authoritative on the linked
-PRs. GLM returned HTTP 429 without findings on the first audit-document attempt;
-an integration failure is a review gap, not approval.
-
 Each implementation should be a bounded PR with a failing regression where
 practical. For older proposed defects, verify the current source and reproduce
 before changing code. GUI findings require manual verification: this audit's
 computer-use connection timed out, and no screenshot/VoiceOver proof is claimed.
-
-## Pending Astra changes
-
-- [Review document, PR #75](https://github.com/L-K-M/Invoque/pull/75): the audit
-  snapshot was written before code changes.
-- [Panel visibility, PR #76](https://github.com/L-K-M/Invoque/pull/76): immediate
-  opaque ordering and immediate dismissal. 135 relevant local tests passed;
-  intermittent permanent invisibility itself is not reproduced. Keep the
-  display/Space/sleep/fullscreen manual matrix below.
-- [Search sessions, PR #78](https://github.com/L-K-M/Invoque/pull/78):
-  `codex/astra-search-sessions`. 216 local model tests passed; forced-web
-  selection, retained queries and changed file scopes.
-- [Lexical JavaScript entries, PR #77](https://github.com/L-K-M/Invoque/pull/77):
-  `codex/astra-js-entry`. 65 local runtime/runner/validator tests passed;
-  execute accepted const/let run bindings in lexical scope.
-- [Theme legibility, PR #79](https://github.com/L-K-M/Invoque/pull/79):
-  `codex/astra-theme-legibility`. 42 local color/background/preset tests passed;
-  contrast, intrinsic alpha and opaque Reduce Transparency fills.
-- [Maker title color, PR #80](https://github.com/L-K-M/Invoque/pull/80):
-  `codex/astra-maker-title`. Local Xcode build passed; draft titles use the
-  supplied theme foreground. Light-system/dark-theme GUI verification remains.
 
 ## Evidence corrections
 
@@ -70,37 +47,31 @@ computer-use connection timed out, and no screenshot/VoiceOver proof is claimed.
   Commands inventory/menu, generated source review, confirmations and query
   arguments already exist. Their remaining limitations are described below.
 
+## Verification follow-ups
+
+### Launcher visibility across window transitions (Astra A01)
+
+Immediate opaque ordering and dismissal address an animation race, but the
+reported intermittent permanent invisibility itself remains unreproduced.
+Automated tests verify the immediate window invariants; they do not replace a
+real GUI session. Stress rapid summon/Esc/click-away, sleep/wake, display
+reconfiguration, fullscreen Spaces and Reduce Motion. After summon, the panel
+must be visible, opaque, on-screen and ready for typing; after hide, it must
+release keyboard capture. If blank rendering persists, record
+alpha/frame/key/visible/screen/content bounds without query text and investigate
+hosting/glass separately when opacity and ordering are healthy.
+
+### Theme rendering and Maker-title contrast (Astra A17-A18)
+
+The corrected contrast/alpha math and Maker foreground assignment still need
+GUI validation. Check Maker draft titles in system Light with a dark solid theme
+and the inverse, including long titles and wide custom fonts. Check selected rows
+at different gradient positions and over glass with light, dark and busy
+wallpapers. Glass/wallpaper and varying gradients remain estimates, not
+guaranteed contrast; verify actual text at its rendered position before claiming
+legibility. Include imported alpha, Reduce Transparency and Increase Contrast.
+
 ## Bugs to Fix
-
-### Invisible launcher and window ordering (Astra A01)
-
-**Plausible cause, pending PR #76.** Window opacity/frame animations overlap;
-generation checks guard completion callbacks, not all animator writes. An
-ordered alpha-zero nonactivating panel can still own input. Prefer immediate
-opaque show/order-out hide. New tests reproduce violations of those immediate
-invariants, not the exact intermittent permanent failure. Manually stress rapid
-summon/Esc/click-away, sleep/wake, display reconfiguration and fullscreen Spaces.
-If blank rendering persists, record alpha/frame/key/visible/screen/content bounds
-without query text and investigate hosting/glass separately.
-
-### Forced web selection and remembered search sessions (Astra A03-A05)
-
-**Confirmed, implementation pending.** Forced `web` routing writes results
-without normalizing selection, so a prior nonzero row index makes Return dismiss
-without searching. Retained queries fail to restart file/filter work canceled
-by hide. Scope-change refresh is rejected by the unchanged file-query identity.
-Normalize every result replacement, explicitly invalidate scope sessions and
-restart the appropriate query on summon. Test populated/blank web transitions,
-pending and completed scopes, retained file/filter work, stale batches and fresh
-empty-query frecency.
-
-### Lexical JavaScript entry points (Astra A12)
-
-**Reproduced, implementation pending.** Validator accepts `const run = …`;
-runtime checks lexical `typeof run` then retrieves a global-object property,
-which is undefined for const/let. Resolve the callable in the same lexical scope.
-Tests must observe the returned value from const/let sync/async arrows and retain
-function/export/default and missing/noncallable coverage.
 
 ### Clipboard routing, recency and live refresh (Astra A06)
 
@@ -331,6 +302,15 @@ Clipboard, workspace open/activate, Accessibility prompting, and System Settings
 
 ## Performance Improvements
 
+### Defer file-scope rescans while the launcher is hidden
+
+`PanelModel.fileSearchScopesDidChange` cancels and refreshes a retained file query
+even when the launcher is hidden. Track visibility or a dirty-scope revision:
+invalidate stale results while hidden, then start the walk on the next summon.
+Keep scope changes immediate for a visible launcher and preserve independent
+detached sessions. Test no hidden scan, the latest scopes on resummon, and stale
+batches being rejected after the scope changes.
+
 ### FileSearch.resourceValues per entry
 
 `FileSearch.swift:418-434` — Every visited file triggers `resourceValues(forKeys:)`. For ~100K files, this adds up. Consider batch-fetching or caching. (Muse: also `standardizedFileURL` per directory, `file:` id string + `isExcluded` closure per directory — snapshot the exclusion set once per scan instead of dispatching per directory — up to 12 `fileExists` probes per `build`-named dir in `hasProjectManifest:455` — cache per parent — `homeDirectoryForCurrentUser` per match `:479` — hoist — volume resolution per scan `:112` — cache, refresh on mount notes.)
@@ -550,7 +530,7 @@ Search; keyboard-shortcut reference pane (panel verbs ⏎/⌘⏎/⌘P/⌘B/⌘C/
 
 ### File and filter progress remains text-only
 
-The panel footer now separates live "Searching files…" status from result count (`60f6285`), while the detached header has `ProgressView`. The main panel still has no spinner/progress measure, visited count, Stop action, or filter-debounce affordance. Also clear filterTask when its matching invocation finishes: filterRunIsPending stays true after completion. Test success/error/cancellation and prevent a stale completion clearing a newer task.
+The panel footer now separates live "Searching files…" status from result count (`60f6285`), while the detached header has `ProgressView`. The main panel still has no spinner/progress measure, visited count, Stop action, or filter-debounce affordance.
 
 ### No empty-state illustration
 
@@ -592,18 +572,8 @@ Collapse to content; async icon pipeline; matched-substring bold + frecency embe
 ---
 
 
-### Theme math, imported alpha and card foregrounds (Astra A17-A18)
+### Permission-chip layout (Astra A18)
 
-**Theme math implementation pending.** Gamma-space luma chooses white on opaque
-green (~1.37:1 contrast). Compare opaque black/white using linearized sRGB, and
-include intrinsic alpha when compositing highlight opacity. Reduce Transparency
-must force solid/gradient endpoint alpha to one, including imported #RRGGBBAA.
-Test saturated colors and transparent highlights/endpoints. Glass/wallpaper and
-varying gradients remain estimates, not guaranteed contrast.
-
-Maker draft title omits its supplied theme foreground, causing dark-on-dark text
-in a dark solid theme with system Light appearance. The one-line correction is
-pending in PR #80; visual verification remains.
 Permission chips in Maker/Commands sit in one nonwrapping HStack: separate long
 titles and use wrapping chips or a summary/disclosure. Verify all permissions,
 long names and wide custom fonts in both system appearances.
