@@ -400,6 +400,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// landing after the panel opened must fill the visible list without
     /// waiting for the next keystroke.
     func refreshResults() {
+        queryWorkWasCanceledByHide = false
         // The maker owns the panel: `MakerView` replaces the list, and a
         // command source rescan must not refill rows nobody can see.
         if makerIsActive {
@@ -650,6 +651,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
                 // tick also sees the final rows/selection state.
                 defer { filterRunCompletions += 1 }
                 guard generation == filterGeneration else { return }
+                filterTask = nil
                 applyResults(rows)
             }
         }
@@ -1056,15 +1058,20 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
 
     // MARK: State changes
 
+    /// A kept query resumes only unfinished filter/file work that hiding
+    /// canceled. Completed results keep their session metadata and rows.
+    /// Any new refresh consumes this flag; repeated hides leave it set.
+    private var queryWorkWasCanceledByHide = false
+
     /// Prepares a fresh summon: selection back to the first row, query cleared
     /// unless the caller keeps it (the "keep query on re-show" setting).
     func reset(clearQuery: Bool) {
         if clearQuery, !query.isEmpty {
             query = ""
-        } else {
-            // An unchanged query skips didSet's refresh. Reopening still
-            // needs to resume work canceled by hide and refresh top hits
-            // after a pick made from an already-empty query.
+        } else if query.isEmpty || queryWorkWasCanceledByHide {
+            // An unchanged query skips didSet's refresh. Resume canceled
+            // work and update top hits, but keep completed searches so a
+            // summon alone never re-executes a finished filter command.
             refreshResults()
         }
         // A kept query still exits recall mode — the next ↑ must recall the
@@ -1084,8 +1091,14 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// the query are untouched — `reset` owns resummon state, and a
     /// detached file session is already off `fileSession` by then.
     func panelDidHide() {
-        cancelFileSearch()
-        cancelFilterRun()
+        if fileScanIsPending {
+            queryWorkWasCanceledByHide = true
+            cancelFileSearch()
+        }
+        if filterRunIsPending {
+            queryWorkWasCanceledByHide = true
+            cancelFilterRun()
+        }
         // MakerModel is @MainActor — the cancel hops over.
         if let maker { Task { await maker.cancelGeneration() } }
     }

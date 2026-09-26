@@ -1316,12 +1316,61 @@ final class PanelModelTests: XCTestCase {
         model.query = "jf x"
         model.panelDidHide()
         XCTAssertEqual(model.filterRunsStarted, 0)
+        // A repeated dismissal must not forget the earlier cancellation.
+        model.panelDidHide()
 
         model.reset(clearQuery: false)
 
         await awaitResults(model) { $0.first?.title == "resumed" }
         XCTAssertEqual(model.query, "jf x")
         XCTAssertEqual(model.filterRunsStarted, 1)
+    }
+
+    @MainActor
+    func testReshowWithKeptQueryRetainsCompletedFilterResults() async throws {
+        let command = try writeFilterCommand(keyword: "jf", source: """
+            async function run() { return { items: [{ title: "finished" }] }; }
+            """)
+        let model = makeModel(items: [])
+        model.filterLookup = { $0 == "jf" ? command : nil }
+        model.commandRunner = CommandRunner()
+        model.query = "jf x"
+        await awaitCompletions(model, atLeast: 1)
+        XCTAssertFalse(model.filterRunIsPending)
+        let finishedRows = model.results
+
+        model.panelDidHide()
+        model.reset(clearQuery: false)
+
+        XCTAssertEqual(model.results, finishedRows, "completed rows must not flash empty")
+        XCTAssertFalse(model.filterRunIsPending)
+        try await Task.sleep(nanoseconds: PanelModel.filterDebounceNanoseconds * 2)
+        XCTAssertEqual(model.filterRunsStarted, 1)
+        XCTAssertEqual(model.results, finishedRows)
+    }
+
+    @MainActor
+    func testReshowWithKeptQueryRetainsCompletedFileResults() async throws {
+        withShortFileDebounce()
+        let model = makeModel(items: [])
+        model.fileSearcher = { _, _, emit in emit([Self.fileItem("finished.txt")]) }
+        model.query = "find notes"
+        await awaitFileCompletions(model, atLeast: 1)
+        let finishedRows = model.results
+
+        model.panelDidHide()
+        model.reset(clearQuery: false)
+
+        XCTAssertEqual(model.results, finishedRows, "completed rows must not flash empty")
+        XCTAssertFalse(model.fileScanIsPending)
+        model.entryRulesDidChange()
+        XCTAssertEqual(model.results, finishedRows, "the raw snapshot must survive hiding")
+        // A catalog refresh after reopening still isn't a reason to walk
+        // the identical completed file query again.
+        model.refreshResults()
+        try await Task.sleep(nanoseconds: PanelModel.fileSearchDebounceNanoseconds * 2)
+        XCTAssertEqual(model.fileRunsStarted, 1)
+        XCTAssertEqual(model.results, finishedRows)
     }
 
     @MainActor
