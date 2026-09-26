@@ -43,6 +43,31 @@ final class JSRuntimeTests: XCTestCase {
         XCTAssertEqual(result.title, "hi x")
     }
 
+    func testLexicalArrowEntryReturnsTitle() async throws {
+        for declaration in ["const", "let"] {
+            let command = try makeCommand(source: """
+                \(declaration) run = (args, ctx) => ({ title: args[0] + " " + ctx.args[1] });
+                """)
+            let result = await runtime.run(command: command, args: ["hello", declaration])
+            XCTAssertNil(result.error, declaration)
+            XCTAssertEqual(result.title, "hello \(declaration)", declaration)
+        }
+    }
+
+    func testAsyncLexicalArrowEntryReturnsTitle() async throws {
+        for declaration in ["const", "let"] {
+            let command = try makeCommand(source: """
+                \(declaration) run = async (args) => {
+                    const title = await Promise.resolve("hello " + args[0]);
+                    return { title };
+                };
+                """)
+            let result = await runtime.run(command: command, args: [declaration])
+            XCTAssertNil(result.error, declaration)
+            XCTAssertEqual(result.title, "hello \(declaration)", declaration)
+        }
+    }
+
     func testThrowingScriptSurfacesError() async throws {
         let command = try makeCommand(source: """
             async function run() { throw new Error("boom"); }
@@ -73,6 +98,14 @@ final class JSRuntimeTests: XCTestCase {
             """)
         let result = await runtime.run(command: command)
         XCTAssertEqual(result.error, .missingEntryPoint)
+    }
+
+    func testNonCallableEntryPoint() async throws {
+        for source in ["const run = 42;", "let run = {};", "var run = null;"] {
+            let command = try makeCommand(source: source)
+            let result = await runtime.run(command: command)
+            XCTAssertEqual(result.error, .missingEntryPoint, source)
+        }
     }
 
     func testPromiseRejectionSurfacesError() async throws {

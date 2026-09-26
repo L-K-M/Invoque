@@ -163,10 +163,11 @@ final class JSRuntime: @unchecked Sendable {
             return
         }
 
-        // `run` comes from a top-level `function run`/`async function run`
-        // declaration, or from the `export default` transform.
+        // Resolve the same binding the callable check sees: top-level
+        // const/let declarations live in the global lexical environment,
+        // not on the global object used by objectForKeyedSubscript.
         let isCallable = context.evaluateScript("typeof run === 'function'")?.toBool() ?? false
-        guard isCallable, let runFunction = context.objectForKeyedSubscript("run") else {
+        guard isCallable, let runFunction = context.evaluateScript("run") else {
             box.complete(JSResult(output: .void, logs: logs.snapshot, error: .missingEntryPoint))
             return
         }
