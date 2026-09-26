@@ -17,12 +17,6 @@ final class PanelController: NSObject, @unchecked Sendable {
         static let height: CGFloat = 440
     }
 
-    /// Animation constants — a short slide-in from above with fade.
-    private enum Animation {
-        static let duration: TimeInterval = 0.15
-        static let slideOffset: CGFloat = 8
-    }
-
     private let preferences: Preferences
     private let searchModel: SearchModel
     private let model: PanelModel
@@ -37,19 +31,6 @@ final class PanelController: NSObject, @unchecked Sendable {
     private var panelSession = 0
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
-    /// Bumped on every show/hide. A hide animation's completion only
-    /// orders the panel out while its generation is still current —
-    /// a show() mid-fade turns the pending completion into a no-op.
-    private var animationGeneration = 0
-    /// True while a hide animation is fading the panel out — the panel
-    /// still reports `isVisible` during the fade, so `toggle()` needs
-    /// this to know a hotkey press should bring it back, not hide again.
-    private var hideInFlight = false
-    /// The panel's origin when the in-flight hide began. A mid-fade
-    /// show() reverses toward this — `panel.frame` is only partway to
-    /// the hide's offset target then (window frame animations
-    /// interpolate the real frame), so it can't be derived in place.
-    private var hideRestingOrigin: CGPoint?
     /// Hosts the results window a pending file scan detaches into.
     private lazy var detachedSearchWindow = DetachedSearchWindowController(
         preferences: preferences)
@@ -124,7 +105,7 @@ final class PanelController: NSObject, @unchecked Sendable {
     // MARK: Show / hide
 
     func toggle() {
-        if panel?.isVisible == true, !hideInFlight {
+        if panel?.isVisible == true {
             hide()
         } else {
             show()
@@ -137,70 +118,16 @@ final class PanelController: NSObject, @unchecked Sendable {
 
         model.reset(clearQuery: !preferences.keepQueryOnReshow)
 
-        // Stale out any in-flight hide — its completion will see a
-        // superseded generation and skip the orderOut. `wasHiding` is
-        // captured first: a mid-fade re-show should reverse the slide,
-        // not restart it from a doubled offset.
-        let wasHiding = hideInFlight
-        animationGeneration += 1
-        hideInFlight = false
-
-        // The resting origin the intro lands on. A mid-fade re-show
-        // reverses toward the origin captured when the hide began;
-        // a fresh show re-derives geometry under the mouse.
-        var restingOrigin = wasHiding
-            ? hideRestingOrigin ?? panel.frame.origin
-            : panel.frame.origin
-        hideRestingOrigin = nil
-        if !wasHiding, let screen = screenUnderMouse() {
-            let size = NSSize(width: Size.width, height: Size.height)
-            restingOrigin = PanelGeometry.panelOrigin(
-                inVisibleFrame: screen.visibleFrame, panelSize: size)
-            panel.setFrameOrigin(restingOrigin)
+        // Window opacity is never animated. An ordered transparent NSPanel
+        // can still own keyboard focus, and overlapping animator writes can
+        // outlive the completion handlers that used to guard dismissal.
+        // Establish the complete visible state before giving it the keyboard.
+        if let screen = screenUnderMouse() {
+            panel.setFrameOrigin(PanelGeometry.panelOrigin(
+                inVisibleFrame: screen.visibleFrame, panelSize: panel.frame.size))
         }
-
-        // Already on screen and not fading out (a show() meant just to
-        // re-focus)? Replaying the intro would blink the panel and stack
-        // another slide offset — take the no-animation path. A mid-fade
-        // re-show under Reduce Motion still snaps the frame back.
-        let alreadyVisible = panel.isVisible && !wasHiding
-        if alreadyVisible || AccessibilityDisplaySettings.shared.reduceMotion {
-            if wasHiding {
-                // A zero-duration animation replaces the still-running
-                // hide fade/slide instead of racing it — direct property
-                // sets don't reliably detach an in-flight animation.
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0
-                    panel.animator().setFrameOrigin(restingOrigin)
-                    panel.animator().alphaValue = 1
-                }
-            }
-            panel.alphaValue = 1
-            panel.orderFrontRegardless()
-        } else {
-            // Slide-in from above with fade. A fresh show starts at
-            // alpha 0 one offset above the resting origin; a mid-fade
-            // re-show keeps the pending hide's model values so the
-            // animation targets below simply reverse it.
-            if !wasHiding {
-                panel.alphaValue = 0
-                var startFrame = panel.frame
-                startFrame.origin = restingOrigin
-                startFrame.origin.y += Animation.slideOffset
-                panel.setFrameOrigin(startFrame.origin)
-            }
-            panel.orderFrontRegardless()
-
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = Animation.duration
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                ctx.allowsImplicitAnimation = true
-                panel.animator().alphaValue = 1
-                var targetFrame = panel.frame
-                targetFrame.origin = restingOrigin
-                panel.animator().setFrame(targetFrame, display: true)
-            }
-        }
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
 
         // Key without activating the app (`.nonactivatingPanel`), then hand
         // focus to the search field for immediate typing.
@@ -213,9 +140,9 @@ final class PanelController: NSObject, @unchecked Sendable {
             // SearchTextField.viewDidMoveToWindow covers this too, but a
             // next-runloop retry keeps focus deterministic either way.
             DispatchQueue.main.async { [weak self] in
-                if let field = self?.panel?.preferredFirstResponder {
-                    self?.panel?.makeFirstResponder(field)
-                }
+                guard let panel = self?.panel, panel.isVisible, panel.isKeyWindow,
+                      let field = panel.preferredFirstResponder else { return }
+                panel.makeFirstResponder(field)
             }
         }
     }
@@ -224,52 +151,12 @@ final class PanelController: NSObject, @unchecked Sendable {
         panelSession += 1
         // A dismissed panel must not keep working: a `find` walk would
         // scan the disk for minutes, and a `make` generation would keep
-        // spending API budget for a result nobody sees. Dismiss is when
-        // the user asked — cancel now, not when the fade completes.
+        // spending API budget for a result nobody sees. Cancel as soon as
+        // the user dismisses the panel.
         model.panelDidHide()
-        // A fade-out is already running toward orderOut — a second one
-        // would stack another slideOffset onto the already-offset frame.
-        if hideInFlight { return }
-        animationGeneration += 1
-        guard let panel, panel.isVisible else { return }
-        // Capture the pre-fade origin so a mid-fade show() can reverse
-        // toward it; `panel.frame` only reaches the offset target when
-        // the animation completes.
-        hideRestingOrigin = panel.frame.origin
-
-        let reduceMotion = AccessibilityDisplaySettings.shared.reduceMotion
-        if reduceMotion {
-            panel.orderOut(nil)
-            return
-        }
-
-        let generation = animationGeneration
-        hideInFlight = true
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = Animation.duration
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            ctx.allowsImplicitAnimation = true
-            panel.animator().alphaValue = 0
-            var frame = panel.frame
-            frame.origin.y += Animation.slideOffset
-            panel.animator().setFrame(frame, display: true)
-        }, completionHandler: { [weak self] in
-            guard let self else { return }
-            // A show() or hide() since this animation started owns the
-            // panel now — a superseding show resets alpha itself, and a
-            // superseding hide keeps fading, so this completion does
-            // nothing at all.
-            guard self.animationGeneration == generation else { return }
-            self.hideInFlight = false
-            panel.orderOut(nil)
-            // Restore alpha and the pre-fade origin for the next show —
-            // the completed fade left the frame at the offset target.
-            panel.alphaValue = 1
-            if let resting = self.hideRestingOrigin {
-                panel.setFrameOrigin(resting)
-            }
-            self.hideRestingOrigin = nil
-        })
+        // Release the window immediately, including on key-resign. There
+        // must be no invisible-but-key interval while a fade completes.
+        panel?.orderOut(nil)
     }
 
     // MARK: Commands
