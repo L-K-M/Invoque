@@ -1108,6 +1108,20 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         selection = index
     }
 
+    /// The Finder target for the current selection, shared by the reveal
+    /// chord and its footer hint. Commands expose their directory.
+    var selectedRevealURL: URL? {
+        guard let row = selectedRow else { return nil }
+        switch row.action {
+        case .openFile(let url), .openApp(let url), .revealInFinder(let url):
+            return url
+        case .runCommand(let name, _), .enterFilter(_, let name):
+            return commandLookup?(name)?.directory
+        default:
+            return nil
+        }
+    }
+
     /// Hands the selected row (or `nil`, when there are no results) to
     /// `onSubmit` — except `.enterFilter`, which stays inside the panel:
     /// the query expands to `"<keyword> "`, entering the command's filter
@@ -1149,18 +1163,6 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             }
             return
         }
-        // While a file scan is streaming, its rows are provisional — ⏎
-        // doesn't pick one (and hiding the panel would strand the walk).
-        // It detaches the session into its own window, where the walk
-        // keeps streaming and the settled rows stay actionable. Unwired,
-        // this falls through to the normal submit path. Taps skip this —
-        // a tap is a pick, not a detach (see the doc comment).
-        if detachesPendingScan, fileScanIsPending,
-           let detach = onDetachFileSearch,
-           let session = releaseFileSession() {
-            detach(session)
-            return
-        }
         // ⌘⏎ on a file, app, or command reveals it in Finder instead of
         // opening — Alfred's `find` gesture. A pending card is claimed by
         // the ⌘⏎ handler above, and revealing executes nothing, so the
@@ -1168,37 +1170,24 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         // Commands reveal their directory — the folder holding the
         // manifest and script the user can edit by hand.
         if commandModifier, let row = selectedRow {
-            switch row.action {
-            case .openFile(let url), .openApp(let url):
+            if let url = selectedRevealURL {
                 onSubmit?(ResultRow(id: row.id, title: row.title,
                                     subtitle: row.subtitle, icon: row.icon,
                                     action: .revealInFinder(url)))
                 return
-            case .revealInFinder(let url):
-                // The inverse — a pasted file *path* reveals on plain ⏎,
-                // so ⌘⏎ is the open gesture there (only `PathSource`
-                // emits reveal actions). Executables stay on reveal on
-                // either gesture — opening an .app or a +x file runs it.
-                let opens = PathSource.isSafeToOpen(url)
-                onSubmit?(ResultRow(id: row.id, title: row.title,
-                                    subtitle: row.subtitle, icon: row.icon,
-                                    action: opens ? .openFile(url) : .revealInFinder(url)))
-                return
-            case .runCommand(let name, _), .enterFilter(_, let name):
-                if let command = commandLookup?(name) {
-                    onSubmit?(ResultRow(id: row.id, title: row.title,
-                                        subtitle: row.subtitle, icon: row.icon,
-                                        action: .revealInFinder(command.directory)))
-                    return
-                }
-                // A lookup miss on a filter row keeps its plain submit
-                // below — entering filter mode is harmless. On an action
-                // row the chord is a no-op: ⌘⏎ must never run the command
-                // it was asked to reveal.
-                if case .runCommand = row.action { return }
-            default:
-                break
             }
+            // A lookup miss on a filter row keeps its plain submit below.
+            // An action command must never run when asked to reveal.
+            if case .runCommand = row.action { return }
+        }
+        // Plain ⏎ while a file scan streams detaches the session into its
+        // own window. An explicit reveal above takes priority when a hit
+        // is selected. Taps also pick a row instead of detaching.
+        if detachesPendingScan, fileScanIsPending,
+           let detach = onDetachFileSearch,
+           let session = releaseFileSession() {
+            detach(session)
+            return
         }
         if let row = selectedRow,
            case .enterFilter(let keyword, let commandName) = row.action {

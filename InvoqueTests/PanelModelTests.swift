@@ -1050,6 +1050,39 @@ final class PanelModelTests: XCTestCase {
         XCTAssertFalse(session.isPending)
     }
 
+    /// ⌘⏎ is an explicit reveal of the selected hit, even while more
+    /// matches are arriving. Only plain ⏎ hands the scan to a window.
+    func testCommandReturnDuringPendingScanRevealsSelectedFile() async throws {
+        let model = makeModel(items: [])
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        model.fileSearcher = { _, _, emit in
+            emit([Self.fileItem("first.txt"), Self.fileItem("second.txt")])
+            gate.wait()
+        }
+        var detached: FileSearchSession?
+        model.onDetachFileSearch = { detached = $0 }
+        defer { detached?.cancel() }
+        var submitted: [ResultRow] = []
+        model.onSubmit = { if let row = $0 { submitted.append(row) } }
+        model.query = "find x"
+        await awaitResults(model) { $0.count == 2 }
+        model.selection = 1
+        let selected = try XCTUnwrap(model.selectedRow)
+        XCTAssertEqual(selected.title, "second.txt")
+        XCTAssertTrue(model.fileScanIsPending)
+
+        model.submit(commandModifier: true)
+
+        XCTAssertNil(detached)
+        XCTAssertEqual(submitted.count, 1)
+        XCTAssertEqual(submitted.first?.id, selected.id)
+        XCTAssertEqual(submitted.first?.action,
+                       .revealInFinder(URL(fileURLWithPath: "/tmp/second.txt")))
+        gate.signal()
+        await awaitCondition { !model.fileScanIsPending && detached?.isPending != true }
+    }
+
     /// Leaving file mode after a detach must not kill the handed-off
     /// session — the window owns it now.
     func testModeSwitchAfterDetachKeepsSessionAlive() async throws {
@@ -1270,9 +1303,8 @@ final class PanelModelTests: XCTestCase {
         XCTAssertEqual(submitted?.action, .revealInFinder(url))
     }
 
-    /// The inverse for a pasted file path: the row's default action is
-    /// already reveal, so ⌘⏎ means open.
-    func testCommandModifierOpensRevealRow() throws {
+    /// ⌘⏎ must keep revealing a pasted file even when plain ⏎ also reveals.
+    func testCommandModifierKeepsPastedFileOnReveal() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("invoque-\(UUID().uuidString).txt")
         try Data().write(to: url)
@@ -1284,7 +1316,7 @@ final class PanelModelTests: XCTestCase {
             id: "path:/tmp/notes.txt", title: "notes.txt", subtitle: "/tmp",
             icon: .fileURL(url), action: .revealInFinder(url))])
         model.submit(commandModifier: true)
-        XCTAssertEqual(submitted?.action, .openFile(url))
+        XCTAssertEqual(submitted?.action, .revealInFinder(url))
     }
 
     /// ⌘⏎ on a pasted `.app` path must stay reveal — opening a package

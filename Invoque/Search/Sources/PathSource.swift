@@ -92,7 +92,6 @@ final class PathSource: ItemSource {
     /// (scripts, binaries with the +x bit). Document packages such as
     /// `.xcodeproj` or `.rtfd` open in their editors — no payload runs —
     /// so they stay openable.
-    /// `PanelModel` consults the same policy for the ⌘⏎ inverse.
     static func isSafeToOpen(_ url: URL) -> Bool {
         // Handler-executed formats run on open with no +x bit and no APPL
         // type: `.jar`/`.jnlp` via Java, `.workflow` via Automator,

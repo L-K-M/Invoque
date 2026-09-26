@@ -360,14 +360,15 @@ struct PanelView: View {
         if model.makerIsActive { return "⏎ generate/save · esc dismiss" }
         let manage = model.selectedRow.map(model.canManage) == true
             ? " · ⌘P pin · ⌘B block" : ""
+        let reveal = model.selectedRevealURL != nil
+            ? " · ⌘⏎ reveal in Finder" : ""
         if model.fileSearchIsActive {
-            // Mid-scan, ⏎ doesn't pick a row — it detaches the session
-            // into its own window (see `PanelModel.submit`), so the hint
-            // can't promise open/reveal until the walk settles.
+            // Mid-scan, plain ⏎ detaches the session into its own window;
+            // ⌘⏎ can still reveal a selected hit before the walk settles.
             if model.fileScanIsPending {
-                return "⏎ open in window" + manage + " · esc dismiss"
+                return "⏎ open in window" + reveal + manage + " · esc dismiss"
             }
-            return "⏎ open · ⌘⏎ reveal in Finder" + manage + " · esc dismiss"
+            return "⏎ open" + reveal + manage + " · esc dismiss"
         }
         if model.webSearchIsActive {
             // A blank web query produces no rows, so Enter is a no-op —
@@ -376,7 +377,13 @@ struct PanelView: View {
                 ? "type to search · esc dismiss"
                 : "⏎ search the web · esc dismiss"
         }
-        return "↑↓ navigate · ⏎ open" + manage + " · esc dismiss"
+        let primaryAction: String
+        if let row = model.selectedRow, case .revealInFinder = row.action {
+            primaryAction = "reveal in Finder"
+        } else {
+            primaryAction = "open"
+        }
+        return "↑↓ navigate · ⏎ " + primaryAction + reveal + manage + " · esc dismiss"
     }
 
     /// The pin/block menu for one row — attached only for manageable
