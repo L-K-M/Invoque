@@ -94,8 +94,9 @@ Targets macOS 13+ (revisit if Zap has since raised its floor).
   `.fullScreenAuxiliary`, `.stationary`. Transparent background; SwiftUI
   `NSHostingView` draws the card.
 - Spotlight position: horizontally centered, top edge ~25 % down the screen,
-  on the display under the cursor. Small drop-in animation, none if Reduce
-  Motion is on.
+  on the display under the cursor. Window ordering is immediate and opaque:
+  no window fade or slide can leave an invisible panel holding keyboard focus.
+  Row effects remain optional and honor Reduce Motion.
 - Esc cancels (`cancelOperation`); hide on resign-key. Re-show starts with the
   query cleared (or optionally remembered — setting).
 - Layout: search field on top, results list below, footer with
