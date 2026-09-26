@@ -155,7 +155,7 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   exists, falling back to the nearest ancestor when the tail doesn't
   yet, except root-level folders and `~` itself which are never offered
   as fallbacks — ⏎ opens folders, reveals
-  files in Finder; ⌘⏎ is the inverse), `URLSource` (a pasted/typed
+  files in Finder; ⌘⏎ always reveals), `URLSource` (a pasted/typed
   http(s) URL pins first alongside paths — ⏎ opens it in the browser,
   so the web fallback can't turn an address into a search), `WebSource`
   (fallback "Search for X" against the configured `SearchEngine` —
@@ -193,6 +193,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   the end. ⏎ while the scan is still streaming detaches the session
   into its own titled results window — the same walk keeps streaming
   there, and its rows stay openable/revealable/pinnable/blockable;
+  ⌘⏎ on a visible hit reveals it immediately, even while the scan is
+  still streaming, instead of detaching the session;
   closing the window retires the scan. Once the scan settles, ⏎ opens
   the file and ⌘⏎ reveals it in Finder (also on app rows; command rows
   reveal their directory). Caveat:

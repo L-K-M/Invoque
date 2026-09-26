@@ -85,8 +85,7 @@ final class PathSourceTests: XCTestCase {
     }
 
     /// An executable file carries the +x bit — pasted, it must reveal,
-    /// never run. (The row is a file, so it reveals anyway; this pins
-    /// `isSafeToOpen` so the ⌘⏎ inverse can't open it either.)
+    /// never run. Pin the source's safety policy for executable files.
     func testExecutableFileIsNotSafeToOpen() throws {
         let script = FileManager.default.temporaryDirectory
             .appendingPathComponent("invoque-\(UUID().uuidString).sh")
