@@ -48,10 +48,19 @@ final class ColorHexTests: XCTestCase {
 
     func testReadableForegroundPicksByLuminance() {
         XCTAssertEqual(Color.readableForeground(on: NSColor(hex: "#FFFFFF") ?? .white),
-                       Color.black.opacity(0.82))
+                       .black)
         XCTAssertEqual(Color.readableForeground(on: NSColor(hex: "#1C1C1E") ?? .black),
                        .white)
         XCTAssertEqual(Color.readableForeground(on: NSColor(hex: "#0A84FF") ?? .blue),
+                       .black)
+    }
+
+    func testSaturatedHighlightsChooseTheHigherContrastForeground() throws {
+        for hex in ["#00FF00", "#00FFFF", "#FF0000", "#808080"] {
+            let color = try XCTUnwrap(NSColor(hex: hex))
+            XCTAssertEqual(Color.readableForeground(on: color), .black, hex)
+        }
+        XCTAssertEqual(Color.readableForeground(on: try XCTUnwrap(NSColor(hex: "#0000FF"))),
                        .white)
     }
 
@@ -70,6 +79,24 @@ final class ColorHexTests: XCTestCase {
         let base = NSColor.black
         let c = top.composited(alpha: 0.5, over: base).usingColorSpace(.sRGB)
         XCTAssertEqual(c?.redComponent ?? 0, 0.5, accuracy: 0.01)
+    }
+
+    func testCompositeMultipliesIntrinsicAlphaByConfiguredOpacity() throws {
+        let top = try XCTUnwrap(NSColor(hex: "#FFFFFF80"))
+        let c = try XCTUnwrap(top.composited(alpha: 0.5, over: .black).usingColorSpace(.sRGB))
+        XCTAssertEqual(c.redComponent, 0.5 * 128 / 255, accuracy: 0.001)
+        XCTAssertEqual(c.greenComponent, c.redComponent, accuracy: 0.001)
+        XCTAssertEqual(c.blueComponent, c.redComponent, accuracy: 0.001)
+        XCTAssertEqual(c.alphaComponent, 1)
+    }
+
+    func testTransparentHighlightKeepsBackgroundAndReadableForeground() throws {
+        let top = try XCTUnwrap(NSColor(hex: "#FFFFFF00"))
+        let c = try XCTUnwrap(top.composited(alpha: 1, over: .black).usingColorSpace(.sRGB))
+        XCTAssertEqual(c.redComponent, 0)
+        XCTAssertEqual(c.greenComponent, 0)
+        XCTAssertEqual(c.blueComponent, 0)
+        XCTAssertEqual(Color.readableForeground(on: c), .white)
     }
 
     // MARK: PanelMaterial flags

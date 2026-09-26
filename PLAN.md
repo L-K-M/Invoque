@@ -113,11 +113,16 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - **Material** (`PanelMaterial`): Liquid Glass / Clear / Tinted on macOS 26
   via `.glassEffect`, `NSVisualEffectView` (`.popover`) fallback below, or the
   user's own `solid`/`gradient` fill with tint, gradient end, angle
-  (`AngleDial`) and opacity. Reduce Transparency forces fills opaque.
+  (`AngleDial`) and opacity. Reduce Transparency forces fills opaque,
+  including alpha embedded in imported solid/gradient colors; saved theme
+  values remain unchanged.
 - **Selection**: highlight color + opacity + corner radius. Selected-row text
-  is luminance-aware (`Color.readableForeground`, TopDrawer's rule) against
-  the fill *composited over* the card's base color — at low opacity the
-  background dominates, so the raw highlight alone would choose wrong.
+  uses opaque black or white, whichever has the greater contrast against the
+  composited highlight, using linearized sRGB relative luminance. Highlight
+  compositing includes the imported color's alpha as well as the opacity
+  setting. The background estimate remains the solid color, gradient midpoint,
+  or semantic light/dark glass stand-in; translucent materials cannot promise
+  contrast against arbitrary desktop content.
 - **Adaptive accent**: when on, the selected row's *drawn* icon supplies
   the fill — `CIAreaAverage` dominant color, saturation-boosted, cached by
   icon path and invalidated with the shared store (Jetty's `TileAccent`

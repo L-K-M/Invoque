@@ -209,7 +209,11 @@ struct PanelView: View {
         case .solid:
             return NSColor(hex: preferences.tintHex) ?? .black
         case .gradient:
+            // Estimate the gradient's RGB midpoint, independent of endpoint
+            // alpha. Reduce Transparency renders both endpoints opaque, and
+            // the actual desktop behind a translucent card is unknown.
             return (NSColor(hex: preferences.tintHex) ?? .black)
+                .withAlphaComponent(1)
                 .composited(alpha: 0.5, over: NSColor(hex: preferences.gradientHex) ?? .black)
         case .liquidGlass, .glassClear, .glassTinted:
             return colorScheme == .dark

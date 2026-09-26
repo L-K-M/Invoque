@@ -6,6 +6,55 @@ import XCTest
 final class PanelBackgroundTests: XCTestCase {
 
     @MainActor
+    func testReduceTransparencyMakesImportedSolidAndGradientColorsOpaque() throws {
+        for material in [PanelMaterial.solid, .gradient] {
+            let bitmap = try renderFill(material: material, reduceTransparency: true)
+            for y in [1, 10, 18] {
+                let color = try XCTUnwrap(bitmap.colorAt(x: 10, y: y))
+                XCTAssertEqual(color.alphaComponent, 1, accuracy: 0.01, "\(material) at \(y)")
+            }
+        }
+    }
+
+    @MainActor
+    func testNormalSolidFillPreservesImportedTransparency() throws {
+        let bitmap = try renderFill(material: .solid, reduceTransparency: false)
+        let color = try XCTUnwrap(bitmap.colorAt(x: 10, y: 10))
+        XCTAssertEqual(color.alphaComponent, 0.4 * 128 / 255, accuracy: 0.01)
+    }
+
+    @MainActor
+    func testOpaqueImportedFillKeepsItsColor() throws {
+        let bitmap = try renderFill(material: .solid, reduceTransparency: true)
+        let reference = try renderFill(material: .solid, reduceTransparency: false,
+                                       tintHex: "#204060", opacity: 1)
+        // Compare equally rendered colors; ImageRenderer's output profile can
+        // differ from the source sRGB profile on a wide-gamut display.
+        let color = try XCTUnwrap(bitmap.colorAt(x: 10, y: 10)?.usingColorSpace(.sRGB))
+        let expected = try XCTUnwrap(reference.colorAt(x: 10, y: 10)?.usingColorSpace(.sRGB))
+        XCTAssertEqual(color.redComponent, expected.redComponent, accuracy: 0.01)
+        XCTAssertEqual(color.greenComponent, expected.greenComponent, accuracy: 0.01)
+        XCTAssertEqual(color.blueComponent, expected.blueComponent, accuracy: 0.01)
+    }
+
+    @MainActor
+    private func renderFill(material: PanelMaterial,
+                            reduceTransparency: Bool,
+                            tintHex: String = "#20406080",
+                            opacity: Double = 0.4) throws -> NSBitmapImageRep {
+        let renderer = ImageRenderer(content: PanelBackground(
+            material: material,
+            tint: Color(hexString: tintHex),
+            gradientColor: Color(hexString: "#A0C0E000"),
+            gradientAngle: 0,
+            opacity: opacity,
+            cornerRadius: 0,
+            reduceTransparency: reduceTransparency)
+            .frame(width: 20, height: 20))
+        return NSBitmapImageRep(cgImage: try XCTUnwrap(renderer.cgImage))
+    }
+
+    @MainActor
     func testReduceTransparencyRemovesVisualEffectBlur() {
         let regular = host(reduceTransparency: false)
         let reduced = host(reduceTransparency: true)
