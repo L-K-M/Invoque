@@ -201,6 +201,7 @@ struct MakerView: View {
             if let manifest = draft.manifest {
                 Text(manifest.title)
                     .font(typeface.font(.headline))
+                    .foregroundStyle(titleColor)
                 HStack(spacing: 8) {
                     Text(manifest.name)
                     badge(manifest.mode.rawValue)
