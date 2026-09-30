@@ -10,7 +10,7 @@ struct Keychain {
 
     let service: String
 
-    init(service: String = "com.invoque.Invoque") {
+    init(service: String = "ch.lkmc.Invoque") {
         self.service = service
     }
 

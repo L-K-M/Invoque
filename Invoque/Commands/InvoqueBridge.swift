@@ -19,7 +19,7 @@ enum InvoqueBridge {
 
     /// Serializes `invoque.storage` reads and writes across all invocations
     /// — see `installStorage`.
-    private static let storageQueue = DispatchQueue(label: "com.invoque.storage")
+    private static let storageQueue = DispatchQueue(label: "ch.lkmc.Invoque.storage")
 
     /// The most body `invoque.fetch` will hand to a command. The download
     /// task already spools to a temp file instead of memory; the cap

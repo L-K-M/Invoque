@@ -31,7 +31,7 @@ final class CommandStore: @unchecked Sendable {
     var onChange: (([Command]) -> Void)?
 
     /// Serial queue guarding all state below.
-    private let stateQueue = DispatchQueue(label: "com.invoque.commandstore")
+    private let stateQueue = DispatchQueue(label: "ch.lkmc.Invoque.commandstore")
 
     private let roots: [URL]
     private let watchTargetLimit: Int
