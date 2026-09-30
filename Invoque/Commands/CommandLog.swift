@@ -11,7 +11,7 @@ final class CommandLog: @unchecked Sendable {
 
     private let lock = NSLock()
     private var lines: [String] = []
-    private let logger = Logger(subsystem: "com.invoque.Invoque", category: "command")
+    private let logger = Logger(subsystem: "ch.lkmc.Invoque", category: "command")
 
     func append(_ line: String) {
         lock.lock()

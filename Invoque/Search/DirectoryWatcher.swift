@@ -34,7 +34,7 @@ final class DirectoryWatcher: @unchecked Sendable {
     private let onEvent: () -> Void
 
     /// Serializes source callbacks, the debounce, and target rebuilds.
-    private let queue = DispatchQueue(label: "com.invoque.directorywatcher")
+    private let queue = DispatchQueue(label: "ch.lkmc.Invoque.directorywatcher")
 
     private let roots: [URL]
     private let debounce: TimeInterval

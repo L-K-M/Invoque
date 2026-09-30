@@ -93,7 +93,7 @@ final class JSRuntime: @unchecked Sendable {
                 fetches.cancelAll()
             }
 
-            let queue = DispatchQueue(label: "com.invoque.js.\(command.name)")
+            let queue = DispatchQueue(label: "ch.lkmc.Invoque.js.\(command.name)")
             queue.async {
                 self.execute(command: command, args: args, logs: logs, box: box,
                              queue: queue, fetches: fetches, parked: parked)
