@@ -138,6 +138,9 @@ final class PanelControllerTests: XCTestCase {
             editor.setSelectedRange(selection)
 
             try checks.runNext()
+            XCTAssertTrue(panel.firstResponder === editor,
+                          "The ordering retry must retain the active draft input")
+            XCTAssertEqual(editor.selectedRange(), selection)
             try checks.runNext()
 
             let replacement = try XCTUnwrap(currentPanel())
@@ -190,6 +193,35 @@ final class PanelControllerTests: XCTestCase {
             try checks.runNext()
             XCTAssertTrue(currentPanel() === panel)
             XCTAssertTrue(checks.workItems.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testReorderingRetriesFocusAfterInitialFocusWasLost() throws {
+        let checks = VisibilityChecks()
+        try withController(checks: checks) { _, panel, _, _ in
+            let host = try XCTUnwrap(panel.contentView)
+            let contentView = NSView(frame: host.frame)
+            panel.contentView = contentView
+            contentView.addSubview(host)
+            let searchField = NSTextField(frame: NSRect(x: 40, y: 40, width: 200, height: 24))
+            contentView.addSubview(searchField)
+            panel.preferredFirstResponder = searchField
+            XCTAssertTrue(panel.makeFirstResponder(nil))
+            XCTAssertNil(searchField.currentEditor())
+
+            try checks.runNext()
+
+            XCTAssertTrue(currentPanel() === panel)
+            XCTAssertTrue(panel.isKeyWindow)
+            let editor = try XCTUnwrap(searchField.currentEditor() as? NSTextView,
+                                      "A successful reorder must retry the abandoned input focus")
+            XCTAssertTrue(panel.firstResponder === editor)
+            XCTAssertTrue((editor.delegate as? NSTextField) === searchField)
+            checks.verdict = true
+            try checks.runNext()
+            XCTAssertTrue(currentPanel() === panel)
+            XCTAssertTrue(panel.firstResponder === editor)
         }
     }
 

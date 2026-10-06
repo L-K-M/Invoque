@@ -243,7 +243,11 @@ final class PanelController: NSObject, @unchecked Sendable {
             switch stage {
             case .initial:
                 Self.logger.warning("Launcher window \(panel.windowNumber) remains offscreen; retrying ordering")
+                let focus = self.focusedContentView(in: panel)
                 panel.orderFrontRegardless()
+                // Ordering may recover after the first focus attempt expired.
+                self.focusResponder(in: panel, requestedResponder: focus.view,
+                                    selection: focus.selection)
                 self.scheduleVisibilityVerification(of: panel, stage: .reordered)
             case .reordered:
                 self.replaceUnorderedPanel(panel)
