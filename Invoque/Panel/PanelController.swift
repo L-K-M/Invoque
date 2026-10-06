@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import SwiftUI
 
 /// Owns the launcher panel: lazy creation, Spotlight-style positioning on the
@@ -17,12 +18,21 @@ final class PanelController: NSObject, @unchecked Sendable {
         static let height: CGFloat = 440
     }
 
+    private static let logger = Logger(subsystem: "ch.lkmc.Invoque", category: "PanelPresentation")
+    private static let visibilityCheckDelay: TimeInterval = 0.2
+
+    private enum VisibilityCheckStage {
+        case initial, reordered, replaced
+    }
+
     private let preferences: Preferences
     private let searchModel: SearchModel
     private let model: PanelModel
     private let commandStore: CommandStore
     private let commandRunner: CommandRunner
     private let permissionGrants: CommandPermissionGrants
+    private let isWindowOnscreen: (Int) -> Bool?
+    private let scheduleVisibilityCheck: (DispatchWorkItem) -> Void
     /// Sequencing for overlapping command runs — only the newest delivers.
     private var commandRunGeneration = 0
     /// Bumped on every `hide()` — distinguishes "still the same summon"
@@ -31,6 +41,10 @@ final class PanelController: NSObject, @unchecked Sendable {
     private var panelSession = 0
     private var panel: LauncherPanel?
     private var resignKeyObserver: NSObjectProtocol?
+    /// Presentation intent must survive a native window refusing to order in.
+    private var isPresented = false
+    private var presentationGeneration = 0
+    private var visibilityCheckWorkItem: DispatchWorkItem?
     /// Hosts the results window a pending file scan detaches into.
     private lazy var detachedSearchWindow = DetachedSearchWindowController(
         preferences: preferences)
@@ -39,13 +53,20 @@ final class PanelController: NSObject, @unchecked Sendable {
     /// reference it before `SearchModel` (which owns the source) exists.
     init(preferences: Preferences, model: PanelModel, searchModel: SearchModel,
          commandStore: CommandStore, commandRunner: CommandRunner,
-         permissionGrants: CommandPermissionGrants) {
+         permissionGrants: CommandPermissionGrants,
+         isWindowOnscreen: @escaping (Int) -> Bool? = WindowServerVisibility.isOnscreen,
+         scheduleVisibilityCheck: @escaping (DispatchWorkItem) -> Void = {
+             DispatchQueue.main.asyncAfter(deadline: .now() + PanelController.visibilityCheckDelay,
+                                          execute: $0)
+         }) {
         self.preferences = preferences
         self.searchModel = searchModel
         self.model = model
         self.commandStore = commandStore
         self.commandRunner = commandRunner
         self.permissionGrants = permissionGrants
+        self.isWindowOnscreen = isWindowOnscreen
+        self.scheduleVisibilityCheck = scheduleVisibilityCheck
         super.init()
 
         // Dismiss first, then perform: a slow action (app launch, AppleEvent
@@ -97,6 +118,7 @@ final class PanelController: NSObject, @unchecked Sendable {
     }
 
     deinit {
+        visibilityCheckWorkItem?.cancel()
         if let resignKeyObserver {
             NotificationCenter.default.removeObserver(resignKeyObserver)
         }
@@ -105,7 +127,7 @@ final class PanelController: NSObject, @unchecked Sendable {
     // MARK: Show / hide
 
     func toggle() {
-        if panel?.isVisible == true {
+        if isPresented {
             hide()
         } else {
             show()
@@ -113,6 +135,9 @@ final class PanelController: NSObject, @unchecked Sendable {
     }
 
     func show() {
+        presentationGeneration &+= 1
+        visibilityCheckWorkItem?.cancel()
+        isPresented = true
         let panel = self.panel ?? makePanel()
         self.panel = panel
 
@@ -128,26 +153,69 @@ final class PanelController: NSObject, @unchecked Sendable {
         }
         panel.alphaValue = 1
         panel.orderFrontRegardless()
+        focusResponder(in: panel)
+        scheduleVisibilityVerification(of: panel, stage: .initial)
+    }
 
-        // Key without activating the app (`.nonactivatingPanel`), then hand
-        // focus to the search field for immediate typing.
+    private func focusResponder(in panel: LauncherPanel, requestedResponder: NSView? = nil,
+                                selection: NSRange? = nil) {
+        // Key without activating the app. Fresh summons focus the header;
+        // native repair restores the input the user was already editing.
         panel.makeKey()
-        if let field = panel.preferredFirstResponder {
-            panel.makeFirstResponder(field)
-        } else {
-            // On the very first summon the SwiftUI hierarchy may not have
-            // attached yet, so `preferredFirstResponder` is still nil.
-            // SearchTextField.viewDidMoveToWindow covers this too, but a
-            // next-runloop retry keeps focus deterministic either way.
-            DispatchQueue.main.async { [weak self] in
-                guard let panel = self?.panel, panel.isVisible, panel.isKeyWindow,
-                      let field = panel.preferredFirstResponder else { return }
-                panel.makeFirstResponder(field)
+        let target = requestedResponder ?? panel.preferredFirstResponder
+        var restored = false
+        if let target, panel.makeFirstResponder(target) {
+            restored = restoreSelection(selection, in: target)
+        }
+        if !restored {
+            // A first summon or a reparented control may still be attaching.
+            // Retry after the hierarchy settles, only for this presentation.
+            let generation = presentationGeneration
+            let identifier = ObjectIdentifier(panel)
+            DispatchQueue.main.async { [weak self, weak requestedResponder] in
+                guard let self, self.isPresented,
+                      self.presentationGeneration == generation,
+                      let panel = self.panel, ObjectIdentifier(panel) == identifier,
+                      panel.isVisible, panel.isKeyWindow,
+                      let target = requestedResponder ?? panel.preferredFirstResponder,
+                      target.window === panel else { return }
+                if panel.makeFirstResponder(target) {
+                    self.restoreSelection(selection, in: target)
+                }
             }
         }
     }
 
+    @discardableResult
+    private func restoreSelection(_ selection: NSRange?, in target: NSView) -> Bool {
+        guard let selection else { return true }
+        guard let editor = (target as? NSTextView)
+                ?? (target as? NSTextField)?.currentEditor() as? NSTextView else { return false }
+        let length = (editor.string as NSString).length
+        let location = min(selection.location, length)
+        editor.setSelectedRange(NSRange(location: location,
+                                        length: min(selection.length, length - location)))
+        return true
+    }
+
+    private func focusedContentView(in panel: LauncherPanel) -> (view: NSView?, selection: NSRange?) {
+        guard let focusedView = panel.firstResponder as? NSView,
+              let contentView = panel.contentView else { return (nil, nil) }
+        let editor = focusedView as? NSTextView
+        // A field editor belongs to the window rather than the content graph;
+        // its delegate is the actual search, Maker or confirmation control.
+        let target = editor?.isFieldEditor == true ? editor?.delegate as? NSView : focusedView
+        guard let target, target === contentView || target.isDescendant(of: contentView) else {
+            return (nil, nil)
+        }
+        return (target, editor?.selectedRange())
+    }
+
     func hide() {
+        isPresented = false
+        presentationGeneration &+= 1
+        visibilityCheckWorkItem?.cancel()
+        visibilityCheckWorkItem = nil
         panelSession += 1
         // A dismissed panel must not keep working: a `find` walk would
         // scan the disk for minutes, and a `make` generation would keep
@@ -157,6 +225,69 @@ final class PanelController: NSObject, @unchecked Sendable {
         // Release the window immediately, including on key-resign. There
         // must be no invisible-but-key interval while a fade completes.
         panel?.orderOut(nil)
+    }
+
+    /// Spaces transitions can temporarily defer ordering. Retry once after the
+    /// first offscreen sample, then replace only a persistently missing native
+    /// window. Ordinary occlusion and an unavailable server query are not failures.
+    private func scheduleVisibilityVerification(of panel: LauncherPanel, stage: VisibilityCheckStage) {
+        let generation = presentationGeneration
+        let identifier = ObjectIdentifier(panel)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isPresented,
+                  self.presentationGeneration == generation,
+                  let panel = self.panel, ObjectIdentifier(panel) == identifier else { return }
+            self.visibilityCheckWorkItem = nil
+            guard self.isWindowOnscreen(panel.windowNumber) == false else { return }
+
+            switch stage {
+            case .initial:
+                Self.logger.warning("Launcher window \(panel.windowNumber) remains offscreen; retrying ordering")
+                let focus = self.focusedContentView(in: panel)
+                panel.orderFrontRegardless()
+                // Ordering may recover after the first focus attempt expired.
+                self.focusResponder(in: panel, requestedResponder: focus.view,
+                                    selection: focus.selection)
+                self.scheduleVisibilityVerification(of: panel, stage: .reordered)
+            case .reordered:
+                self.replaceUnorderedPanel(panel)
+            case .replaced:
+                Self.logger.error("Replacement launcher window \(panel.windowNumber) remains offscreen; no further repair in this presentation")
+            }
+        }
+        visibilityCheckWorkItem = work
+        scheduleVisibilityCheck(work)
+    }
+
+    private func replaceUnorderedPanel(_ oldPanel: LauncherPanel) {
+        let oldWindowNumber = oldPanel.windowNumber
+        let frame = oldPanel.frame
+        let contentView = oldPanel.contentView
+        let searchField = oldPanel.preferredFirstResponder
+        let focus = focusedContentView(in: oldPanel)
+        // Retiring a key panel sends resign-key. Remove its observer before
+        // ordering out so replacement cannot dismiss or cancel the model session.
+        if let resignKeyObserver {
+            NotificationCenter.default.removeObserver(resignKeyObserver)
+            self.resignKeyObserver = nil
+        }
+        oldPanel.orderOut(nil)
+        // Preserve the hosting graph, including Maker fields and other local
+        // SwiftUI state. The confirmed failure is native ordering, not drawing.
+        oldPanel.contentView = nil
+        oldPanel.close()
+
+        let replacement = makePanel(contentView: contentView)
+        panel = replacement
+        replacement.preferredFirstResponder = searchField
+        replacement.setFrame(frame, display: true)
+        replacement.alphaValue = 1
+        replacement.orderFrontRegardless()
+        focusResponder(in: replacement, requestedResponder: focus.view, selection: focus.selection)
+        Self.logger.warning("Replaced offscreen launcher window \(oldWindowNumber) with \(replacement.windowNumber)")
+        scheduleVisibilityVerification(of: replacement, stage: .replaced)
+        // No second replacement in this presentation, even if the OS still refuses
+        // it. A later user summon starts a new bounded verification sequence.
     }
 
     // MARK: Commands
@@ -206,7 +337,7 @@ final class PanelController: NSObject, @unchecked Sendable {
                     // summon or stomp fresh search results. The session
                     // check catches dismiss-then-resummon, where visibility
                     // and query can both match again.
-                    if self.panel?.isVisible == true,
+                    if self.isPresented,
                        self.model.query == submittedQuery,
                        self.panelSession == submittedPanelSession {
                         self.model.showCommandResults(
@@ -224,11 +355,11 @@ final class PanelController: NSObject, @unchecked Sendable {
 
     // MARK: Panel lifecycle
 
-    private func makePanel() -> LauncherPanel {
+    private func makePanel(contentView: NSView? = nil) -> LauncherPanel {
         let panel = LauncherPanel(
             contentRect: NSRect(x: 0, y: 0, width: Size.width, height: Size.height))
-        panel.contentView = NSHostingView(rootView: PanelView(model: model,
-                                                              preferences: preferences))
+        panel.contentView = contentView ?? NSHostingView(rootView: PanelView(model: model,
+                                                                           preferences: preferences))
 
         panel.onCancel = { [weak self] in
             guard let self else { return }
@@ -281,8 +412,10 @@ final class PanelController: NSObject, @unchecked Sendable {
             forName: NSWindow.didResignKeyNotification,
             object: panel,
             queue: .main
-        ) { [weak self] _ in
-            self?.hide()
+        ) { [weak self] notification in
+            guard let self, let observed = notification.object as? LauncherPanel,
+                  self.panel === observed else { return }
+            self.hide()
         }
 
         return panel

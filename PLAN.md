@@ -91,12 +91,21 @@ Targets macOS 13+ (revisit if Zap has since raised its floor).
 - `NSPanel` subclass, styleMask `[.nonactivatingPanel, .borderless]` (or
   `.titled` + `.fullSizeContentView` for the shadow), `canBecomeKey = true`,
   `level = .statusBar`, `collectionBehavior` with `.canJoinAllSpaces`,
-  `.fullScreenAuxiliary`, `.stationary`. Transparent background; SwiftUI
-  `NSHostingView` draws the card.
+  `.canJoinAllApplications`, `.fullScreenAuxiliary`, `.stationary`. Transparent
+  background; SwiftUI `NSHostingView` draws the card.
 - Spotlight position: horizontally centered, top edge ~25 % down the screen,
   on the display under the cursor. Window ordering is immediate and opaque:
   no window fade or slide can leave an invisible panel holding keyboard focus.
   Row effects remain optional and honor Reduce Motion.
+- After ordering, check the native window's WindowServer onscreen state after
+  200 ms. An explicit offscreen result retries ordering and restores the active
+  input once; if still offscreen 200 ms later, replace the native panel once and
+  transfer its existing SwiftUI host, preserving local view state, the active
+  input and text selection, query, results, selection, consent and in-flight
+  work. Verify the replacement after another 200 ms and log continuing failure
+  without rebuilding again. Unknown
+  server state and ordinary occlusion do not trigger replacement. Hide or a newer
+  summon invalidates pending verification, and repair never resets the model.
 - Esc cancels (`cancelOperation`); hide on resign-key. Re-show starts with the
   query cleared (or optionally remembered — setting).
 - Layout: search field on top, results list below, footer with
