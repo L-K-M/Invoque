@@ -51,15 +51,28 @@ computer-use connection timed out, and no screenshot/VoiceOver proof is claimed.
 
 ### Launcher visibility across window transitions (Astra A01)
 
-Immediate opaque ordering and dismissal address an animation race, but the
-reported intermittent permanent invisibility itself remains unreproduced.
-Automated tests verify the immediate window invariants; they do not replace a
-real GUI session. Stress rapid summon/Esc/click-away, sleep/wake, display
-reconfiguration, fullscreen Spaces and Reduce Motion. After summon, the panel
-must be visible, opaque, on-screen and ready for typing; after hide, it must
-release keyboard capture. If blank rendering persists, record
-alpha/frame/key/visible/screen/content bounds without query text and investigate
-hosting/glass separately when opacity and ordering are healthy.
+The 2026-10-06 investigation observed launcher ordering requests while
+WindowServer reported it offscreen despite alpha one and valid geometry.
+The same Invoque process later recovered. Fullscreen Space transitions appear
+to trigger the failure, but the exact sequence remains nondeterministic.
+The panel now declares that it can join other applications' fullscreen Spaces
+and verifies native ordering. Two offscreen samples, separated by a reorder,
+replace the panel once, transferring its SwiftUI host without resetting local
+view state, its model or ongoing work. A final check logs continuing failure
+without another replacement.
+Injected regression tests cover persistent failure, transient recovery, unknown
+server state, session preservation and dismissal races. They do not reproduce
+the OS failure or establish that fullscreen transitions are fixed on hardware.
+
+Manual verification: alternate between two fullscreen apps on separate
+displays, summon during and after transitions, then summon on a desktop Space.
+Also stress rapid summon/Esc/click-away, sleep/wake, display reconfiguration and
+Reduce Motion. After every summon the panel must appear, be opaque and ready
+for typing; after dismissal it must release keyboard capture. While recovering,
+keep a query, a selected result, a consent card or an active file scan intact.
+If a fresh panel still fails, inspect the PanelPresentation log alongside native
+ordering/Space state. If native ordering is healthy but pixels remain blank,
+investigate hosting/glass separately. Never record query contents in diagnostics.
 
 ### Theme rendering and Maker-title contrast (Astra A17-A18)
 

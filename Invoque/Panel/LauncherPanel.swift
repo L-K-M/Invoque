@@ -40,7 +40,8 @@ final class LauncherPanel: NSPanel {
         // Float over most things, appear on every Space, and stay put (and
         // reachable) while a fullscreen app is frontmost.
         level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications,
+                              .fullScreenAuxiliary, .stationary]
 
         // The rounded card drawn by SwiftUI is the only visible surface; the
         // window itself is a transparent cutout.
