@@ -153,44 +153,62 @@ final class PanelController: NSObject, @unchecked Sendable {
         }
         panel.alphaValue = 1
         panel.orderFrontRegardless()
-        focusSearchField(in: panel)
+        focusResponder(in: panel)
         scheduleVisibilityVerification(of: panel, stage: .initial)
     }
 
-    private func focusSearchField(in panel: LauncherPanel, selection: NSRange? = nil) {
-        // Key without activating the app (`.nonactivatingPanel`), then hand
-        // focus to the search field for immediate typing.
+    private func focusResponder(in panel: LauncherPanel, requestedResponder: NSView? = nil,
+                                selection: NSRange? = nil) {
+        // Key without activating the app. Fresh summons focus the header;
+        // native repair restores the input the user was already editing.
         panel.makeKey()
-        if let field = panel.preferredFirstResponder {
-            panel.makeFirstResponder(field)
-            restoreSelection(selection, in: field)
+        let target = requestedResponder ?? panel.preferredFirstResponder
+        var restored = false
+        if let target, panel.makeFirstResponder(target) {
+            restored = restoreSelection(selection, in: target)
         }
-        if panel.preferredFirstResponder == nil || selection != nil {
-            // On the very first summon the SwiftUI hierarchy may not have
-            // attached yet, so `preferredFirstResponder` is still nil.
-            // SearchTextField.viewDidMoveToWindow covers this too, but a
-            // next-runloop retry keeps focus deterministic either way.
+        if !restored {
+            // A first summon or a reparented control may still be attaching.
+            // Retry after the hierarchy settles, only for this presentation.
             let generation = presentationGeneration
             let identifier = ObjectIdentifier(panel)
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async { [weak self, weak requestedResponder] in
                 guard let self, self.isPresented,
                       self.presentationGeneration == generation,
                       let panel = self.panel, ObjectIdentifier(panel) == identifier,
                       panel.isVisible, panel.isKeyWindow,
-                      let field = panel.preferredFirstResponder else { return }
-                panel.makeFirstResponder(field)
-                self.restoreSelection(selection, in: field)
+                      let target = requestedResponder ?? panel.preferredFirstResponder,
+                      target.window === panel else { return }
+                if panel.makeFirstResponder(target) {
+                    self.restoreSelection(selection, in: target)
+                }
             }
         }
     }
 
-    private func restoreSelection(_ selection: NSRange?, in field: NSView) {
-        guard let selection,
-              let editor = (field as? NSTextField)?.currentEditor() as? NSTextView else { return }
+    @discardableResult
+    private func restoreSelection(_ selection: NSRange?, in target: NSView) -> Bool {
+        guard let selection else { return true }
+        guard let editor = (target as? NSTextView)
+                ?? (target as? NSTextField)?.currentEditor() as? NSTextView else { return false }
         let length = (editor.string as NSString).length
         let location = min(selection.location, length)
         editor.setSelectedRange(NSRange(location: location,
                                         length: min(selection.length, length - location)))
+        return true
+    }
+
+    private func focusedContentView(in panel: LauncherPanel) -> (view: NSView?, selection: NSRange?) {
+        guard let focusedView = panel.firstResponder as? NSView,
+              let contentView = panel.contentView else { return (nil, nil) }
+        let editor = focusedView as? NSTextView
+        // A field editor belongs to the window rather than the content graph;
+        // its delegate is the actual search, Maker or confirmation control.
+        let target = editor?.isFieldEditor == true ? editor?.delegate as? NSView : focusedView
+        guard let target, target === contentView || target.isDescendant(of: contentView) else {
+            return (nil, nil)
+        }
+        return (target, editor?.selectedRange())
     }
 
     func hide() {
@@ -242,8 +260,7 @@ final class PanelController: NSObject, @unchecked Sendable {
         let frame = oldPanel.frame
         let contentView = oldPanel.contentView
         let searchField = oldPanel.preferredFirstResponder
-        let selection = ((oldPanel.preferredFirstResponder as? NSTextField)?.currentEditor()
-                         as? NSTextView)?.selectedRange()
+        let focus = focusedContentView(in: oldPanel)
         // Retiring a key panel sends resign-key. Remove its observer before
         // ordering out so replacement cannot dismiss or cancel the model session.
         if let resignKeyObserver {
@@ -262,7 +279,7 @@ final class PanelController: NSObject, @unchecked Sendable {
         replacement.setFrame(frame, display: true)
         replacement.alphaValue = 1
         replacement.orderFrontRegardless()
-        focusSearchField(in: replacement, selection: selection)
+        focusResponder(in: replacement, requestedResponder: focus.view, selection: focus.selection)
         Self.logger.warning("Replaced offscreen launcher window \(oldWindowNumber) with \(replacement.windowNumber)")
         scheduleVisibilityVerification(of: replacement, stage: .replaced)
         // No second replacement in this presentation, even if the OS still refuses

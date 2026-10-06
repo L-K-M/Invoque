@@ -5,9 +5,9 @@ import Foundation
 /// window can retain an opaque, correctly sized host while Spaces keeps it offscreen.
 enum WindowServerVisibility {
     static func isOnscreen(_ windowNumber: Int) -> Bool? {
-        guard windowNumber > 0,
+        guard windowNumber > 0, let windowID = CGWindowID(exactly: windowNumber),
               let windows = CGWindowListCopyWindowInfo(.optionIncludingWindow,
-                                                      CGWindowID(windowNumber)) as? [[String: Any]] else {
+                                                      windowID) as? [[String: Any]] else {
             return nil
         }
         return isOnscreen(windowNumber, in: windows)

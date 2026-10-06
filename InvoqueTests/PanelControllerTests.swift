@@ -120,6 +120,39 @@ final class PanelControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testRecoveryRestoresTheActiveDraftFieldAndItsSelection() throws {
+        let checks = VisibilityChecks()
+        try withController(checks: checks) { _, panel, _, _ in
+            let host = try XCTUnwrap(panel.contentView)
+            // Native input belongs beside a hosting view, not inside the
+            // hosting view's privately managed SwiftUI hierarchy.
+            let contentView = NSView(frame: host.frame)
+            panel.contentView = contentView
+            contentView.addSubview(host)
+            let draftField = NSTextField(frame: NSRect(x: 40, y: 40, width: 200, height: 24))
+            draftField.stringValue = "Unsubmitted feedback"
+            contentView.addSubview(draftField)
+            XCTAssertTrue(panel.makeFirstResponder(draftField))
+            let editor = try XCTUnwrap(draftField.currentEditor() as? NSTextView)
+            let selection = NSRange(location: 2, length: 4)
+            editor.setSelectedRange(selection)
+
+            try checks.runNext()
+            try checks.runNext()
+
+            let replacement = try XCTUnwrap(currentPanel())
+            XCTAssertFalse(replacement === panel)
+            XCTAssertTrue(draftField.window === replacement)
+            let restoredEditor = try XCTUnwrap(draftField.currentEditor() as? NSTextView,
+                                              "Recovery must focus the active draft field, not the header")
+            XCTAssertTrue(replacement.firstResponder === restoredEditor)
+            XCTAssertTrue((restoredEditor.delegate as? NSTextField) === draftField)
+            XCTAssertEqual(restoredEditor.selectedRange(), selection)
+            XCTAssertEqual(draftField.stringValue, "Unsubmitted feedback")
+        }
+    }
+
+    @MainActor
     func testDismissalCancelsQueuedRecovery() throws {
         let checks = VisibilityChecks()
         try withController(checks: checks) { controller, panel, _, _ in

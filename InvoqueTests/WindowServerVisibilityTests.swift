@@ -27,5 +27,6 @@ final class WindowServerVisibilityTests: XCTestCase {
     func testUncreatedWindowIsUnknown() {
         XCTAssertNil(WindowServerVisibility.isOnscreen(0))
         XCTAssertNil(WindowServerVisibility.isOnscreen(-1))
+        XCTAssertNil(WindowServerVisibility.isOnscreen(Int.max))
     }
 }
