@@ -2,6 +2,13 @@
 
 **Latest release:** v<!-- version -->0.2.0<!-- /version --> · [Download](https://github.com/L-K-M/Invoque/releases/latest)
 
+The build is ad-hoc signed and not notarized. After moving **Invoque** to
+Applications, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Invoque.app"
+```
+
 
 > [!IMPORTANT]
 > LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
