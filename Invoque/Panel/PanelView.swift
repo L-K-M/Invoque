@@ -561,6 +561,9 @@ private struct SearchField: NSViewRepresentable {
         field.maximumNumberOfLines = 1
         field.lineBreakMode = .byTruncatingTail
         field.delegate = context.coordinator
+        field.onCommandReturn = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onReturn(true)
+        }
         return field
     }
 
@@ -634,6 +637,22 @@ private struct SearchField: NSViewRepresentable {
 /// than the controller alone) is what reliably captures focus on the first
 /// summon. `PanelController.show` covers subsequent summons.
 private final class SearchTextField: NSTextField {
+
+    var onCommandReturn: (() -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // AppKit treats ⌘Return as a no-op in a field editor. Claim it
+        // before text interpretation, only while this field owns focus.
+        guard event.type == .keyDown,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
+              event.keyCode == 36 || event.keyCode == 76, // Return, keypad Enter
+              let editor = currentEditor(), window?.firstResponder === editor else {
+            return super.performKeyEquivalent(with: event)
+        }
+        // A held chord must not arm a confirmation and then confirm it.
+        if !event.isARepeat { onCommandReturn?() }
+        return true
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

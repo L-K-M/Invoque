@@ -258,6 +258,130 @@ final class PanelControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testCommandReturnRevealsSelectedAppFromFocusedSearchField() throws {
+        for keyCode: UInt16 in [36, 76] { // Return and keypad Enter
+            try withController(checks: VisibilityChecks()) { _, panel, model, _ in
+                let appURL = URL(fileURLWithPath: "/Applications/claude-replicant.app")
+                model.query = "claude-replicant"
+                model.showCommandResults([
+                    ResultRow(id: "app:claude-replicant", title: "claude-replicant",
+                              subtitle: appURL.path, icon: .symbol("app"),
+                              action: .openApp(appURL))
+                ])
+                var actions: [Item.Action] = []
+                model.onSubmit = { row in
+                    if let row { actions.append(row.action) }
+                }
+                panel.contentView?.layoutSubtreeIfNeeded()
+                let field = try XCTUnwrap(panel.preferredFirstResponder as? NSTextField)
+                XCTAssertTrue(panel.makeFirstResponder(field))
+                let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+                XCTAssertTrue(panel.firstResponder === editor)
+                let flags: NSEvent.ModifierFlags = keyCode == 76
+                    ? [.command, .numericPad] : .command
+                let event = try returnEvent(in: panel, modifiers: flags, keyCode: keyCode)
+
+                XCTAssertTrue(panel.performKeyEquivalent(with: event))
+
+                XCTAssertEqual(actions, [.revealInFinder(appURL)])
+                XCTAssertEqual(model.query, "claude-replicant")
+                XCTAssertEqual(field.stringValue, "claude-replicant")
+                let repeatEvent = try returnEvent(in: panel, modifiers: flags,
+                                                 keyCode: keyCode, isARepeat: true)
+                XCTAssertTrue(panel.performKeyEquivalent(with: repeatEvent))
+                XCTAssertEqual(actions.count, 1, "A held shortcut must submit only once")
+            }
+        }
+    }
+
+    @MainActor
+    func testPlainReturnStillOpensSelectedAppViaFieldEditor() throws {
+        try withController(checks: VisibilityChecks()) { _, panel, model, _ in
+            let appURL = URL(fileURLWithPath: "/Applications/claude-replicant.app")
+            model.showCommandResults([
+                ResultRow(id: "app:claude-replicant", title: "claude-replicant",
+                          subtitle: appURL.path, icon: .symbol("app"),
+                          action: .openApp(appURL))
+            ])
+            var actions: [Item.Action] = []
+            model.onSubmit = { row in
+                if let row { actions.append(row.action) }
+            }
+            panel.contentView?.layoutSubtreeIfNeeded()
+            let field = try XCTUnwrap(panel.preferredFirstResponder as? NSTextField)
+            XCTAssertTrue(panel.makeFirstResponder(field))
+            let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+            let event = try returnEvent(in: panel)
+
+            editor.interpretKeyEvents([event])
+
+            XCTAssertEqual(actions, [.openApp(appURL)])
+        }
+    }
+
+    @MainActor
+    func testCommandReturnDoesNotSubmitWhileAnotherInputHasFocus() throws {
+        try withController(checks: VisibilityChecks()) { _, panel, model, _ in
+            let host = try XCTUnwrap(panel.contentView)
+            let contentView = NSView(frame: host.frame)
+            panel.contentView = contentView
+            contentView.addSubview(host)
+            let draftField = NSTextField(frame: NSRect(x: 40, y: 40, width: 200, height: 24))
+            contentView.addSubview(draftField)
+            XCTAssertTrue(panel.makeFirstResponder(draftField))
+            var submissions = 0
+            model.onSubmit = { _ in submissions += 1 }
+            let event = try returnEvent(in: panel, modifiers: .command)
+
+            XCTAssertFalse(panel.performKeyEquivalent(with: event))
+
+            XCTAssertEqual(submissions, 0)
+            XCTAssertTrue(panel.firstResponder === draftField.currentEditor())
+        }
+    }
+
+    @MainActor
+    func testHeldCommandReturnCannotConfirmSystemAction() throws {
+        try withController(checks: VisibilityChecks()) { _, panel, model, _ in
+            model.showCommandResults([
+                ResultRow(id: "system:emptyTrash", title: "Empty Trash", subtitle: "",
+                          icon: .symbol("trash"), action: .system(.emptyTrash))
+            ])
+            var actions: [Item.Action] = []
+            model.onSubmit = { row in
+                if let row { actions.append(row.action) }
+            }
+            panel.contentView?.layoutSubtreeIfNeeded()
+            let field = try XCTUnwrap(panel.preferredFirstResponder as? NSTextField)
+            XCTAssertTrue(panel.makeFirstResponder(field))
+            let event = try returnEvent(in: panel, modifiers: .command)
+            XCTAssertTrue(panel.performKeyEquivalent(with: event))
+            XCTAssertEqual(model.systemActionConfirmation?.action, .emptyTrash)
+            XCTAssertTrue(actions.isEmpty)
+
+            let repeatEvent = try returnEvent(in: panel, modifiers: .command, isARepeat: true)
+            XCTAssertTrue(panel.performKeyEquivalent(with: repeatEvent))
+            XCTAssertTrue(actions.isEmpty)
+
+            XCTAssertTrue(panel.performKeyEquivalent(with: event))
+            XCTAssertEqual(actions, [.system(.emptyTrash)])
+        }
+    }
+
+    @MainActor
+    private func returnEvent(in panel: LauncherPanel,
+                             modifiers: NSEvent.ModifierFlags = [],
+                             keyCode: UInt16 = 36,
+                             isARepeat: Bool = false) throws -> NSEvent {
+        let character = keyCode == 76 ? "\u{3}" : "\r"
+        return try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers,
+            timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+            characters: character, charactersIgnoringModifiers: character,
+            isARepeat: isARepeat, keyCode: keyCode))
+    }
+
+    @MainActor
     private func withController(
         _ check: (PanelController, LauncherPanel) throws -> Void
     ) throws {
