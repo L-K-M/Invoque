@@ -313,9 +313,33 @@ final class PanelControllerTests: XCTestCase {
             let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
             let event = try returnEvent(in: panel)
 
+            XCTAssertFalse(panel.performKeyEquivalent(with: event))
+            XCTAssertTrue(actions.isEmpty)
             editor.interpretKeyEvents([event])
 
             XCTAssertEqual(actions, [.openApp(appURL)])
+        }
+    }
+
+    @MainActor
+    func testCommandReturnLeavesMarkedTextForTheInputMethod() throws {
+        try withController(checks: VisibilityChecks()) { _, panel, model, _ in
+            panel.contentView?.layoutSubtreeIfNeeded()
+            let field = try XCTUnwrap(panel.preferredFirstResponder as? NSTextField)
+            XCTAssertTrue(panel.makeFirstResponder(field))
+            let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+            editor.setMarkedText("claude", selectedRange: NSRange(location: 6, length: 0),
+                                 replacementRange: NSRange(location: NSNotFound, length: 0))
+            XCTAssertTrue(editor.hasMarkedText())
+            var submissions = 0
+            model.onSubmit = { _ in submissions += 1 }
+            let event = try returnEvent(in: panel, modifiers: .command)
+
+            XCTAssertFalse(panel.performKeyEquivalent(with: event))
+
+            XCTAssertEqual(submissions, 0)
+            XCTAssertTrue(editor.hasMarkedText())
+            XCTAssertEqual(editor.string, "claude")
         }
     }
 

@@ -646,7 +646,8 @@ private final class SearchTextField: NSTextField {
         guard event.type == .keyDown,
               event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
               event.keyCode == 36 || event.keyCode == 76, // Return, keypad Enter
-              let editor = currentEditor(), window?.firstResponder === editor else {
+              let editor = currentEditor() as? NSTextView,
+              window?.firstResponder === editor, !editor.hasMarkedText() else {
             return super.performKeyEquivalent(with: event)
         }
         // A held chord must not arm a confirmation and then confirm it.
