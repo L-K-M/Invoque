@@ -103,3 +103,11 @@ led here (prior art, engine evaluation, feasibility) in
 Sibling projects: **[Zap](https://github.com/L-K-M/Zap)** (app switcher),
 **[Jetty](https://github.com/L-K-M/Jetty)** (Dock replacement),
 **[Top Drawer](https://github.com/L-K-M/TopDrawer)** (edge-tab launcher).
+
+## License
+
+Invoque's own code is released under the [Unlicense](LICENSE). The app bundles
+Numbat, its Rust dependencies and the Rust standard library, which keep their
+own licenses. Their notices ship in the app's `Contents/Resources` as
+`Numbat-Licenses.txt` and `Rust-Licenses.html`. `Numbat/LICENSE-*` are
+Numbat's license texts, not the wrapper's.

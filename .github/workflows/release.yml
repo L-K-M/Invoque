@@ -76,6 +76,7 @@ jobs:
           lipo "$APP/Contents/Helpers/invoque-numbat" -verify_arch arm64 x86_64
           test "$("$APP/Contents/Helpers/invoque-numbat" '2 km -> m')" = '2000 m'
           test -s "$APP/Contents/Resources/Numbat-Licenses.txt"
+          test -s "$APP/Contents/Resources/Rust-Licenses.html"
           # Ad-hoc sign (identity "-"): no certificate, keychain, or API key required,
           # but it IS required for the app to launch on Apple Silicon. This is not a
           # Developer ID signature and the app is not notarized — Gatekeeper still warns.

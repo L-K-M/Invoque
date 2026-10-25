@@ -37,6 +37,15 @@ RESOURCES="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
 mkdir -p "$RESOURCES"
 python3 "$ROOT/scripts/numbat-licenses.py" "$RESOURCES/Numbat-Licenses.txt" "${metadata[@]}"
 
+# The helper statically links Rust's standard library, whose notices Cargo
+# metadata omits. The pinned toolchain ships them for this purpose.
+RUST_NOTICES="$(rustc --print sysroot)/share/doc/rust/COPYRIGHT-library.html"
+test -s "$RUST_NOTICES" || {
+  echo "error: Missing Rust standard library notices: $RUST_NOTICES" >&2
+  exit 1
+}
+cp "$RUST_NOTICES" "$RESOURCES/Rust-Licenses.html"
+
 # Nested code must be signed before Xcode seals the containing app.
 if [ "${CODE_SIGNING_ALLOWED:-YES}" != NO ]; then
   identity="${EXPANDED_CODE_SIGN_IDENTITY:--}"
