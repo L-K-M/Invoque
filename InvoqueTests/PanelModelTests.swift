@@ -2165,16 +2165,22 @@ final class PanelModelTests: XCTestCase {
 
     /// An extended query keeps the calculator's top slot — a still-matching
     /// survivor must not float above the fresh pinned answer.
-    func testExtensionKeepsCalculatorPinOnTop() {
+    @MainActor
+    func testExtensionKeepsCalculatorPinOnTop() async {
         let model = PanelModel()
+        let calculator = CalculatorSource(evaluator: { $0 == "1+1" ? "2" : "3" })
+        model.calculatorSource = calculator
+        calculator.onReload = { [weak model] in model?.refreshResults() }
         model.searchModel = SearchModel(
             sources: [StubSource(stubbed: [
                 Self.appItem(id: "app:calc-tool", title: "1+1*2 Helper"),
-            ]), CalculatorSource()],
+            ]), calculator],
             frecency: Frecency(defaults: defaults))
         model.query = "1+1"
+        await awaitResults(model) { $0.first?.title == "= 2" }
         XCTAssertTrue(model.results.first?.id.hasPrefix("calc:") ?? false)
         model.query = "1+1*2"
+        await awaitResults(model) { $0.first?.title == "= 3" }
         XCTAssertTrue(model.results.first?.id.hasPrefix("calc:") ?? false)
         XCTAssertTrue(model.results.contains { $0.id == "app:calc-tool" })
     }

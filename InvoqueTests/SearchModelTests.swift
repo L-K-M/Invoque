@@ -683,11 +683,13 @@ final class SearchModelTests: XCTestCase {
 
     /// Blocked functional rows drop too — the filter runs ahead of pin
     /// classification, so a hand-edited `web:`/`calc:` block is honored.
-    func testBlockedFunctionalRowDrops() {
+    @MainActor
+    func testBlockedFunctionalRowDrops() async {
         let rules = StubRules()
+        let calculator = await answeredCalculator()
+        let model = makeModel(sources: [WebSource(), calculator], rules: rules)
+        XCTAssertTrue(model.results(for: "2+2").contains { $0.id == "calc:2+2" })
         rules.blocked = ["web:safari", "calc:2+2"]
-        let model = makeModel(sources: [WebSource(), CalculatorSource()],
-                              rules: rules)
         XCTAssertTrue(model.results(for: "safari").isEmpty)
         // Only the calc row is blocked on "2+2" — the web fallback for the
         // same query (`web:2+2`) is a different id and still lands.

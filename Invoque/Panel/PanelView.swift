@@ -363,7 +363,8 @@ struct PanelView: View {
             return "⌘⏎ confirm · esc dismiss"
         }
         if model.makerIsActive { return "⏎ generate/save · esc dismiss" }
-        if model.calculationIsPending, model.selectedRow?.sourceType == .web {
+        if model.calculationIsPending,
+           model.selectedRow == nil || model.selectedRow?.sourceType == .web {
             return "esc dismiss"
         }
         let manage = model.selectedRow.map(model.canManage) == true

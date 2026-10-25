@@ -87,8 +87,10 @@ final class NumbatEvaluatorTests: XCTestCase {
     private func assertHelperWasReaped(_ helper: URL) throws {
         let text = try String(contentsOfFile: helper.path + ".pid", encoding: .utf8)
         let pid = try XCTUnwrap(Int32(text))
-        XCTAssertEqual(kill(pid, 0), -1)
-        XCTAssertEqual(errno, ESRCH)
+        let probe = kill(pid, 0)
+        let probeError = errno
+        XCTAssertEqual(probe, -1)
+        XCTAssertEqual(probeError, ESRCH)
     }
 
     private func removeStuckHelper(_ helper: URL) {
