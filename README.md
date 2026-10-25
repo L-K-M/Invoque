@@ -26,9 +26,11 @@ refine new commands without leaving the panel.
   while you keep typing — the matched characters read bolder in each
   title. An empty panel already lists what you launch
   most — frecency top hits, ⏎ runs the top row.
-- **Calculate** inline (`2+2*3`, `sqrt(9)`) and convert bases — `255`,
-  `0xFF`, `0b1010` all answer in the other bases; the answer row pins
-  first, behind only a typed path.
+- **Calculate** inline with bundled [Numbat](https://numbat.dev): `2+2*3`,
+  `sqrt(9)`, `sin(pi/2)`, `2^10`, `30 km/h -> mph`, `5 inch + 2 ft -> cm`.
+  Use `= speed_of_light` for a named constant. ⏎ copies the result, including
+  units. Base conversions (`255`, `0xFF`, `0b1010`) remain immediate.
+  Calculations run locally; currency exchange rates are not included.
 - **Find files** without Spotlight: `find notes`, `f notes`, or
   `search notes` walks the disk directly — hidden dirs and dependency
   trees pruned, dependency build folders too. Matches stream in as the
@@ -79,11 +81,20 @@ and hand back items, a title, or nothing.
 
 ## Building
 
-Requires macOS 13+ and Xcode 16+ (the project uses file-system–synchronized
-groups — drop a file in, it's compiled). `scripts/build.sh` produces
+Requires macOS 13+, Xcode 16+, and [rustup](https://rustup.rs). The project uses
+file-system–synchronized groups: drop a file in, it's compiled. `scripts/build.sh` produces
 `Invoque.app`; tests via `xcodebuild -scheme Invoque test`. CI runs the
 suite plus an icon-drift check: `scripts/make-app-icon.py` renders the
 appiconset and the menu-bar StatusIcon mark from `media-sources/icon2.png`.
+
+Xcode's **Bundle Numbat** phase builds the pinned Rust helper for the app's
+architectures and includes its dependency licenses. The first build downloads
+the pinned toolchain and Cargo dependencies. End users need no Rust or Numbat
+installation. Engine checks: `cd Numbat && cargo test --locked`.
+
+Numbat syntax applies: `^` means exponentiation, `log`/`ln` mean natural log,
+and `log10` means base-10 log. Incompatible dimensions and incomplete input
+offer no calculator row.
 
 The design and milestones live in [`PLAN.md`](PLAN.md); the research that
 led here (prior art, engine evaluation, feasibility) in

@@ -39,6 +39,10 @@ jobs:
       - name: Install tooling
         run: brew install xcbeautify create-dmg
 
+      - name: Prepare pinned Rust toolchain
+        working-directory: Numbat
+        run: rustup show
+
       - name: Version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
@@ -69,6 +73,9 @@ jobs:
         run: |
           APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release" -maxdepth 1 -name "$APP_NAME.app" -print -quit)
           [ -n "$APP" ] || { echo "::error::built $APP_NAME.app not found"; exit 1; }
+          lipo "$APP/Contents/Helpers/invoque-numbat" -verify_arch arm64 x86_64
+          test "$("$APP/Contents/Helpers/invoque-numbat" '2 km -> m')" = '2000 m'
+          test -s "$APP/Contents/Resources/Numbat-Licenses.txt"
           # Ad-hoc sign (identity "-"): no certificate, keychain, or API key required,
           # but it IS required for the app to launch on Apple Silicon. This is not a
           # Developer ID signature and the app is not notarized — Gatekeeper still warns.

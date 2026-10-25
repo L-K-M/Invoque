@@ -52,9 +52,7 @@ struct ResultRow: Identifiable, Equatable {
 /// within them. Logic stays unit-testable — every side effect arrives
 /// through an injectable closure or a wired hook.
 ///
-/// The search is synchronous: sources serve cached data (`AppSource` holds
-/// an in-memory scan; calculator/system/web compute in microseconds), so a
-/// `results(for:)` per keystroke stays on the main thread by design.
+/// Search reads cached sources on main; calculator and file work publish later.
 /// `Sendable` is asserted: every member is main-queue confined — the model
 /// is the panel's UI state and is only ever driven from the main thread.
 /// The annotation exists so a reference can ride a `@Sendable` hop *back*
@@ -71,6 +69,11 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     var searchModel: SearchModel? {
         didSet { refreshResults() }
     }
+
+    /// Owns debounced calculations while normal search is active.
+    var calculatorSource: CalculatorSource?
+
+    @Published private(set) var calculationIsPending = false
 
     /// Resolves the first token of a query to a filter-mode command — the
     /// `<keyword> rest` routing from PLAN §3. Wired from `CommandSource`;
@@ -400,10 +403,15 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// landing after the panel opened must fill the visible list without
     /// waiting for the next keystroke.
     func refreshResults() {
+        defer {
+            let pending = calculatorSource?.isPending == true
+            if calculationIsPending != pending { calculationIsPending = pending }
+        }
         queryWorkWasCanceledByHide = false
         // The maker owns the panel: `MakerView` replaces the list, and a
         // command source rescan must not refill rows nobody can see.
         if makerIsActive {
+            calculatorSource?.cancel()
             rankedText = nil
             cancelFileSearch()
             cancelFilterRun()
@@ -413,12 +421,14 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         // Built-in keywords win over filter commands claiming them — the
         // `makerKeywords` policy.
         if let resolved = activeFileSearch() {
+            calculatorSource?.cancel()
             rankedText = nil
             cancelFilterRun()
             scheduleFileSearch(keyword: resolved.keyword, text: resolved.text)
             return
         }
         if let resolved = activeWebSearch() {
+            calculatorSource?.cancel()
             rankedText = nil
             cancelFileSearch()
             cancelFilterRun()
@@ -429,6 +439,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             return
         }
         if let resolved = activeFilter() {
+            calculatorSource?.cancel()
             rankedText = nil
             cancelFileSearch()
             scheduleFilter(resolved.command, keyword: resolved.keyword,
@@ -437,6 +448,7 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
         }
         cancelFileSearch()
         cancelFilterRun()
+        calculatorSource?.update(for: query)
         let fresh = searchModel?.results(for: query) ?? []
         let newResults = stabilizedRankedRows(fresh)
         rankedText = query
@@ -968,6 +980,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// task is cancelled — these rows are the list now.
     func showCommandResults(_ rows: [ResultRow]) {
         rankedText = nil
+        calculatorSource?.cancel()
+        if calculationIsPending { calculationIsPending = false }
         cancelFileSearch()
         cancelFilterRun()
         // A changed list restarts the selection at the top row — a fresh
@@ -1091,6 +1105,11 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
     /// the query are untouched — `reset` owns resummon state, and a
     /// detached file session is already off `fileSession` by then.
     func panelDidHide() {
+        if calculatorSource?.isPending == true {
+            queryWorkWasCanceledByHide = true
+            calculatorSource?.cancel()
+            calculationIsPending = false
+        }
         if fileScanIsPending {
             queryWorkWasCanceledByHide = true
             cancelFileSearch()
@@ -1192,6 +1211,8 @@ final class PanelModel: ObservableObject, @unchecked Sendable {
             }
             return
         }
+        // Return during evaluation must not send a calculation to the web fallback.
+        if calculationIsPending, selectedRow == nil || selectedRow?.sourceType == .web { return }
         // ⌘⏎ on a file, app, or command reveals it in Finder instead of
         // opening — Alfred's `find` gesture. A pending card is claimed by
         // the ⌘⏎ handler above, and revealing executes nothing, so the

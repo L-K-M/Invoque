@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Bundle Numbat for scientific calculations and unit conversions. `log` now
+  means natural log; use `log10` for base-10. Currency rates are not included.
+
 - ⌘⏎ on a command row reveals the command's folder in Finder instead of
   running it — the same reveal gesture file and app rows already had.
 - Fixed Safari (and other App-cryptex apps) missing from results. Since

@@ -77,3 +77,6 @@ fastlane/test_output
 
 # Agent reference copies (local only)
 .refs/
+
+# Rust calculator helper
+Numbat/target/

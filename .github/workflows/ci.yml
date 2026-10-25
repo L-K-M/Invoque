@@ -46,6 +46,13 @@ jobs:
       - name: Install xcbeautify
         run: brew install xcbeautify
 
+      - name: Check Numbat helper
+        working-directory: Numbat
+        run: |
+          rustup show
+          cargo fmt --check
+          cargo test --locked
+
       - name: Build & test
         run: |
           set -o pipefail
@@ -54,8 +61,24 @@ jobs:
             -scheme "$SCHEME" \
             -destination 'platform=macOS' \
             -resultBundlePath TestResults.xcresult \
+            -test-timeouts-enabled YES \
+            -maximum-test-execution-time-allowance 60 \
             CODE_SIGNING_ALLOWED=NO \
             test | xcbeautify
+
+      - name: Verify universal calculator packaging
+        run: |
+          xcodebuild build -project "$PROJECT" -scheme "$SCHEME" \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/NumbatPackaging" \
+            CODE_SIGNING_ALLOWED=NO
+          APP="$RUNNER_TEMP/NumbatPackaging/Build/Products/Release/Invoque.app"
+          HELPER="$APP/Contents/Helpers/invoque-numbat"
+          lipo "$HELPER" -verify_arch arm64 x86_64
+          test "$("$HELPER" '2 km -> m')" = '2000 m'
+          test -s "$APP/Contents/Resources/Numbat-Licenses.txt"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
 
       - name: Upload test results on failure
         # `failure()` alone misses the timeout case: a wedged test run ends as

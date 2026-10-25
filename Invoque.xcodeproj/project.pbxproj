@@ -79,6 +79,7 @@
 				AA000000000000000000000A /* Sources */,
 				AA000000000000000000000B /* Frameworks */,
 				AA000000000000000000000C /* Resources */,
+				AA0000000000000000000025 /* Bundle Numbat */,
 			);
 			buildRules = (
 			);
@@ -176,6 +177,33 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA0000000000000000000025 /* Bundle Numbat */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/scripts/build-numbat.sh",
+				"$(SRCROOT)/scripts/numbat-licenses.py",
+				"$(SRCROOT)/Numbat/Cargo.toml",
+				"$(SRCROOT)/Numbat/Cargo.lock",
+				"$(SRCROOT)/Numbat/rust-toolchain.toml",
+				"$(SRCROOT)/Numbat/src/main.rs",
+				"$(SRCROOT)/Numbat/LICENSE-MIT",
+				"$(SRCROOT)/Numbat/LICENSE-APACHE",
+			);
+			name = "Bundle Numbat";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/invoque-numbat",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Numbat-Licenses.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "bash \"$SRCROOT/scripts/build-numbat.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		AA000000000000000000000A /* Sources */ = {
@@ -327,6 +355,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Invoque;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
@@ -351,6 +380,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Invoque;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";

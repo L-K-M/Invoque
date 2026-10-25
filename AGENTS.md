@@ -45,6 +45,9 @@ Once the project exists, follow the L-K-M family conventions (same as Zap):
   `lkm-build`/`lkm-release` engines (https://github.com/L-K-M/release-tool).
 - `xcodebuild -project Invoque.xcodeproj -scheme Invoque` for direct builds;
   tests with `-destination 'platform=macOS' test`.
+- Install rustup for the bundled Numbat calculator. Xcode builds the pinned
+  toolchain and locked dependencies in `Numbat/`; `cargo test --locked` there
+  checks the engine. Runtime calculations have no network or user-init access.
 - Xcode 16 file-system–synchronized groups — new files under `Invoque/` are
   picked up automatically.
 
@@ -53,9 +56,9 @@ Once the project exists, follow the L-K-M family conventions (same as Zap):
 - Follow standard Swift API Design Guidelines; one type per file, file name
   matches the type, `// MARK:` sections.
 - Keep the search hot path allocation-light — matching runs per keystroke.
-- Don't add heavy dependencies; prefer system frameworks. `PictKit`
-  (https://github.com/L-K-M/Pict) is the one exception — first-party,
-  shared with Zap, Jetty and Top Drawer for the icon store.
+- Don't add heavy dependencies; prefer system frameworks. Exceptions:
+  first-party `PictKit` (https://github.com/L-K-M/Pict) for shared icons,
+  and the pinned Numbat calculator helper in `Numbat/`.
 - Generated-command code is untrusted input: everything reachable from JS goes
   through the permission gate; `shell` and `paste` require first-run user
   confirmation. Never run generated code on first save — first run is
@@ -248,4 +251,3 @@ may waive review; report that waiver rather than claiming review passed.
   status, review rounds completed, and whether it is merged.
 
 <!-- shared-rules:end -->
-

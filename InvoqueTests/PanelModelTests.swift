@@ -47,6 +47,50 @@ final class PanelModelTests: XCTestCase {
 
     // MARK: Query → results
 
+    @MainActor
+    func testCalculatorPublishesPinnedAnswerAndSubmitCopiesIt() async {
+        let calculator = CalculatorSource(evaluator: { _ in "2000 m" })
+        let model = PanelModel()
+        model.calculatorSource = calculator
+        calculator.onReload = { [weak model] in model?.refreshResults() }
+        model.searchModel = SearchModel(sources: [calculator, WebSource()],
+                                        frecency: Frecency(defaults: defaults))
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.query = "2 km -> m"
+        XCTAssertTrue(model.calculationIsPending)
+        model.submit()
+        XCTAssertNil(submitted, "Return must not web-search a calculation still being evaluated")
+        await awaitResults(model) { $0.first?.title == "= 2000 m" }
+        XCTAssertFalse(model.calculationIsPending)
+        XCTAssertEqual(model.results.last?.sourceType, .web)
+        model.submit()
+        XCTAssertEqual(submitted?.action, .copyText("2000 m"))
+    }
+
+    @MainActor
+    func testHideAndModeSwitchCancelCalculatorAndKeptQueryResumes() async {
+        let calculator = CalculatorSource(evaluator: { _ in "4" })
+        let model = PanelModel()
+        model.calculatorSource = calculator
+        calculator.onReload = { [weak model] in model?.refreshResults() }
+        model.searchModel = SearchModel(sources: [calculator], frecency: Frecency(defaults: defaults))
+        model.webSearchItem = { WebSource().item(for: $0) }
+        model.query = "2+2"
+        XCTAssertTrue(calculator.isPending)
+        model.panelDidHide()
+        XCTAssertFalse(calculator.isPending)
+        model.reset(clearQuery: false)
+        await awaitResults(model) { $0.first?.title == "= 4" }
+
+        model.query = "3+3"
+        XCTAssertTrue(calculator.isPending)
+        model.query = "web numbat"
+        XCTAssertFalse(calculator.isPending)
+        XCTAssertFalse(model.calculationIsPending)
+        XCTAssertTrue(model.results.allSatisfy { $0.sourceType == .web })
+    }
+
     func testQueryChangePopulatesResults() {
         let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
         model.query = "safari"
@@ -2121,16 +2165,22 @@ final class PanelModelTests: XCTestCase {
 
     /// An extended query keeps the calculator's top slot — a still-matching
     /// survivor must not float above the fresh pinned answer.
-    func testExtensionKeepsCalculatorPinOnTop() {
+    @MainActor
+    func testExtensionKeepsCalculatorPinOnTop() async {
         let model = PanelModel()
+        let calculator = CalculatorSource(evaluator: { $0 == "1+1" ? "2" : "3" })
+        model.calculatorSource = calculator
+        calculator.onReload = { [weak model] in model?.refreshResults() }
         model.searchModel = SearchModel(
             sources: [StubSource(stubbed: [
                 Self.appItem(id: "app:calc-tool", title: "1+1*2 Helper"),
-            ]), CalculatorSource()],
+            ]), calculator],
             frecency: Frecency(defaults: defaults))
         model.query = "1+1"
+        await awaitResults(model) { $0.first?.title == "= 2" }
         XCTAssertTrue(model.results.first?.id.hasPrefix("calc:") ?? false)
         model.query = "1+1*2"
+        await awaitResults(model) { $0.first?.title == "= 3" }
         XCTAssertTrue(model.results.first?.id.hasPrefix("calc:") ?? false)
         XCTAssertTrue(model.results.contains { $0.id == "app:calc-tool" })
     }

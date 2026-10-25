@@ -256,13 +256,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let webSource = WebSource(engine: { [weak preferences] in
             preferences?.searchEngine ?? .duckDuckGo
         })
+        let calculatorSource = CalculatorSource()
+        calculatorSource.onReload = { [weak model] in model?.refreshResults() }
+        model.calculatorSource = calculatorSource
         let sources: [ItemSource] = [
             PathSource(),
             URLSource(),
             AppSource(onReload: { [weak model] in model?.refreshResults() }),
             GeneratorSource(),
             commandSource,
-            CalculatorSource(),
+            calculatorSource,
             SystemSource(),
             ClipboardSource(),
             webSource,

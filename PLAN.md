@@ -78,10 +78,11 @@ A background **agent app** (`LSUIElement = true`, no Dock icon).
 
 **Tech stack:** Swift, SwiftUI for panel content and Settings, AppKit for
 windowing (`NSPanel`, `NSStatusItem`), `JavaScriptCore` for the command runtime,
-`NSWorkspace` for app listing, `UserDefaults` for preferences. One
-dependency: [`PictKit`](https://github.com/L-K-M/Pict), the first-party
+`NSWorkspace` for app listing, `UserDefaults` for preferences. Dependencies:
+[`PictKit`](https://github.com/L-K-M/Pict), the first-party
 SwiftPM package holding the shared icon store and resolution ladder Zap,
-Jetty and Top Drawer already link. Otherwise no third-party dependencies.
+Jetty and Top Drawer already link, and Numbat's Rust calculator engine,
+bundled as a helper with its locked Cargo dependencies.
 Targets macOS 13+ (revisit if Zap has since raised its floor).
 
 ---
@@ -158,7 +159,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
 - `ItemSource` protocol: `func items(for query: String) -> [Item]` (sync,
   cached sources) and async `reload()` for dynamic ones.
 - Sources v1: `AppSource` (NSWorkspace scan, LaunchServices apps), 
-  `CommandSource` (from CommandStore), `CalculatorSource` (arithmetic plus
+  `CommandSource` (from CommandStore), `CalculatorSource` (bundled Numbat
+  scientific arithmetic and unit conversions, plus
   bare-integer base conversion — `255`/`0xFF`/`0b1010` offer a
   hex/dec/bin/oct row, pinned with calculator answers; decimal input
   needs two digits so a lone digit stays an app search),
@@ -175,6 +177,22 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   so the web fallback can't turn an address into a search), `WebSource`
   (fallback "Search for X" against the configured `SearchEngine` —
   Settings → General).
+- Numbat 1.24.0 runs in a stateless, owned helper process. Normal math queries
+  and `= <expression>` debounce for 80 ms; cached answers join normal ranking
+  through `CalculatorSource.onReload`. Edits, mode changes and dismissal cancel
+  pending work; stale completions drop. Each invocation has a 2-second limit
+  and bounded output. `items(matching:)` performs no process I/O.
+  The footer shows progress; Return cannot dispatch a web fallback while a
+  calculation is pending.
+  Only embedded modules are available; user config/init files, filesystem
+  importers, network exchange rates and plotting are excluded. Invalid input,
+  incompatible dimensions and non-finite answers produce no row; helper failures
+  surface an actionable calculator row. Unit names stay case-sensitive, and
+  Enter/⌘C copy the numeric answer with its units. `log` now follows Numbat's
+  natural-log meaning; `log10` explicitly requests the former base-10 behavior.
+  The Xcode build phase compiles selected architectures with pinned Rust and
+  `Cargo.lock`, embeds the helper under `Contents/Helpers`, and signs nested code
+  before the app. Dependency notices ship in `Resources/Numbat-Licenses.txt`.
 - `CommandStore` performs its initial disk scan and watcher setup off-main;
   the panel can render immediately and `CommandSource` republishes on arrival.
 - Consequential system actions (restart, shutdown, empty Trash) replace the
@@ -364,7 +382,7 @@ post-v1.
   synchronous loop cannot be interrupted — on timeout the context is abandoned
   and its result discarded (documented limitation; the generator's system
   prompt forbids unbounded sync loops).
-- Calculator and "eval JS" can reuse this engine — one runtime, three uses.
+- The calculator uses Numbat independently of the command JS runtime.
 
 ### 4.3 Permissions UX
 

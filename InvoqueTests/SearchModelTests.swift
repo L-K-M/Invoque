@@ -383,12 +383,14 @@ final class SearchModelTests: XCTestCase {
             .map(\.id), ["app:webbrowser", "app:zen"])
     }
 
-    func testSelectionOfPinnedRowsIsNotRecorded() {
+    @MainActor
+    func testSelectionOfPinnedRowsIsNotRecorded() async {
         // web:/calc: ids embed the raw query and are never fuzzy-scored —
         // recording them would persist queries and evict real history.
         let source = StubSource()
         source.stubbedItems = [Self.appItem(id: "app:safari", title: "Safari")]
-        let model = makeModel(sources: [source, WebSource(), CalculatorSource()])
+        let calculator = await answeredCalculator()
+        let model = makeModel(sources: [source, WebSource(), calculator])
         let webItems = model.results(for: "safari")
             .filter { $0.id.hasPrefix(Item.webIDPrefix) }
         let calcItems = model.results(for: "2+2")
@@ -403,13 +405,25 @@ final class SearchModelTests: XCTestCase {
         XCTAssertNotNil(defaults.data(forKey: "SearchFrecency.v1"))
     }
 
-    func testCalculatorOutranksFuzzyNoise() {
+    @MainActor
+    func testCalculatorOutranksFuzzyNoise() async {
         // Even an app whose name matches the digits must not beat `= 4`.
         let apps = StubSource()
         apps.stubbedItems = [Self.appItem(id: "app:spoiler", title: "2 + 2 = 5")]
-        let model = makeModel(sources: [apps, CalculatorSource()])
+        let calculator = await answeredCalculator()
+        let model = makeModel(sources: [apps, calculator])
         let results = model.results(for: "2+2")
         XCTAssertEqual(results.first?.id, "calc:2+2")
+    }
+
+    @MainActor
+    private func answeredCalculator() async -> CalculatorSource {
+        let source = CalculatorSource(evaluator: { _ in "4" })
+        let answered = expectation(description: "calculator answer cached")
+        source.onReload = { answered.fulfill() }
+        source.update(for: "2+2")
+        await fulfillment(of: [answered], timeout: 5)
+        return source
     }
 
     func testWebFallbackSortsLast() {
@@ -669,11 +683,13 @@ final class SearchModelTests: XCTestCase {
 
     /// Blocked functional rows drop too — the filter runs ahead of pin
     /// classification, so a hand-edited `web:`/`calc:` block is honored.
-    func testBlockedFunctionalRowDrops() {
+    @MainActor
+    func testBlockedFunctionalRowDrops() async {
         let rules = StubRules()
+        let calculator = await answeredCalculator()
+        let model = makeModel(sources: [WebSource(), calculator], rules: rules)
+        XCTAssertTrue(model.results(for: "2+2").contains { $0.id == "calc:2+2" })
         rules.blocked = ["web:safari", "calc:2+2"]
-        let model = makeModel(sources: [WebSource(), CalculatorSource()],
-                              rules: rules)
         XCTAssertTrue(model.results(for: "safari").isEmpty)
         // Only the calc row is blocked on "2+2" — the web fallback for the
         // same query (`web:2+2`) is a different id and still lands.
