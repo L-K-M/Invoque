@@ -198,6 +198,7 @@
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/invoque-numbat",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Numbat-Licenses.txt",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Rust-Licenses.html",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;

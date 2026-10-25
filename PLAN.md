@@ -192,7 +192,8 @@ The family's appearance system (Zap/Jetty conventions) drives the card:
   natural-log meaning; `log10` explicitly requests the former base-10 behavior.
   The Xcode build phase compiles selected architectures with pinned Rust and
   `Cargo.lock`, embeds the helper under `Contents/Helpers`, and signs nested code
-  before the app. Dependency notices ship in `Resources/Numbat-Licenses.txt`.
+  before the app. Dependency notices ship in `Resources/Numbat-Licenses.txt`,
+  the Rust standard library's in `Resources/Rust-Licenses.html`.
 - `CommandStore` performs its initial disk scan and watcher setup off-main;
   the panel can render immediately and `CommandSource` republishes on arrival.
 - Consequential system actions (restart, shutdown, empty Trash) replace the

@@ -3,6 +3,9 @@ name = "invoque-numbat"
 version = "0.1.0"
 edition = "2024"
 publish = false
+# Invoque's wrapper code. LICENSE-MIT and LICENSE-APACHE beside it are
+# Numbat's upstream texts, copied for the bundled notices.
+license = "Unlicense"
 
 [dependencies]
 numbat = { version = "=1.24.0", default-features = false }

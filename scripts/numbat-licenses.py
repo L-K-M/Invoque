@@ -7,7 +7,8 @@ import sys
 
 
 def notices(documents):
-    sections = ["Invoque's calculator uses Numbat (https://github.com/sharkdp/numbat).\n"]
+    sections = ["Invoque's calculator uses Numbat (https://github.com/sharkdp/numbat).\n"
+                "Rust standard library notices are in Rust-Licenses.html.\n"]
     packages = {}
     for metadata in documents:
         nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
