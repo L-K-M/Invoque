@@ -47,6 +47,50 @@ final class PanelModelTests: XCTestCase {
 
     // MARK: Query → results
 
+    @MainActor
+    func testCalculatorPublishesPinnedAnswerAndSubmitCopiesIt() async {
+        let calculator = CalculatorSource(evaluator: { _ in "2000 m" })
+        let model = PanelModel()
+        model.calculatorSource = calculator
+        calculator.onReload = { [weak model] in model?.refreshResults() }
+        model.searchModel = SearchModel(sources: [calculator, WebSource()],
+                                        frecency: Frecency(defaults: defaults))
+        var submitted: ResultRow?
+        model.onSubmit = { submitted = $0 }
+        model.query = "2 km -> m"
+        XCTAssertTrue(model.calculationIsPending)
+        model.submit()
+        XCTAssertNil(submitted, "Return must not web-search a calculation still being evaluated")
+        await awaitResults(model) { $0.first?.title == "= 2000 m" }
+        XCTAssertFalse(model.calculationIsPending)
+        XCTAssertEqual(model.results.last?.sourceType, .web)
+        model.submit()
+        XCTAssertEqual(submitted?.action, .copyText("2000 m"))
+    }
+
+    @MainActor
+    func testHideAndModeSwitchCancelCalculatorAndKeptQueryResumes() async {
+        let calculator = CalculatorSource(evaluator: { _ in "4" })
+        let model = PanelModel()
+        model.calculatorSource = calculator
+        calculator.onReload = { [weak model] in model?.refreshResults() }
+        model.searchModel = SearchModel(sources: [calculator], frecency: Frecency(defaults: defaults))
+        model.webSearchItem = { WebSource().item(for: $0) }
+        model.query = "2+2"
+        XCTAssertTrue(calculator.isPending)
+        model.panelDidHide()
+        XCTAssertFalse(calculator.isPending)
+        model.reset(clearQuery: false)
+        await awaitResults(model) { $0.first?.title == "= 4" }
+
+        model.query = "3+3"
+        XCTAssertTrue(calculator.isPending)
+        model.query = "web numbat"
+        XCTAssertFalse(calculator.isPending)
+        XCTAssertFalse(model.calculationIsPending)
+        XCTAssertTrue(model.results.allSatisfy { $0.sourceType == .web })
+    }
+
     func testQueryChangePopulatesResults() {
         let model = makeModel(items: [Self.appItem(id: "app:safari", title: "Safari")])
         model.query = "safari"

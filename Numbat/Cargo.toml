@@ -1,0 +1,11 @@
+[package]
+name = "invoque-numbat"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+numbat = { version = "=1.24.0", default-features = false }
+
+[profile.release]
+strip = true

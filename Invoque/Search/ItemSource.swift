@@ -3,7 +3,7 @@ import Foundation
 /// A provider of search items: apps, commands, calculator results, system
 /// actions, the web fallback. `SearchModel` gathers every source per
 /// keystroke, so `items(matching:)` must be cheap: cached sources answer from
-/// memory, while query-driven sources (calculator, web) compute without I/O.
+/// memory. Slow query-driven work publishes a cache through its reload hook.
 protocol ItemSource {
     /// Items relevant to `query`. Cached sources may ignore the query and
     /// return everything; `SearchModel` scores and filters.

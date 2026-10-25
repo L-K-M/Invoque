@@ -348,6 +348,7 @@ struct PanelView: View {
         if model.fileScanIsPending {
             return "Searching files…"
         }
+        if model.calculationIsPending { return "Calculating…" }
         let count = model.results.count
         if count == 0 { return "" }
         return "\(count) \(count == 1 ? "result" : "results")"
@@ -362,6 +363,9 @@ struct PanelView: View {
             return "⌘⏎ confirm · esc dismiss"
         }
         if model.makerIsActive { return "⏎ generate/save · esc dismiss" }
+        if model.calculationIsPending, model.selectedRow?.sourceType == .web {
+            return "esc dismiss"
+        }
         let manage = model.selectedRow.map(model.canManage) == true
             ? " · ⌘P pin · ⌘B block" : ""
         let reveal = model.selectedRevealURL != nil
