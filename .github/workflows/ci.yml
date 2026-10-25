@@ -61,6 +61,8 @@ jobs:
             -scheme "$SCHEME" \
             -destination 'platform=macOS' \
             -resultBundlePath TestResults.xcresult \
+            -test-timeouts-enabled YES \
+            -maximum-test-execution-time-allowance 60 \
             CODE_SIGNING_ALLOWED=NO \
             test | xcbeautify
 
