@@ -1,6 +1,6 @@
 # Invoque.app
 
-**Latest release:** v<!-- version -->0.2.0<!-- /version --> · [Download](https://github.com/L-K-M/Invoque/releases/latest)
+**Latest release:** v<!-- version -->0.3.0<!-- /version --> · [Download](https://github.com/L-K-M/Invoque/releases/latest)
 
 The build is ad-hoc signed and not notarized. After moving **Invoque** to
 Applications, run:
