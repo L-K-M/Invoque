@@ -1,4 +1,5 @@
 import AppKit
+import KeycapKit
 
 /// Sets up the status-bar item, the launcher panel and its summon hotkey,
 /// and the settings window.
@@ -29,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Identifies the summon hotkey to Carbon; any value unique within the app works.
     private static let summonHotkeyID: UInt32 = 1
+    /// Four-char signature `'INVQ'`, unchanged from the app's original copy.
+    private static let summonHotkeySignature: OSType = 0x494E_5651
     private var summonHotkey: CarbonHotkey?
 
     // MARK: NSApplicationDelegate
@@ -313,10 +316,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// its deinit — so a settings change takes effect immediately.
     private func registerSummonHotkey() {
         let combination = preferences.summonHotkey
-        let hotkey = CarbonHotkey(identifier: Self.summonHotkeyID)
+        let hotkey = CarbonHotkey(identifier: Self.summonHotkeyID,
+                                  signature: Self.summonHotkeySignature)
         hotkey.onPressed = { [weak self] in self?.panelController.toggle() }
-        guard hotkey.register(keyCode: combination.keyCode, modifiers: combination.modifiers) else {
-            // CarbonHotkey logged the failure; keep the previous working
+        guard hotkey.register(combination.combo).isRegistered else {
+            // Keycap logged the failure; keep the previous working
             // registration — a conflicting chord must not leave the app
             // without any summon hotkey. Revert the stored preference to the
             // chord that is still registered so the next launch re-registers

@@ -7,6 +7,10 @@
   before at full intensity, so settings in between look slightly fainter, and
   the gradient direction dial gains a focus ring, arrow-key control and 5°
   VoiceOver steps instead of 15°.
+- Summon hotkeys now use the shared Keycap package. The recorder accepts the
+  same shortcuts as before (including ⌘Space), and the Accessibility button
+  falls back to the legacy System Settings pane if the current one cannot be
+  opened.
 - Bundle Numbat for scientific calculations and unit conversions. `log` now
   means natural log; use `log10` for base-10. Currency rates are not included.
 

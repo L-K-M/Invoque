@@ -11,6 +11,8 @@
 		AA0000000000000000000023 /* PictKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000024 /* PictKit */; };
 		AA0000000000000000000026 /* LiveryKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000029 /* LiveryKit */; };
 		AA0000000000000000000027 /* LiveryKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000002A /* LiveryKit */; };
+		AA000000000000000000002B /* KeycapKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000002E /* KeycapKit */; };
+		AA000000000000000000002C /* KeycapKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000002F /* KeycapKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +42,7 @@
 			files = (
 				AA0000000000000000000020 /* PictKit in Frameworks */,
 				AA0000000000000000000026 /* LiveryKit in Frameworks */,
+				AA000000000000000000002B /* KeycapKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -49,6 +52,7 @@
 			files = (
 				AA0000000000000000000023 /* PictKit in Frameworks */,
 				AA0000000000000000000027 /* LiveryKit in Frameworks */,
+				AA000000000000000000002C /* KeycapKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -96,6 +100,7 @@
 			packageProductDependencies = (
 				AA0000000000000000000022 /* PictKit */,
 				AA0000000000000000000029 /* LiveryKit */,
+				AA000000000000000000002E /* KeycapKit */,
 			);
 			productName = Invoque;
 			productReference = AA0000000000000000000006 /* Invoque.app */;
@@ -121,6 +126,7 @@
 			packageProductDependencies = (
 				AA0000000000000000000024 /* PictKit */,
 				AA000000000000000000002A /* LiveryKit */,
+				AA000000000000000000002F /* KeycapKit */,
 			);
 			productName = InvoqueTests;
 			productReference = AA0000000000000000000007 /* InvoqueTests.xctest */;
@@ -157,6 +163,7 @@
 			packageReferences = (
 				AA0000000000000000000021 /* XCRemoteSwiftPackageReference "Pict" */,
 				AA0000000000000000000028 /* XCRemoteSwiftPackageReference "Livery" */,
+				AA000000000000000000002D /* XCRemoteSwiftPackageReference "Keycap" */,
 			);
 			productRefGroup = AA0000000000000000000003 /* Products */;
 			projectDirPath = "";
@@ -454,6 +461,14 @@
 				minimumVersion = 0.1.0;
 			};
 		};
+		AA000000000000000000002D /* XCRemoteSwiftPackageReference "Keycap" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/L-K-M/Keycap";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -476,6 +491,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000000028 /* XCRemoteSwiftPackageReference "Livery" */;
 			productName = LiveryKit;
+		};
+		AA000000000000000000002E /* KeycapKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000002D /* XCRemoteSwiftPackageReference "Keycap" */;
+			productName = KeycapKit;
+		};
+		AA000000000000000000002F /* KeycapKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000002D /* XCRemoteSwiftPackageReference "Keycap" */;
+			productName = KeycapKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 

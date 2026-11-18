@@ -1,5 +1,5 @@
 import AppKit
-import Carbon.HIToolbox
+import KeycapKit
 import XCTest
 @testable import Invoque
 
@@ -32,95 +32,98 @@ final class HotkeyRecorderTests: XCTestCase {
 
     func testReturnArmsThenChordRecords() {
         let (field, box) = makeField()
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
         XCTAssertEqual(field.stringValue, "Type shortcut…")
-        field.keyDown(with: keyDownEvent(UInt16(kVK_ANSI_X),
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.x),
                                          modifiers: [.command, .option]))
         XCTAssertEqual(box.value, HotkeyCombination(
-            keyCode: UInt32(kVK_ANSI_X),
-            modifiers: UInt32(cmdKey | optionKey)))
+            keyCode: UInt32(KeyCode.x),
+            modifiers: HotkeyModifiers([.command, .option]).rawValue))
     }
 
     func testEscapeCancelsWithoutRecording() {
         let (field, box) = makeField()
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Escape)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.escape)))
         XCTAssertNil(box.value)
         XCTAssertEqual(field.stringValue, "⌥ Space")
     }
 
     func testBareKeyIsRejectedNotRecorded() {
         let (field, box) = makeField()
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
-        field.keyDown(with: keyDownEvent(UInt16(kVK_ANSI_A)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.a)))
         XCTAssertNil(box.value)
         XCTAssertEqual(field.stringValue, "⌥ Space")
     }
 
     func testShiftOnlyChordIsRejected() {
         let (field, box) = makeField()
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
-        field.keyDown(with: keyDownEvent(UInt16(kVK_ANSI_A),
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.a),
                                          modifiers: [.shift]))
+        XCTAssertNil(box.value)
+    }
+
+    /// A launcher is what people bind to ⌘Space once Spotlight's shortcut
+    /// is off, so Invoque keeps it recordable even though Keycap's shared
+    /// `isUsableGlobalHotkey` treats it as system-reserved.
+    func testCommandSpaceRecords() {
+        let (field, box) = makeField()
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.space),
+                                         modifiers: [.command]))
+        XCTAssertEqual(box.value, HotkeyCombination(
+            keyCode: UInt32(KeyCode.space),
+            modifiers: HotkeyModifiers.command.rawValue))
+    }
+
+    /// A bare function key is refused like any bare key: `Preferences`
+    /// only loads stored chords that carry a modifier.
+    func testBareFunctionKeyIsRejected() {
+        let (field, box) = makeField()
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.f5)))
         XCTAssertNil(box.value)
     }
 
     func testDeleteRestoresDefault() {
         let (field, box) = makeField()
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Delete)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.delete)))
         XCTAssertEqual(box.value, .default)
     }
 
     /// A chorded Delete is a real hotkey — only a bare ⌫ resets.
     func testModifiedDeleteRecordsAsChord() {
         let (field, box) = makeField()
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Delete),
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.delete),
                                          modifiers: [.option]))
         XCTAssertEqual(box.value, HotkeyCombination(
-            keyCode: UInt32(kVK_Delete), modifiers: UInt32(optionKey)))
+            keyCode: UInt32(KeyCode.delete),
+            modifiers: HotkeyModifiers.option.rawValue))
     }
 
     /// Symmetric with ⌥⌫: the per-pattern `where` guard must hold for
     /// ForwardDelete too — a shared trailing `where` broke exactly that.
     func testModifiedForwardDeleteRecordsAsChord() {
         let (field, box) = makeField()
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
-        field.keyDown(with: keyDownEvent(UInt16(kVK_ForwardDelete),
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.forwardDelete),
                                          modifiers: [.command]))
         XCTAssertEqual(box.value, HotkeyCombination(
-            keyCode: UInt32(kVK_ForwardDelete), modifiers: UInt32(cmdKey)))
+            keyCode: UInt32(KeyCode.forwardDelete),
+            modifiers: HotkeyModifiers.command.rawValue))
     }
 
     func testResignFirstResponderDisarms() {
         let (field, box) = makeField()
-        field.keyDown(with: keyDownEvent(UInt16(kVK_Return)))
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.return)))
         _ = field.resignFirstResponder()
         // Now unarmed: a chord must not record.
-        field.keyDown(with: keyDownEvent(UInt16(kVK_ANSI_X),
+        field.keyDown(with: keyDownEvent(UInt16(KeyCode.x),
                                          modifiers: [.command]))
         XCTAssertNil(box.value)
-    }
-
-    func testModifierFlagsMapToCarbonMask() {
-        XCTAssertEqual(
-            HotkeyRecorder.carbonModifiers(of: [.command, .shift]),
-            UInt32(cmdKey | shiftKey))
-        XCTAssertEqual(
-            HotkeyRecorder.carbonModifiers(
-                of: [.control, .option, .shift, .command]),
-            UInt32(controlKey | optionKey | shiftKey | cmdKey))
-        XCTAssertEqual(HotkeyRecorder.carbonModifiers(of: []), 0)
-    }
-
-    func testRecordableRequiresNonShiftModifier() {
-        XCTAssertTrue(HotkeyRecorder.isRecordable(
-            modifiers: UInt32(optionKey)))
-        XCTAssertTrue(HotkeyRecorder.isRecordable(
-            modifiers: UInt32(cmdKey | shiftKey)))
-        XCTAssertFalse(HotkeyRecorder.isRecordable(modifiers: 0))
-        XCTAssertFalse(HotkeyRecorder.isRecordable(
-            modifiers: UInt32(shiftKey)))
     }
 }
