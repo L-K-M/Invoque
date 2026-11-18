@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Zap and Jetty theme import now uses Livery 0.2.0's shared theme reader, the
+  same one Zap and Jetty use to import Invoque themes. Imports behave as
+  before.
 - A hotkey press that arrives just as its shortcut is changed or turned off no
   longer fires the old action (Keycap 0.1.1).
 - When GitHub's rate limit stops a Check for Updates, the alert says when to

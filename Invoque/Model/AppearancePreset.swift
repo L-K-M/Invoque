@@ -157,7 +157,8 @@ extension AppearancePreset {
 
     /// A usable imported name: trimmed and non-empty, else `fallback` — presets
     /// are identified (and de-duplicated in menus) by name, so an empty string
-    /// can't stand. Used by every decode lens, not just the native one.
+    /// can't stand. Livery's `ThemeSnapshot` applies the same rule to a
+    /// sibling's theme.
     fileprivate static func importedName(_ raw: String?, fallback: String) -> String {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else { return fallback }
@@ -178,205 +179,48 @@ extension AppearancePreset {
 extension AppearancePreset {
 
     /// Decodes a theme from JSON, accepting Invoque's own format plus **Jetty**
-    /// (`material`/`tintHex`/`accentGlow`…) and **Zap** (`backgroundColorHex`/
-    /// `useGradientBackground`/`highlightColorHex`…) theme files — looks can be
-    /// shared across the family. Invoque's own decoder is fully tolerant (it
-    /// never fails), so the raw keys are sniffed to pick a schema and the
-    /// sibling's fields are mapped onto ours.
+    /// and **Zap** theme files, so looks can be shared across the family.
+    /// Livery's `ThemeSnapshot` recognises the format from keys unique to one
+    /// app (the rules Invoque introduced) and reads a sibling's fields;
+    /// Invoque's own decoder is fully tolerant (it never fails), so the
+    /// snapshot's format decides which reader runs.
     ///
-    /// A JSON object with none of the recognized keys isn't a theme — it is
-    /// rejected rather than letting the tolerant decoder return an all-defaults
-    /// preset, so importing the wrong file surfaces an error instead of a
-    /// silent swap.
+    /// JSON the snapshot does not recognise isn't a theme: it is rejected
+    /// rather than letting the tolerant decoder return an all-defaults preset,
+    /// so importing the wrong file surfaces an error instead of a silent swap.
     static func decode(from data: Data) -> AppearancePreset? {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-
-        // Only format-*unique* keys discriminate. `cornerRadius`,
-        // `gradientAngle`, `decoration*`/`crt*` exist in all three schemas;
-        // `highlightOpacity`/`highlightCornerRadius` exist in Invoque *and*
-        // Zap (Jetty has no selection styling); `iconSize` exists in both
-        // siblings — none of them can pick a format. Invoque's own export
-        // always carries labelHex/highlightHex/adaptiveAccent, so those
-        // prove native.
-        let hasInvoqueKeys = obj["labelHex"] != nil || obj["highlightHex"] != nil
-            || obj["adaptiveAccent"] != nil
-        let hasZapKeys = obj["backgroundColorHex"] != nil || obj["useGradientBackground"] != nil
-            || obj["gradientColorHex"] != nil || obj["highlightColorHex"] != nil
-            || obj["labelColorHex"] != nil || obj["showAppName"] != nil
-            || obj["contentPadding"] != nil
-        let hasJettyKeys = obj["tileSpacing"] != nil || obj["indicatorStyle"] != nil
-            || obj["accentGlow"] != nil || obj["glyphHex"] != nil
-            || obj["clockFace"] != nil || obj["magnificationEnabled"] != nil
-            || obj["indicatorHex"] != nil || obj["dockEdge"] != nil
-            || obj["edge"] != nil || obj["autoHide"] != nil
-            || obj["windowPreviewMode"] != nil || obj["showLabels"] != nil
-            || obj["trashIconStyle"] != nil
-
-        if hasInvoqueKeys {
+        guard let theme = ThemeSnapshot(themeData: data) else { return nil }
+        if theme.format == .invoque {
             return try? JSONDecoder().decode(AppearancePreset.self, from: data)
         }
-        if hasZapKeys {
-            return (try? JSONDecoder().decode(ZapTheme.self, from: data))?.asInvoquePreset
-        }
-        if hasJettyKeys {
-            return (try? JSONDecoder().decode(JettyTheme.self, from: data))?.asInvoquePreset
-        }
-        // No discriminator at all: `material`/`tintHex`/`gradientHex` are the
-        // only remaining signal — the names Invoque deliberately shares with
-        // Jetty. A minimal Jetty theme maps cleanly through the Jetty lens,
-        // and a partial Invoque file produces the same preset either way.
-        if obj["material"] != nil || obj["tintHex"] != nil || obj["gradientHex"] != nil {
-            return (try? JSONDecoder().decode(JettyTheme.self, from: data))?.asInvoquePreset
-        }
-        return nil
-    }
-}
-
-/// The fields of a **Jetty** theme file Invoque maps. `DockMaterial`'s raw
-/// values are identical to `PanelMaterial`'s, so it crosses over directly;
-/// Jetty has no per-row highlight/label — those fall to Invoque defaults.
-///
-/// `highlightOpacity`/`highlightCornerRadius` aren't Jetty keys — they exist
-/// only in Invoque and Zap files. They're carried anyway so a *partial
-/// Invoque file* holding no native discriminator (`labelHex`/`highlightHex`/
-/// `adaptiveAccent`) routes through this lens on its `material`/`tintHex`
-/// keys without silently dropping them.
-private struct JettyTheme: Codable {
-    var name: String?
-    var material: String?
-    var tintHex: String?
-    var gradientHex: String?
-    var gradientAngle: Double?
-    var backgroundOpacity: Double?
-    var cornerRadius: Double?
-    var highlightOpacity: Double?
-    var highlightCornerRadius: Double?
-    var accentGlow: Bool?
-    var decorationStyle: String?
-    var decorationPosition: String?
-    var decorationOpacity: Double?
-    var decorationSize: Double?
-    var crtEnabled: Bool?
-    var crtIntensity: Double?
-
-    /// Per-field tolerant like the native decoder: a wrong-typed value falls
-    /// back to "absent" rather than failing the whole import.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        func field<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
-            (try? c.decodeIfPresent(type, forKey: key)) ?? nil
-        }
-        name = field(String.self, .name)
-        material = field(String.self, .material)
-        tintHex = field(String.self, .tintHex)
-        gradientHex = field(String.self, .gradientHex)
-        gradientAngle = field(Double.self, .gradientAngle)
-        backgroundOpacity = field(Double.self, .backgroundOpacity)
-        cornerRadius = field(Double.self, .cornerRadius)
-        highlightOpacity = field(Double.self, .highlightOpacity)
-        highlightCornerRadius = field(Double.self, .highlightCornerRadius)
-        accentGlow = field(Bool.self, .accentGlow)
-        decorationStyle = field(String.self, .decorationStyle)
-        decorationPosition = field(String.self, .decorationPosition)
-        decorationOpacity = field(Double.self, .decorationOpacity)
-        decorationSize = field(Double.self, .decorationSize)
-        crtEnabled = field(Bool.self, .crtEnabled)
-        crtIntensity = field(Double.self, .crtIntensity)
+        return AppearancePreset(importing: theme)
     }
 
-    var asInvoquePreset: AppearancePreset {
+    /// Maps a Zap or Jetty theme onto Invoque's settings, with Invoque's
+    /// defaults for anything the sibling lacks: Jetty has no selection
+    /// highlight or label color, Zap no adaptive accent, neither a typeface.
+    /// Values are validated and clamped later by `apply(to:)`.
+    init(importing theme: ThemeSnapshot) {
         let d = Preferences.Default.self
-        return AppearancePreset(
-            name: AppearancePreset.importedName(name, fallback: "Jetty Theme"),
-            material: material.flatMap(PanelMaterial.init(rawValue:)) ?? d.panelMaterial,
-            tintHex: tintHex ?? d.tintHex,
-            gradientHex: gradientHex ?? d.gradientHex,
-            gradientAngle: gradientAngle ?? d.gradientAngle,
-            backgroundOpacity: backgroundOpacity ?? d.backgroundOpacity,
-            highlightHex: d.highlightHex,
-            highlightOpacity: highlightOpacity ?? d.highlightOpacity,
-            labelHex: d.labelHex,
-            cornerRadius: cornerRadius ?? d.panelCornerRadius,
-            highlightCornerRadius: highlightCornerRadius ?? d.highlightCornerRadius,
-            adaptiveAccent: accentGlow ?? d.adaptiveAccent,
-            decorationStyle: decorationStyle ?? d.decorationStyle.rawValue,
-            decorationPosition: decorationPosition ?? d.decorationPosition.rawValue,
-            decorationOpacity: decorationOpacity ?? d.decorationOpacity,
-            decorationSize: decorationSize ?? d.decorationSize,
-            crtEnabled: crtEnabled ?? d.crtEnabled,
-            crtIntensity: crtIntensity ?? d.crtIntensity)
-    }
-}
-
-/// The fields of a **Zap** theme file Invoque maps. Zap's background is a solid
-/// or gradient fill (`useGradientBackground`), which lands on our `material`;
-/// its `highlightColorHex`/`labelColorHex` are the same concepts as ours.
-private struct ZapTheme: Codable {
-    var name: String?
-    var backgroundColorHex: String?
-    var useGradientBackground: Bool?
-    var gradientColorHex: String?
-    var gradientAngle: Double?
-    var backgroundOpacity: Double?
-    var highlightColorHex: String?
-    var highlightOpacity: Double?
-    var labelColorHex: String?
-    var cornerRadius: Double?
-    var highlightCornerRadius: Double?
-    var decorationStyle: String?
-    var decorationPosition: String?
-    var decorationOpacity: Double?
-    var decorationSize: Double?
-    var crtEnabled: Bool?
-    var crtIntensity: Double?
-
-    /// Per-field tolerant like the native decoder: a wrong-typed value falls
-    /// back to "absent" rather than failing the whole import.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        func field<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
-            (try? c.decodeIfPresent(type, forKey: key)) ?? nil
-        }
-        name = field(String.self, .name)
-        backgroundColorHex = field(String.self, .backgroundColorHex)
-        useGradientBackground = field(Bool.self, .useGradientBackground)
-        gradientColorHex = field(String.self, .gradientColorHex)
-        gradientAngle = field(Double.self, .gradientAngle)
-        backgroundOpacity = field(Double.self, .backgroundOpacity)
-        highlightColorHex = field(String.self, .highlightColorHex)
-        highlightOpacity = field(Double.self, .highlightOpacity)
-        labelColorHex = field(String.self, .labelColorHex)
-        cornerRadius = field(Double.self, .cornerRadius)
-        highlightCornerRadius = field(Double.self, .highlightCornerRadius)
-        decorationStyle = field(String.self, .decorationStyle)
-        decorationPosition = field(String.self, .decorationPosition)
-        decorationOpacity = field(Double.self, .decorationOpacity)
-        decorationSize = field(Double.self, .decorationSize)
-        crtEnabled = field(Bool.self, .crtEnabled)
-        crtIntensity = field(Double.self, .crtIntensity)
-    }
-
-    var asInvoquePreset: AppearancePreset {
-        let d = Preferences.Default.self
-        return AppearancePreset(
-            name: AppearancePreset.importedName(name, fallback: "Zap Theme"),
-            material: useGradientBackground == true ? .gradient : .solid,
-            tintHex: backgroundColorHex ?? d.tintHex,
-            gradientHex: gradientColorHex ?? d.gradientHex,
-            gradientAngle: gradientAngle ?? d.gradientAngle,
-            backgroundOpacity: backgroundOpacity ?? d.backgroundOpacity,
-            highlightHex: highlightColorHex ?? d.highlightHex,
-            highlightOpacity: highlightOpacity ?? d.highlightOpacity,
-            labelHex: labelColorHex ?? d.labelHex,
-            cornerRadius: cornerRadius ?? d.panelCornerRadius,
-            highlightCornerRadius: highlightCornerRadius ?? d.highlightCornerRadius,
-            adaptiveAccent: d.adaptiveAccent,
-            decorationStyle: decorationStyle ?? d.decorationStyle.rawValue,
-            decorationPosition: decorationPosition ?? d.decorationPosition.rawValue,
-            decorationOpacity: decorationOpacity ?? d.decorationOpacity,
-            decorationSize: decorationSize ?? d.decorationSize,
-            crtEnabled: crtEnabled ?? d.crtEnabled,
-            crtIntensity: crtIntensity ?? d.crtIntensity)
+        self.init(
+            name: theme.name ?? (theme.format == .zap ? "Zap Theme" : "Jetty Theme"),
+            material: theme.material ?? d.panelMaterial,
+            tintHex: theme.tintHex ?? d.tintHex,
+            gradientHex: theme.gradientHex ?? d.gradientHex,
+            gradientAngle: theme.gradientAngle ?? d.gradientAngle,
+            backgroundOpacity: theme.backgroundOpacity ?? d.backgroundOpacity,
+            highlightHex: theme.highlightHex ?? d.highlightHex,
+            highlightOpacity: theme.highlightOpacity ?? d.highlightOpacity,
+            labelHex: theme.labelHex ?? d.labelHex,
+            cornerRadius: theme.cornerRadius ?? d.panelCornerRadius,
+            highlightCornerRadius: theme.highlightCornerRadius ?? d.highlightCornerRadius,
+            adaptiveAccent: theme.adaptiveAccent ?? d.adaptiveAccent,
+            decorationStyle: (theme.decorationStyle ?? d.decorationStyle).rawValue,
+            decorationPosition: (theme.decorationPosition ?? d.decorationPosition).rawValue,
+            decorationOpacity: theme.decorationOpacity ?? d.decorationOpacity,
+            decorationSize: theme.decorationSize ?? d.decorationSize,
+            crtEnabled: theme.crtEnabled ?? d.crtEnabled,
+            crtIntensity: theme.crtIntensity ?? d.crtIntensity)
     }
 }
 
