@@ -195,6 +195,37 @@ final class AppearancePresetTests: XCTestCase {
     /// Every built-in's decoration fields must resolve through the enums — a
     /// raw-value typo would silently fall back to the default decoration in
     /// `apply(to:)`.
+    /// Invoque's exports must stay readable by the shared reader that Zap
+    /// and Jetty import them with.
+    func testExportsAreReadableByTheSharedReader() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        for preset in AppearancePreset.builtIns {
+            let theme = try XCTUnwrap(ThemeSnapshot(themeData: try encoder.encode(preset)), preset.name)
+            XCTAssertEqual(theme.format, .invoque, preset.name)
+            XCTAssertEqual(theme.name, preset.name)
+            XCTAssertEqual(theme.material, preset.material, preset.name)
+            XCTAssertEqual(theme.tintHex, preset.tintHex, preset.name)
+            XCTAssertEqual(theme.highlightHex, preset.highlightHex, preset.name)
+            XCTAssertEqual(theme.labelHex, preset.labelHex, preset.name)
+            XCTAssertEqual(theme.highlightCornerRadius, preset.highlightCornerRadius, preset.name)
+            XCTAssertEqual(theme.adaptiveAccent, preset.adaptiveAccent, preset.name)
+            XCTAssertEqual(theme.decorationStyle?.rawValue, preset.decorationStyle, preset.name)
+            XCTAssertEqual(theme.crtIntensity, preset.crtIntensity, preset.name)
+        }
+    }
+
+    /// A sibling's unparseable color falls to Invoque's default at import,
+    /// the same result `apply(to:)` reached before.
+    func testSiblingsInvalidColorFallsToDefault() throws {
+        let decoded = AppearancePreset.decode(from: try json([
+            "backgroundColorHex": "blue", "highlightColorHex": "#00AEEF",
+        ]))
+        XCTAssertEqual(decoded?.material, .solid)
+        XCTAssertEqual(decoded?.tintHex, Preferences.Default.tintHex)
+        XCTAssertEqual(decoded?.highlightHex, "#00AEEF")
+    }
+
     func testBuiltInDecorationsResolveThroughEnums() {
         for preset in AppearancePreset.builtIns {
             XCTAssertNotNil(DecorationStyle(rawValue: preset.decorationStyle),
