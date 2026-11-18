@@ -221,6 +221,7 @@ final class AppearancePresetTests: XCTestCase {
         let decoded = AppearancePreset.decode(from: try json([
             "backgroundColorHex": "blue", "highlightColorHex": "#00AEEF",
         ]))
+        XCTAssertEqual(decoded?.material, .solid)
         XCTAssertEqual(decoded?.tintHex, Preferences.Default.tintHex)
         XCTAssertEqual(decoded?.highlightHex, "#00AEEF")
     }
