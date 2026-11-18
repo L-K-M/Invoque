@@ -13,6 +13,7 @@
 		AA0000000000000000000027 /* LiveryKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000002A /* LiveryKit */; };
 		AA000000000000000000002B /* KeycapKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000002E /* KeycapKit */; };
 		AA000000000000000000002C /* KeycapKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000002F /* KeycapKit */; };
+		AA0000000000000000000030 /* UpdraftKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000032 /* UpdraftKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +44,7 @@
 				AA0000000000000000000020 /* PictKit in Frameworks */,
 				AA0000000000000000000026 /* LiveryKit in Frameworks */,
 				AA000000000000000000002B /* KeycapKit in Frameworks */,
+				AA0000000000000000000030 /* UpdraftKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,6 +103,7 @@
 				AA0000000000000000000022 /* PictKit */,
 				AA0000000000000000000029 /* LiveryKit */,
 				AA000000000000000000002E /* KeycapKit */,
+				AA0000000000000000000032 /* UpdraftKit */,
 			);
 			productName = Invoque;
 			productReference = AA0000000000000000000006 /* Invoque.app */;
@@ -164,6 +167,7 @@
 				AA0000000000000000000021 /* XCRemoteSwiftPackageReference "Pict" */,
 				AA0000000000000000000028 /* XCRemoteSwiftPackageReference "Livery" */,
 				AA000000000000000000002D /* XCRemoteSwiftPackageReference "Keycap" */,
+				AA0000000000000000000033 /* XCRemoteSwiftPackageReference "Updraft" */,
 			);
 			productRefGroup = AA0000000000000000000003 /* Products */;
 			projectDirPath = "";
@@ -469,6 +473,14 @@
 				minimumVersion = 0.1.0;
 			};
 		};
+		AA0000000000000000000033 /* XCRemoteSwiftPackageReference "Updraft" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/L-K-M/Updraft";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -501,6 +513,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA000000000000000000002D /* XCRemoteSwiftPackageReference "Keycap" */;
 			productName = KeycapKit;
+		};
+		AA0000000000000000000032 /* UpdraftKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000033 /* XCRemoteSwiftPackageReference "Updraft" */;
+			productName = UpdraftKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 

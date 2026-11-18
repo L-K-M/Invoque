@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Software update checks now use the shared Updraft package. Downloads are
+  verified against the release's file size and SHA-256 digest where one is
+  published, and only GitHub-hosted assets are fetched; assets named for
+  another operating system are no longer offered, and a failed download now
+  explains itself and offers the release page. Version parsing is stricter,
+  the release page opened is always this repository's GitHub page, the daily
+  check no longer skips a day, and the unparseable-version alert says whether
+  the installed version or the release tag could not be read.
 - Panel theming is now shared with the family apps through Livery. The CRT
   overlay's strength scales from nothing at intensity 0 to the same look as
   before at full intensity, so settings in between look slightly fainter, and

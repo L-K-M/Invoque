@@ -1,14 +1,33 @@
 import AppKit
 import KeycapKit
+import UpdraftKit
 
 /// Sets up the status-bar item, the launcher panel and its summon hotkey,
 /// and the settings window.
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
-    private let updateChecker = UpdateChecker(
-        configuration: .init(owner: "L-K-M", repo: "Invoque", appName: "Invoque")
-    )
+    private let updateChecker: UpdateChecker = {
+        var handoff: ActivationHandoff?
+        return UpdateChecker(
+            configuration: .init(owner: "L-K-M", repo: "Invoque", appName: "Invoque",
+                                  // Bring Invoque forward before an alert runs
+                                  // modally and hand activation back to the
+                                  // previous app once it closes, as the copied
+                                  // checker's runModal did.
+                                  activateForAlert: {
+                                      handoff = ActivationHandoff()
+                                      AppActivator.activateSelfForOwnWindow()
+                                  },
+                                  restoreAfterAlert: {
+                                      handoff?.restore()
+                                      handoff = nil
+                                  },
+                                  // A menu-bar agent must never steal focus for an
+                                  // update prompt found by a background check.
+                                  deferWhileInactive: true)
+        )
+    }()
     /// The one commands store — the panel's `CommandSource`, the Maker's
     /// writer, and the settings Commands tab all read the same instance.
     private lazy var commandStore = CommandStore()
