@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import LiveryKit
 import ServiceManagement
 
 /// User-facing settings, backed by `UserDefaults`.

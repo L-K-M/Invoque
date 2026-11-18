@@ -3,6 +3,7 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 import JavaScriptCore
+import KeycapKit
 
 /// Assembles the `invoque` global for a command's JSContext.
 ///

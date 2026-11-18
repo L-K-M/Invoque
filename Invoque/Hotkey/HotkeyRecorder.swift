@@ -1,5 +1,5 @@
 import AppKit
-import Carbon.HIToolbox
+import KeycapKit
 import SwiftUI
 
 /// A click-to-record field for the summon hotkey.
@@ -7,9 +7,13 @@ import SwiftUI
 /// Idle it shows the current chord ("⌥ Space"); a click or ⏎ arms it and
 /// the next key press becomes the binding. Esc cancels, ⌫ restores the
 /// default, and a chord without ⌃/⌥/⌘ is refused — a bare or shift-only
-/// key would summon the panel mid-typing. Losing first responder disarms,
-/// so pressing the *current* hotkey while armed (it fires globally and
-/// summons the panel) cancels cleanly instead of dead-locking the field.
+/// key would summon the panel mid-typing. Unlike Keycap's stricter
+/// `isUsableGlobalHotkey`, ⌘Space stays recordable: a launcher is what
+/// people bind there once they turn off Spotlight's shortcut, and bare
+/// function keys stay refused because `Preferences` only loads chords with
+/// a modifier. Losing first responder disarms, so pressing the *current*
+/// hotkey while armed (it fires globally and summons the panel) cancels
+/// cleanly instead of dead-locking the field.
 struct HotkeyRecorder: NSViewRepresentable {
 
     @Binding var combination: HotkeyCombination
@@ -23,25 +27,6 @@ struct HotkeyRecorder: NSViewRepresentable {
 
     func updateNSView(_ field: Field, context: Context) {
         field.displayText = combination.displayString
-    }
-
-    /// NSEvent modifier flags → the Carbon mask `RegisterEventHotKey`
-    /// consumes. The layouts differ, so this never passes raw flags
-    /// through.
-    static func carbonModifiers(of flags: NSEvent.ModifierFlags) -> UInt32 {
-        var carbon: UInt32 = 0
-        if flags.contains(.control) { carbon |= UInt32(controlKey) }
-        if flags.contains(.option) { carbon |= UInt32(optionKey) }
-        if flags.contains(.shift) { carbon |= UInt32(shiftKey) }
-        if flags.contains(.command) { carbon |= UInt32(cmdKey) }
-        return carbon
-    }
-
-    /// A recordable chord needs at least one of ⌃/⌥/⌘. A bare key would
-    /// summon on every press, and a shift-only chord fires constantly
-    /// while typing capitals.
-    static func isRecordable(modifiers: UInt32) -> Bool {
-        modifiers & UInt32(cmdKey | optionKey | controlKey) != 0
     }
 
     /// The AppKit half: a bordered, centered field that arms on click and
@@ -94,33 +79,32 @@ struct HotkeyRecorder: NSViewRepresentable {
             guard armed else {
                 // Keyboard parity with the click: Return/Space arm;
                 // everything else falls through for focus traversal.
-                if event.keyCode == UInt16(kVK_Return)
-                    || event.keyCode == UInt16(kVK_Space) {
+                if event.keyCode == UInt16(KeyCode.return)
+                    || event.keyCode == UInt16(KeyCode.space) {
                     armed = true
                 } else {
                     super.keyDown(with: event)
                 }
                 return
             }
-            let modifiers = HotkeyRecorder.carbonModifiers(
-                of: event.modifierFlags)
+            let modifiers = HotkeyModifiers(eventFlags: event.modifierFlags)
             switch event.keyCode {
-            case UInt16(kVK_Escape):
+            case UInt16(KeyCode.escape):
                 cancel()
             // Bare ⌫/⌦ reset to the default — a chorded one (⌥⌫, ⌘⌦)
             // is a legitimate hotkey and must record like any other.
-            case UInt16(kVK_Delete) where modifiers == 0,
-                 UInt16(kVK_ForwardDelete) where modifiers == 0:
+            case UInt16(KeyCode.delete) where modifiers.isEmpty,
+                 UInt16(KeyCode.forwardDelete) where modifiers.isEmpty:
                 commit(.default)
             default:
-                guard HotkeyRecorder.isRecordable(modifiers: modifiers)
-                else {
+                let combo = KeyCombo(
+                    keyCode: UInt32(event.keyCode), modifiers: modifiers)
+                guard combo.hasCommandingModifier else {
                     NSSound.beep()
                     cancel()
                     return
                 }
-                commit(HotkeyCombination(
-                    keyCode: UInt32(event.keyCode), modifiers: modifiers))
+                commit(HotkeyCombination(combo: combo))
             }
         }
 
@@ -128,8 +112,8 @@ struct HotkeyRecorder: NSViewRepresentable {
         /// until the key lands.
         override func flagsChanged(with event: NSEvent) {
             if armed {
-                let glyphs = HotkeyCombination.modifierGlyphs(
-                    HotkeyRecorder.carbonModifiers(of: event.modifierFlags))
+                let glyphs = HotkeyModifiers(
+                    eventFlags: event.modifierFlags).symbols
                 stringValue = glyphs.isEmpty ? "Type shortcut…" : glyphs
             }
             super.flagsChanged(with: event)

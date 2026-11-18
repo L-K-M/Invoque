@@ -1,4 +1,5 @@
 import SwiftUI
+import UpdraftKit
 
 /// The Settings window's content. Grows tabs as features land — see PLAN.md §7.
 struct SettingsView: View {

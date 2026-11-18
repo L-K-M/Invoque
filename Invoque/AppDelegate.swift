@@ -1,13 +1,33 @@
 import AppKit
+import KeycapKit
+import UpdraftKit
 
 /// Sets up the status-bar item, the launcher panel and its summon hotkey,
 /// and the settings window.
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
-    private let updateChecker = UpdateChecker(
-        configuration: .init(owner: "L-K-M", repo: "Invoque", appName: "Invoque")
-    )
+    private let updateChecker: UpdateChecker = {
+        var handoff: ActivationHandoff?
+        return UpdateChecker(
+            configuration: .init(owner: "L-K-M", repo: "Invoque", appName: "Invoque",
+                                  // Bring Invoque forward before an alert runs
+                                  // modally and hand activation back to the
+                                  // previous app once it closes, as the copied
+                                  // checker's runModal did.
+                                  activateForAlert: {
+                                      handoff = ActivationHandoff()
+                                      AppActivator.activateSelfForOwnWindow()
+                                  },
+                                  restoreAfterAlert: {
+                                      handoff?.restore()
+                                      handoff = nil
+                                  },
+                                  // A menu-bar agent must never steal focus for an
+                                  // update prompt found by a background check.
+                                  deferWhileInactive: true)
+        )
+    }()
     /// The one commands store — the panel's `CommandSource`, the Maker's
     /// writer, and the settings Commands tab all read the same instance.
     private lazy var commandStore = CommandStore()
@@ -29,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Identifies the summon hotkey to Carbon; any value unique within the app works.
     private static let summonHotkeyID: UInt32 = 1
+    /// Four-char signature `'INVQ'`, unchanged from the app's original copy.
+    private static let summonHotkeySignature: OSType = 0x494E_5651
     private var summonHotkey: CarbonHotkey?
 
     // MARK: NSApplicationDelegate
@@ -313,10 +335,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// its deinit — so a settings change takes effect immediately.
     private func registerSummonHotkey() {
         let combination = preferences.summonHotkey
-        let hotkey = CarbonHotkey(identifier: Self.summonHotkeyID)
+        let hotkey = CarbonHotkey(identifier: Self.summonHotkeyID,
+                                  signature: Self.summonHotkeySignature)
         hotkey.onPressed = { [weak self] in self?.panelController.toggle() }
-        guard hotkey.register(keyCode: combination.keyCode, modifiers: combination.modifiers) else {
-            // CarbonHotkey logged the failure; keep the previous working
+        guard hotkey.register(combination.combo).isRegistered else {
+            // Keycap logged the failure; keep the previous working
             // registration — a conflicting chord must not leave the app
             // without any summon hotkey. Revert the stored preference to the
             // chord that is still registered so the next launch re-registers
