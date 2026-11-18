@@ -58,7 +58,9 @@ Once the project exists, follow the L-K-M family conventions (same as Zap):
 - Keep the search hot path allocation-light — matching runs per keystroke.
 - Don't add heavy dependencies; prefer system frameworks. Exceptions:
   first-party `PictKit` (https://github.com/L-K-M/Pict) for shared icons,
-  and the pinned Numbat calculator helper in `Numbat/`.
+  first-party `LiveryKit` (https://github.com/L-K-M/Livery) for shared panel
+  theming, pinned by tag up to the next minor, and the pinned Numbat
+  calculator helper in `Numbat/`.
 - Generated-command code is untrusted input: everything reachable from JS goes
   through the permission gate; `shell` and `paste` require first-run user
   confirmation. Never run generated code on first save — first run is

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import LiveryKit
 import UniformTypeIdentifiers
 
 /// The launcher's look: panel material, colors, selection, retro flourishes —

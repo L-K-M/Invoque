@@ -1,4 +1,5 @@
 import AppKit
+import LiveryKit
 
 /// A named, shareable snapshot of every appearance setting — exported/imported
 /// as a small `.json` file and applied with one click, plus a set of built-in

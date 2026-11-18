@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Panel theming is now shared with the family apps through Livery. The CRT
+  overlay's strength scales from nothing at intensity 0 to the same look as
+  before at full intensity, so settings in between look slightly fainter, and
+  the gradient direction dial gains a focus ring, arrow-key control and 5°
+  VoiceOver steps instead of 15°.
 - Bundle Numbat for scientific calculations and unit conversions. `log` now
   means natural log; use `log10` for base-10. Currency rates are not included.
 
