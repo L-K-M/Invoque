@@ -176,6 +176,17 @@ final class AppearancePresetTests: XCTestCase {
         }
     }
 
+    /// A snapshot with no name still gets a distinct per-format identity, so
+    /// presets stay de-duplicated by name in the menu.
+    func testSnapshotImportFallbackNameMatchesFormat() {
+        XCTAssertEqual(AppearancePreset(importing: ThemeSnapshot(format: .zap)).name,
+                       "Zap Theme")
+        XCTAssertEqual(AppearancePreset(importing: ThemeSnapshot(format: .jetty)).name,
+                       "Jetty Theme")
+        XCTAssertEqual(AppearancePreset(importing: ThemeSnapshot(format: .invoque)).name,
+                       "Invoque Theme")
+    }
+
     /// A partial Invoque file carrying no native discriminator
     /// (labelHex/highlightHex/adaptiveAccent) routes through the Jetty lens on
     /// its shared keys — the Invoque/Zap-shared `highlightOpacity` and
