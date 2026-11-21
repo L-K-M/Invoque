@@ -41,20 +41,23 @@ final class NumbatEvaluatorTests: XCTestCase {
     func testTimeLimitStopsAStuckHelper() async throws {
         let helper = try makeStuckHelper()
         defer { removeStuckHelper(helper) }
-        let (launches, launched) = AsyncStream<Int32>.makeStream()
+        let (launches, launched) = AsyncStream<(pid: Int32, started: TimeInterval)>.makeStream()
         // The child can time out before it writes its PID file. Capture its
         // PID from the launching process so the reap assertion still runs.
         let evaluator = NumbatEvaluator(executableURL: helper, timeLimit: 0.1) { pid in
-            launched.yield(pid)
+            launched.yield((pid, ProcessInfo.processInfo.systemUptime))
         }
         do {
             _ = try await evaluator.evaluate("2+2")
             XCTFail("stuck helper succeeded")
         } catch NumbatEvaluator.Failure.timedOut {
+            let finished = ProcessInfo.processInfo.systemUptime
             launched.finish()
-            var launch = launches.makeAsyncIterator()
-            let pid = await launch.next()
-            assertHelperWasReaped(try XCTUnwrap(pid))
+            var iterator = launches.makeAsyncIterator()
+            let observation = await iterator.next()
+            let launch = try XCTUnwrap(observation)
+            XCTAssertLessThan(finished - launch.started, 1)
+            assertHelperWasReaped(launch.pid)
         }
     }
 

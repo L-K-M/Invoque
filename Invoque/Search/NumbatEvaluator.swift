@@ -13,6 +13,8 @@ struct NumbatEvaluator: Sendable {
 
     private let executableURL: URL?
     private let timeLimit: TimeInterval
+    /// Reports the PID after a successful launch, before polling for exit.
+    /// The observer runs on the process-owning thread and must return promptly.
     private let didLaunch: (@Sendable (Int32) -> Void)?
 
     init(executableURL: URL? = Bundle.main.bundleURL
