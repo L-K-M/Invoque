@@ -196,14 +196,18 @@ extension AppearancePreset {
         return AppearancePreset(importing: theme)
     }
 
-    /// Maps a Zap or Jetty theme onto Invoque's settings, with Invoque's
-    /// defaults for anything the sibling lacks: Jetty has no selection
-    /// highlight or label color, Zap no adaptive accent, neither a typeface.
+    /// Maps a theme snapshot onto Invoque's settings, filling absent fields
+    /// with defaults. Invoque's own files use the native decoder in `decode(from:)`.
     /// Values are validated and clamped later by `apply(to:)`.
     init(importing theme: ThemeSnapshot) {
         let d = Preferences.Default.self
+        let fallbackName = switch theme.format {
+        case .zap: "Zap Theme"
+        case .jetty: "Jetty Theme"
+        case .invoque: "Invoque Theme"
+        }
         self.init(
-            name: theme.name ?? (theme.format == .zap ? "Zap Theme" : "Jetty Theme"),
+            name: theme.name ?? fallbackName,
             material: theme.material ?? d.panelMaterial,
             tintHex: theme.tintHex ?? d.tintHex,
             gradientHex: theme.gradientHex ?? d.gradientHex,
@@ -222,6 +226,7 @@ extension AppearancePreset {
             crtEnabled: theme.crtEnabled ?? d.crtEnabled,
             crtIntensity: theme.crtIntensity ?? d.crtIntensity)
     }
+
 }
 
 // MARK: - Built-in themes

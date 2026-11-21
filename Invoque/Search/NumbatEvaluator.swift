@@ -13,12 +13,17 @@ struct NumbatEvaluator: Sendable {
 
     private let executableURL: URL?
     private let timeLimit: TimeInterval
+    /// Reports the PID after a successful launch, before polling for exit.
+    /// The observer runs on the process-owning thread and must return promptly.
+    private let didLaunch: (@Sendable (Int32) -> Void)?
 
     init(executableURL: URL? = Bundle.main.bundleURL
         .appendingPathComponent("Contents/Helpers/invoque-numbat"),
-         timeLimit: TimeInterval = Self.timeout) {
+         timeLimit: TimeInterval = Self.timeout,
+         didLaunch: (@Sendable (Int32) -> Void)? = nil) {
         self.executableURL = executableURL
         self.timeLimit = timeLimit
+        self.didLaunch = didLaunch
     }
 
     enum Failure: LocalizedError {
@@ -78,6 +83,7 @@ struct NumbatEvaluator: Sendable {
         }
 
         let deadline = ProcessInfo.processInfo.systemUptime + timeLimit
+        didLaunch?(process.processIdentifier)
         while process.isRunning {
             try cancellation.check()
             guard ProcessInfo.processInfo.systemUptime < deadline else {
